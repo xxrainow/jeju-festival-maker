@@ -142,11 +142,3 @@ Python, LangGraph, Streamlit, pandas, SQLite, folium, plotly, 외부 LLM API
   집계 결과는 알려진 합계와 대조, 조인은 방향과 예상 행 수 확인
 - SQL 키워드는 소문자로 작성
 - 주석과 문서는 한국어, 한자 사용 금지
-
-## 바로 할 일 (개발자 B)
-1. 저장소 현재 상태 확인 후 요약
-2. 폴더 구조 제안 (agent, tools, data, ui, docs 등)
-3. 공통 데이터 구조 6개를 코드로 정의 (A와 합의할 초안)
-4. 지정 데이터 명세에 맞춘 가상 CSV 생성
-5. CSV 업로드 검증 기능: 컬럼, 자료형, 기간, 지역, 결측 확인
-6. Streamlit 화면 골격 설계
