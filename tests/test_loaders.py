@@ -4,7 +4,7 @@ import pandas as pd
 
 from analytics.loaders import (
     aggregate_wifi_usage,
-    bus_exclusion_notes,
+    find_abnormal_days,
     load_bus_usage,
     load_festivals,
     load_visitor_trend,
@@ -33,7 +33,7 @@ def test_bus_station_name_with_unquoted_commas(tmp_path):
         + "20190101,거슨새미오름,안돌오름,어린이,2\n"
         + "20190101,한라병원,일반,10\n",
     )
-    df = load_bus_usage(path)
+    df = load_bus_usage(path).data
     assert set(df["station_name"]) == {
         "제주국제공항(대정,화순,일주서로)",
         "거슨새미오름,안돌오름",
@@ -42,17 +42,59 @@ def test_bus_station_name_with_unquoted_commas(tmp_path):
     assert df["user_count"].sum() == 104
 
 
-def test_bus_abnormal_dates_are_excluded(tmp_path):
-    path = write(
-        tmp_path / "bus.csv",
-        BUS_HEADER
-        + "20211222,한라병원,일반,100\n"
-        + "20211223,한라병원,일반,17\n"
-        + "20221127,한라병원,일반,30\n"
-        + "20221201,한라병원,일반,90\n",
+# 2024-01의 월요일 5일. 29일만 중앙값(100)의 20% 미만
+JANUARY_MONDAYS = (
+    "20240101,한라병원,일반,100\n"
+    "20240108,한라병원,일반,100\n"
+    "20240115,한라병원,일반,90\n"
+    "20240122,한라병원,일반,110\n"
+    "20240129,한라병원,일반,19\n"
+)
+
+
+def test_find_abnormal_days_uses_same_month_weekday_median():
+    daily = pd.DataFrame(
+        {
+            "base_date": pd.to_datetime(
+                ["2024-01-01", "2024-01-08", "2024-01-15", "2024-01-02", "2024-02-05"]
+            ),
+            "total": [100, 100, 10, 5, 5],
+        }
     )
-    df = load_bus_usage(path)
-    assert df["base_date"].tolist() == [date(2021, 12, 22), date(2022, 12, 1)]
+    result = find_abnormal_days(daily, ratio=0.2)
+    # 화요일(1/2)과 2월 월요일(2/5)은 각자 혼자라 중앙값이 자기 자신
+    assert result["is_abnormal"].tolist() == [False, False, True, False, False]
+    assert result["median"].tolist() == [100, 100, 100, 5, 5]
+    assert result["sample_days"].tolist() == [3, 3, 3, 1, 1]
+
+
+def test_bus_abnormal_days_are_excluded_by_default(tmp_path):
+    path = write(tmp_path / "bus.csv", BUS_HEADER + JANUARY_MONDAYS)
+    bus = load_bus_usage(path)
+    assert bus.excluded_dates == [date(2024, 1, 29)]
+    assert date(2024, 1, 29) not in set(bus.data["base_date"])
+    assert bus.daily["is_abnormal"].sum() == 1
+
+
+def test_bus_abnormal_days_can_be_kept(tmp_path):
+    path = write(tmp_path / "bus.csv", BUS_HEADER + JANUARY_MONDAYS)
+    bus = load_bus_usage(path, exclude_abnormal=False)
+    assert bus.excluded_dates == []
+    assert len(bus.data) == 5
+    assert bus.daily["is_abnormal"].sum() == 1
+
+
+def test_bus_abnormal_ratio_is_adjustable(tmp_path):
+    path = write(tmp_path / "bus.csv", BUS_HEADER + JANUARY_MONDAYS)
+    assert load_bus_usage(path, abnormal_ratio=0.1).excluded_dates == []
+
+
+def test_bus_abnormal_days_judged_on_full_data(tmp_path):
+    # 조회 기간을 좁혀도 중앙값은 전체 자료 기준
+    path = write(tmp_path / "bus.csv", BUS_HEADER + JANUARY_MONDAYS)
+    bus = load_bus_usage(path, start=date(2024, 1, 29), end=date(2024, 1, 29))
+    assert bus.excluded_dates == [date(2024, 1, 29)]
+    assert bus.data.empty
 
 
 def test_bus_date_filter(tmp_path):
@@ -61,14 +103,17 @@ def test_bus_date_filter(tmp_path):
         BUS_HEADER
         + "20240101,한라병원,일반,1\n20240102,한라병원,일반,2\n20240103,한라병원,일반,3\n",
     )
-    df = load_bus_usage(path, start=date(2024, 1, 2), end=date(2024, 1, 2))
-    assert df["user_count"].tolist() == [2]
+    bus = load_bus_usage(path, start=date(2024, 1, 2), end=date(2024, 1, 2))
+    assert bus.data["user_count"].tolist() == [2]
+    assert bus.daily["base_date"].tolist() == [date(2024, 1, 2)]
 
 
-def test_bus_exclusion_notes_mention_missing_period():
-    notes = " ".join(bus_exclusion_notes())
+def test_bus_notes_list_missing_period_excluded_and_unstable_months(tmp_path):
+    path = write(tmp_path / "bus.csv", BUS_HEADER + JANUARY_MONDAYS + "20240201,한라병원,일반,5\n")
+    notes = " ".join(load_bus_usage(path).notes())
     assert "2022-08-12 ~ 2022-11-23" in notes
-    assert "2021-12-23" in notes
+    assert "20% 미만인 날 1일 제외 (2024-01-29)" in notes
+    assert "판정이 불안정함 (2024-02)" in notes
 
 
 def test_bus_renamed_station_shares_key(tmp_path):
@@ -78,7 +123,7 @@ def test_bus_renamed_station_shares_key(tmp_path):
         + "20241006,제주국제공항4(대정,화순,일주서로),일반,10\n"
         + "20241007,제주국제공항4(대정화순일주서로),일반,12\n",
     )
-    df = load_bus_usage(path)
+    df = load_bus_usage(path).data
     assert df["station_key"].nunique() == 1
     assert df["station_name"].nunique() == 2
 
@@ -92,7 +137,7 @@ def test_normalize_station_name():
 
 def test_bus_closed_station_is_kept(tmp_path):
     path = write(tmp_path / "bus.csv", BUS_HEADER + "20190101,(구)동홍동주민센터,경로,3\n")
-    assert load_bus_usage(path)["station_name"].tolist() == ["(구)동홍동주민센터"]
+    assert load_bus_usage(path).data["station_name"].tolist() == ["(구)동홍동주민센터"]
 
 
 # 와이파이

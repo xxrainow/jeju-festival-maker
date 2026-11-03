@@ -1,6 +1,7 @@
 """제주 공개 데이터 로더. 규칙 근거는 docs/data-check.md 참고."""
 
 import re
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -17,16 +18,12 @@ FESTIVALS_PATH = RAW_DIR / "전국문화축제표준데이터-20261103.xls"
 # 와이파이: 2020-09 이전은 집계 방식이 달라 쓰지 않는다
 WIFI_START_MONTH = "202010"
 
-# 버스: 데이터가 없는 기간과 하루 이용자가 비정상적으로 적은 날
+# 버스: 원자료가 없는 기간
 BUS_MISSING_PERIOD = (date(2022, 8, 12), date(2022, 11, 23))
-BUS_ABNORMAL_DATES = (
-    date(2021, 12, 23),
-    date(2022, 8, 11),
-    date(2022, 11, 24),
-    date(2022, 11, 25),
-    date(2022, 11, 26),
-    date(2022, 11, 27),
-)
+# 버스 이상일: 하루 합계가 같은 달 같은 요일 중앙값의 이 비율 미만인 날
+BUS_ABNORMAL_RATIO = 0.2
+# 같은 달 같은 요일 표본이 이보다 적으면 중앙값이 불안정하다
+BUS_MIN_SAMPLE_DAYS = 3
 
 # 축제: 서귀포시가 등록한 축제를 제주특별자치도가 다시 등록한 행 (원자료를 직접 대조해 확인)
 FESTIVAL_DUPLICATE_NAMES = frozenset(
@@ -52,56 +49,109 @@ def normalize_station_name(station_name: str) -> str:
     return _STATION_PUNCT.sub("", station_name)
 
 
-def bus_exclusion_notes() -> list[str]:
-    """분석 결과 warnings에 넣을 버스 데이터 제외 기간 설명."""
-    start, end = BUS_MISSING_PERIOD
-    abnormal = ", ".join(d.isoformat() for d in BUS_ABNORMAL_DATES)
-    return [
-        f"버스 이용 인원: {start.isoformat()} ~ {end.isoformat()} 원자료 없음",
-        f"버스 이용 인원: 하루 이용자가 비정상적으로 적은 날 제외 ({abnormal})",
-    ]
+@dataclass
+class BusUsage:
+    data: pd.DataFrame  # 정류소·이용자 유형별 일별 인원
+    daily: pd.DataFrame  # 일별 합계와 이상일 판정 (조회 기간)
+    excluded_dates: list[date] = field(default_factory=list)
+    abnormal_ratio: float = BUS_ABNORMAL_RATIO
+
+    def notes(self) -> list[str]:
+        """분석 결과 warnings에 넣을 제외 기간 설명."""
+        start, end = BUS_MISSING_PERIOD
+        notes = [f"버스 이용 인원: {start.isoformat()} ~ {end.isoformat()} 원자료 없음"]
+        if self.excluded_dates:
+            dates = ", ".join(d.isoformat() for d in self.excluded_dates)
+            notes.append(
+                f"버스 이용 인원: 하루 합계가 같은 달 같은 요일 중앙값의 "
+                f"{self.abnormal_ratio:.0%} 미만인 날 {len(self.excluded_dates)}일 제외 ({dates})"
+            )
+        unstable = self.daily[self.daily["sample_days"] < BUS_MIN_SAMPLE_DAYS]
+        if not unstable.empty:
+            months = ", ".join(
+                sorted(unstable["base_date"].map(lambda d: d.strftime("%Y-%m")).unique())
+            )
+            notes.append(
+                f"버스 이용 인원: 같은 요일 자료가 {BUS_MIN_SAMPLE_DAYS}일 미만인 달은 "
+                f"이상일 판정이 불안정함 ({months})"
+            )
+        return notes
+
+
+def find_abnormal_days(daily: pd.DataFrame, ratio: float = BUS_ABNORMAL_RATIO) -> pd.DataFrame:
+    """일별 합계(`base_date`, `total`)에 같은 달 같은 요일 중앙값과 이상일 여부를 붙인다."""
+    df = daily.copy()
+    when = pd.to_datetime(df["base_date"])
+    group = df.groupby([when.dt.to_period("M"), when.dt.dayofweek])["total"]
+    df["median"] = group.transform("median")
+    df["sample_days"] = group.transform("size")
+    df["ratio"] = df["total"] / df["median"]
+    df["is_abnormal"] = df["ratio"] < ratio
+    return df
 
 
 def load_bus_usage(
     path: Path = BUS_USAGE_PATH,
     start: date | None = None,
     end: date | None = None,
-) -> pd.DataFrame:
+    exclude_abnormal: bool = True,
+    abnormal_ratio: float = BUS_ABNORMAL_RATIO,
+) -> BusUsage:
     """버스 정류소 이용 인원.
 
     정류소명 안의 쉼표가 따옴표 없이 들어 있어 한 줄을 통째로 읽은 뒤
     첫 칸은 날짜, 마지막 두 칸은 유형·인원, 그 사이 전체를 정류소명으로 나눈다.
+    이상일은 조회 기간과 관계없이 전체 자료 기준 중앙값으로 판정한다.
     """
     con = duckdb.connect()
-    df = con.execute(
-        r"""
+    con.execute("PRAGMA disable_progress_bar")
+    source = str(path).replace("'", "''")
+    con.execute(
+        rf"""
+        CREATE TEMP TABLE bus AS
         WITH parts AS (
-            SELECT regexp_extract(line, '^(\d{8}),(.*),([^,]*),([^,]*)$',
+            SELECT regexp_extract(line, '^(\d{{8}}),(.*),([^,]*),([^,]*)$',
                                   ['base_date', 'station_name', 'user_type', 'user_count']) AS r
-            FROM read_csv($path, columns = {'line': 'VARCHAR'}, delim = '\x01', quote = '',
-                          escape = '', header = true, auto_detect = false)
-        ),
-        bus AS (
-            SELECT strptime(r.base_date, '%Y%m%d')::DATE AS base_date,
-                   r.station_name AS station_name,
-                   r.user_type AS user_type,
-                   CAST(r.user_count AS BIGINT) AS user_count
-            FROM parts
+            FROM read_csv('{source}', columns = {{'line': 'VARCHAR'}}, delim = '\x01',
+                          quote = '', escape = '', header = true, auto_detect = false)
         )
+        SELECT strptime(r.base_date, '%Y%m%d')::DATE AS base_date,
+               r.station_name AS station_name,
+               r.user_type AS user_type,
+               CAST(r.user_count AS BIGINT) AS user_count
+        FROM parts
+        """
+    )
+    daily = con.execute(
+        "SELECT base_date, sum(user_count) AS total FROM bus GROUP BY 1 ORDER BY 1"
+    ).df()
+    daily = find_abnormal_days(daily, abnormal_ratio)
+    daily["base_date"] = daily["base_date"].dt.date
+
+    in_range = pd.Series(True, index=daily.index)
+    if start is not None:
+        in_range &= daily["base_date"] >= start
+    if end is not None:
+        in_range &= daily["base_date"] <= end
+    daily = daily[in_range].reset_index(drop=True)
+    excluded = daily.loc[daily["is_abnormal"], "base_date"].tolist() if exclude_abnormal else []
+
+    df = con.execute(
+        """
         SELECT * FROM bus
-        WHERE NOT list_contains($abnormal::DATE[], base_date)
+        WHERE NOT list_contains($excluded::DATE[], base_date)
           AND base_date >= coalesce($start::DATE, DATE '0001-01-01')
           AND base_date <= coalesce($end::DATE, DATE '9999-12-31')
         ORDER BY base_date, station_name, user_type
         """,
-        {"path": str(path), "abnormal": list(BUS_ABNORMAL_DATES), "start": start, "end": end},
+        {"excluded": excluded, "start": start, "end": end},
     ).df()
     con.close()
 
     df["base_date"] = df["base_date"].dt.date
     keys = {name: normalize_station_name(name) for name in df["station_name"].unique()}
     df["station_key"] = df["station_name"].map(keys)
-    return df
+    return BusUsage(df, daily, excluded, abnormal_ratio)
 
 
 def _load_wifi(path: Path, value_column: str) -> pd.DataFrame:
