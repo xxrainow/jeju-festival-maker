@@ -9,6 +9,7 @@ from analytics.tourist_spots import (
     METHOD_WEB,
     NEEDS_CHECK,
     build_draft,
+    fill_admin_areas,
     load_spot_areas,
 )
 
@@ -58,9 +59,91 @@ def test_only_confirmed_rows_are_used(tmp_path):
         {
             "sight_name": ["가", "나", "다", "라"],
             "method": [METHOD_AP, METHOD_AP, METHOD_MULTI, METHOD_WEB],
-            "area": ["제주시 구좌읍", "제주시 한림읍", None, None],
-            "area_level": ["읍면", "읍면", None, None],
+            "area": ["제주시 구좌읍", "제주시 한림읍", None, "서귀포시 서귀동"],
+            "area_level": ["읍면", "읍면", None, "법정동"],
+            "admin_area": ["제주시 구좌읍", "제주시 한림읍", None, None],
             "confirmed": [CONFIRMED, NEEDS_CHECK, CONFIRMED, CONFIRMED],
         }
     ).to_csv(path, index=False, encoding="utf-8-sig")
     assert load_spot_areas(path)["sight_name"].tolist() == ["가"]
+
+
+def test_fill_admin_areas():
+    mapping = pd.DataFrame(
+        {
+            "legal_dong": [
+                "제주시 건입동",
+                "제주시 건입동",
+                "서귀포시 서귀동",
+                "서귀포시 서귀동",
+                "제주시 회천동",
+            ],
+            "admin_dong": [
+                "제주시 건입동",
+                "제주시 일도1동",
+                "서귀포시 천지동",
+                "서귀포시 송산동",
+                "제주시 봉개동",
+            ],
+            "used": [True, False, True, True, False],
+        }
+    )
+    table = pd.DataFrame(
+        {
+            "sight_name": [
+                "읍면",
+                "AP 좌표",
+                "AP 여러 동",
+                "변환",
+                "애매",
+                "근거 부족",
+                "직접 확인",
+            ],
+            "method": [
+                METHOD_AP,
+                METHOD_AP,
+                METHOD_AP,
+                METHOD_WEB,
+                METHOD_WEB,
+                METHOD_WEB,
+                METHOD_WEB,
+            ],
+            "area": [
+                "제주시 애월읍",
+                "제주시 일도이동",
+                "서귀포시 서홍동",
+                "제주시 건입동",
+                "서귀포시 서귀동",
+                "제주시 회천동",
+                "서귀포시 서귀동",
+            ],
+            "area_level": ["읍면", "법정동", "법정동", "법정동", "법정동", "법정동", "법정동"],
+            "coord_admin_ref": [
+                "제주시 애월읍",
+                "제주시 일도2동",
+                "서귀포시 정방동 / 서귀포시 천지동",
+                None,
+                None,
+                None,
+                None,
+            ],
+            "admin_area": [None, None, None, None, None, None, "서귀포시 천지동"],
+            "admin_method": [None, None, None, None, None, None, "지도 확인"],
+        }
+    )
+    out = fill_admin_areas(table, mapping).set_index("sight_name")
+    assert out["admin_area"].tolist() == [
+        "제주시 애월읍",
+        "제주시 일도2동",
+        None,
+        "제주시 건입동",  # 오류 의심 짝(일도1동)은 근거에서 빠짐
+        None,
+        None,
+        "서귀포시 천지동",
+    ]
+    assert out.loc["AP 좌표", "admin_method"] == "AP 좌표"
+    assert out.loc["AP 여러 동", "admin_method"].startswith("AP 좌표 여러 행정동")
+    assert out.loc["변환", "admin_method"] == "변환표"
+    assert out.loc["애매", "admin_method"].startswith("변환표 애매함")
+    assert out.loc["근거 부족", "admin_method"] == "변환표 근거 부족"
+    assert out.loc["직접 확인", "admin_method"] == "지도 확인"

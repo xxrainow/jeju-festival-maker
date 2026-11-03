@@ -5,8 +5,11 @@
 2) AP에 없는 곳은 관광 안내 자료의 주소 (출처 링크 포함)
 3) 여러 동에 걸친 곳(국립공원, 해양공원)은 제외
 
-표(`SPOT_AREAS_PATH`)는 초안이며, `confirmed`가 "확인"인 행만 집계에 쓴다.
+최종 동네(`admin_area`, 행정동·읍면)는 `fill_admin_areas`로 채운다.
+읍면은 주소 그대로, 동 지역 AP 행은 AP 좌표 판정(`coord_admin_ref`), 좌표 없는 행은 법정동 변환표.
+`confirmed`가 "확인"인 행만 집계에 쓴다.
 초안 생성: uv run python -m analytics.tourist_spots [--overwrite]
+최종 동네 채우기 (확인 표시 유지): uv run python -m analytics.tourist_spots --fill-admin
 """
 
 import argparse
@@ -15,8 +18,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from analytics.area_link import area_level, build_lookup, load_wifi_ap
+from analytics.area_link import area_level, build_lookup, load_bus_stations, load_wifi_ap
 from analytics.boundary import load_jeju_boundaries
+from analytics.dong_mapping import build_pair_mapping, collect_pairs
 
 TOURIST_SPOTS_PATH = Path("data/raw/jejuhub_tourist_spot_visitors.csv")
 SPOT_AREAS_PATH = Path("analytics/reference/tourist_spot_areas.csv")
@@ -52,7 +56,7 @@ WEB_ADDRESSES = {
         "",
     ),
     "이중섭미술관": (
-        "서귀포시 이중섭로 33 (서귀동)",
+        "서귀포시 이중섭로 33 (지번 서귀동 514)",
         "서귀포시 서귀동",
         "https://www.ktriptips.com/kor/culture/130494",
         "",
@@ -67,7 +71,7 @@ WEB_ADDRESSES = {
         "제주시 한경면 저지리 (용금로 883-5)",
         "제주시 한경면",
         "https://m.go.seoul.co.kr/news/2016/09/20/20160920025049",
-        "일부 자료는 한림읍으로 표기. 저지문화예술인마을(한경면 저지리) 안",
+        "한경면 저지리 확인 (사용자 확인, 2026-11-04). 일부 자료는 한림읍으로 표기",
     ),
     "삼양선사유적지": (
         "제주시 선사로2길 13 (삼양일동)",
@@ -82,13 +86,13 @@ WEB_ADDRESSES = {
         "번지를 36-24로 적은 자료도 있음 (동은 같음)",
     ),
     "박물관은살아있다": (
-        "서귀포시 중문관광로 42",
-        None,
-        "https://www.ktriptips.com/kor/culture/1883815",
-        "도로명 주소만 확인, 동 미확인",
+        "서귀포시 중문관광로 42 (지번 색달동 2629)",
+        "서귀포시 색달동",
+        "카카오맵·네이버 지도 (사용자 확인, 2026-11-04)",
+        "현재 이름이 K-아일랜드제주로 바뀐 것으로 보임 (자료 이름 유지)",
     ),
     "퍼시픽랜드": (
-        "서귀포시 중문관광로 154-17 (색달동)",
+        "서귀포시 중문관광로 154-17 (지번 색달동 2950-17)",
         "서귀포시 색달동",
         "https://xn--ok0b236bp0a.com/place/11306",
         "",
@@ -109,6 +113,8 @@ COLUMNS = [
     "area",
     "area_level",
     "coord_admin_ref",
+    "admin_area",
+    "admin_method",
     "source",
     "note",
     "confirmed",
@@ -164,10 +170,49 @@ def build_draft(sight_names: list[str], ap: pd.DataFrame, boundaries=None) -> pd
     return pd.DataFrame(rows, columns=COLUMNS)
 
 
-def load_spot_areas(path: Path = SPOT_AREAS_PATH) -> pd.DataFrame:
-    """확인된 관광지만 (`confirmed == "확인"`, 위치 있음, 여러 동에 걸치지 않음)."""
+def fill_admin_areas(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
+    """비어 있는 `admin_area`를 채운다. 이미 채운 행(직접 확인한 곳 포함)은 건드리지 않는다."""
+    df = df.copy()
+    used = mapping[mapping["used"]].groupby("legal_dong")["admin_dong"].agg(list)
+    known = set(mapping["legal_dong"])
+    for idx, row in df.iterrows():
+        if isinstance(row["admin_area"], str) and row["admin_area"]:
+            continue
+        if row["method"] == METHOD_MULTI or not isinstance(row["area"], str):
+            continue
+        coord = row["coord_admin_ref"] if isinstance(row["coord_admin_ref"], str) else ""
+        if row["area_level"] == "읍면":
+            df.loc[idx, ["admin_area", "admin_method"]] = [row["area"], "주소 읍면"]
+        elif coord:
+            if " / " in coord:
+                df.loc[idx, "admin_method"] = f"AP 좌표 여러 행정동: {coord}"
+            else:
+                df.loc[idx, ["admin_area", "admin_method"]] = [coord, "AP 좌표"]
+        elif row["area"] in used:
+            admins = used[row["area"]]
+            if len(admins) == 1:
+                df.loc[idx, ["admin_area", "admin_method"]] = [admins[0], "변환표"]
+            else:
+                df.loc[idx, "admin_method"] = f"변환표 애매함: {' / '.join(sorted(admins))}"
+        else:
+            df.loc[idx, "admin_method"] = (
+                "변환표 근거 부족" if row["area"] in known else "변환표 없음"
+            )
+    return df
+
+
+def load_spot_table(path: Path = SPOT_AREAS_PATH) -> pd.DataFrame:
+    """관광지 표 전체. `address_area`는 주소의 법정동·읍면 (`area` 열)."""
     df = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
-    usable = df["confirmed"].eq(CONFIRMED) & df["area"].notna() & df["method"].ne(METHOD_MULTI)
+    return df.rename(columns={"area": "address_area"})
+
+
+def load_spot_areas(path: Path = SPOT_AREAS_PATH) -> pd.DataFrame:
+    """확인된 관광지만 (`confirmed == "확인"`, 최종 동네 있음, 여러 동에 걸치지 않음)."""
+    df = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
+    usable = (
+        df["confirmed"].eq(CONFIRMED) & df["admin_area"].notna() & df["method"].ne(METHOD_MULTI)
+    )
     return df[usable].reset_index(drop=True)
 
 
@@ -187,11 +232,24 @@ def load_tourist_spot_visitors(path: Path = TOURIST_SPOTS_PATH) -> pd.DataFrame:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="관광지 → 읍면동 초안 생성")
     parser.add_argument("--overwrite", action="store_true", help="확인 표시가 있어도 덮어쓰기")
+    parser.add_argument("--fill-admin", action="store_true", help="기존 표의 최종 동네만 채우기")
     args = parser.parse_args(argv)
+    boundaries = load_jeju_boundaries()
+    if args.fill_admin:
+        ap = load_wifi_ap()
+        mapping = build_pair_mapping(collect_pairs(ap, load_bus_stations(), boundaries))
+        table = pd.read_csv(SPOT_AREAS_PATH, dtype=str, encoding="utf-8-sig")
+        for col in COLUMNS:
+            if col not in table:
+                table[col] = None
+        table = fill_admin_areas(table[COLUMNS], mapping)
+        table.to_csv(SPOT_AREAS_PATH, index=False, encoding="utf-8-sig")
+        print(table["admin_method"].fillna("-").value_counts().to_string())
+        return
     if SPOT_AREAS_PATH.exists() and not args.overwrite:
         raise SystemExit(f"{SPOT_AREAS_PATH}가 이미 있습니다. 확인 표시를 지우려면 --overwrite")
     names = load_tourist_spot_visitors()["sight_name"].unique().tolist()
-    draft = build_draft(names, load_wifi_ap(), load_jeju_boundaries())
+    draft = build_draft(names, load_wifi_ap(), boundaries)
     SPOT_AREAS_PATH.parent.mkdir(parents=True, exist_ok=True)
     draft.to_csv(SPOT_AREAS_PATH, index=False, encoding="utf-8-sig")
     print(draft["method"].value_counts().to_string())
