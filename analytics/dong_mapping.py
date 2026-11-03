@@ -4,6 +4,7 @@
 와이파이 AP·정류소의 법정동 주소와 좌표로 판정한 행정동의 짝을 모은다.
 - 오류 의심 짝은 표에 남기되 변환 근거에서 뺀다: 짝 2개 이하, 다른 시, 동인데 읍면으로 판정
 - 남은 행정동이 하나면 변환, 여럿이면 애매함 (실제로 여러 행정동에 걸친 법정동)
+- 근거로 쓴 행정동의 짝이 5개 미만이면 변환은 하되 근거 약함으로 표시
 
 인구 비율 변환표 (`build_mapping`, 참고용, 현재 사용 안 함):
 행정안전부_법정동별(행정동 통반단위) 성/연령별 주민등록 인구수 (공공데이터포털 15108074).
@@ -24,6 +25,10 @@ SUSPECT_FEW = f"짝 {MIN_PAIRS - 1}개 이하"
 SUSPECT_CITY = "다른 시"
 SUSPECT_EUPMYEON = "동인데 읍면으로 판정"
 NO_EVIDENCE = "근거 부족"
+WEAK_PAIRS = 5
+WEAK_EVIDENCE = "근거 약함"
+CONVERTED = "1:1 변환"
+CONVERTED_WEAK = f"{CONVERTED} ({WEAK_EVIDENCE})"
 
 
 def collect_pairs(ap: pd.DataFrame, stations: pd.DataFrame, boundaries) -> pd.DataFrame:
@@ -81,7 +86,8 @@ def build_pair_mapping(pairs: pd.DataFrame) -> pd.DataFrame:
 
     열: legal_dong, admin_dong, pairs(이 행정동 짝 수), places(짝이 나온 장소 수, 참고),
     legal_pairs(법정동 전체 짝 수), share,
-    suspect_reason(오류 의심 사유), used(변환 근거 여부), admin_count(근거로 남은 행정동 수)
+    suspect_reason(오류 의심 사유), used(변환 근거 여부), admin_count(근거로 남은 행정동 수),
+    evidence(근거로 쓴 짝의 강도: 보통, 근거 약함)
     """
     m = (
         pairs.groupby(["legal_dong", "admin_dong"])
@@ -96,6 +102,9 @@ def build_pair_mapping(pairs: pd.DataFrame) -> pd.DataFrame:
     ]
     m["used"] = m["suspect_reason"].isna()
     m["admin_count"] = m.groupby("legal_dong")["used"].transform("sum")
+    m["evidence"] = None
+    m.loc[m["used"], "evidence"] = "보통"
+    m.loc[m["used"] & (m["pairs"] < WEAK_PAIRS), "evidence"] = WEAK_EVIDENCE
     return m.sort_values(["legal_dong", "pairs"], ascending=[True, False]).reset_index(drop=True)
 
 
@@ -119,8 +128,8 @@ def convert_legal_to_admin(
 ) -> pd.DataFrame:
     """법정동으로 연결된 장소(`area_level == "법정동"`)를 행정동으로 바꾼다.
 
-    결과에 `conversion` 열을 붙인다: 1:1 변환, 여러 행정동, 인구 비율 분할, 변환표 없음,
-    근거 부족(짝 변환표에 있지만 짝이 모두 오류 의심).
+    결과에 `conversion` 열을 붙인다: 1:1 변환, 1:1 변환 (근거 약함), 여러 행정동, 인구 비율 분할,
+    변환표 없음, 근거 부족(짝 변환표에 있지만 짝이 모두 오류 의심).
     """
     df = linked.copy()
     df["conversion"] = None
@@ -140,9 +149,13 @@ def convert_legal_to_admin(
 
     single = candidates[~missing].map(len) == 1
     one = single[single].index
+    legal_of_one = df.loc[one, "area"]
     df.loc[one, "area"] = candidates[one].str[0]
     df.loc[one, "area_level"] = "행정동"
-    df.loc[one, "conversion"] = "1:1 변환"
+    df.loc[one, "conversion"] = CONVERTED
+    if "evidence" in mapping:
+        weak = set(mapping.loc[mapping["evidence"].eq(WEAK_EVIDENCE), "legal_dong"])
+        df.loc[legal_of_one[legal_of_one.isin(weak)].index, "conversion"] = CONVERTED_WEAK
 
     many = single[~single].index
     if not split:

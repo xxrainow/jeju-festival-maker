@@ -3,10 +3,13 @@ import pytest
 
 from analytics.area_link import AMBIGUOUS, LINKED
 from analytics.dong_mapping import (
+    CONVERTED,
+    CONVERTED_WEAK,
     NO_EVIDENCE,
     SUSPECT_CITY,
     SUSPECT_EUPMYEON,
     SUSPECT_FEW,
+    WEAK_EVIDENCE,
     build_mapping,
     build_pair_mapping,
     collect_pairs,
@@ -161,3 +164,27 @@ def test_pair_mapping_suspect_rules():
     assert out["conversion"].tolist() == ["1:1 변환", "여러 행정동", NO_EVIDENCE, "변환표 없음"]
     assert out.loc[0, "area"] == "제주시 노형동"
     assert out.loc[1, "status"] == AMBIGUOUS
+
+
+def test_weak_evidence_is_converted_but_marked():
+    pairs = pd.DataFrame(
+        pair_rows("제주시 삼양삼동", "제주시 화북동", 3)
+        + pair_rows("제주시 삼양삼동", "제주시 삼양동", 1)
+        + pair_rows("제주시 건입동", "제주시 건입동", 5)
+    )
+    m = build_pair_mapping(pairs).set_index(["legal_dong", "admin_dong"])
+    assert m.loc[("제주시 삼양삼동", "제주시 화북동"), "evidence"] == WEAK_EVIDENCE
+    assert m.loc[("제주시 건입동", "제주시 건입동"), "evidence"] == "보통"
+    assert pd.isna(m.loc[("제주시 삼양삼동", "제주시 삼양동"), "evidence"])  # 오류 의심
+
+    linked = pd.DataFrame(
+        {
+            "area": ["제주시 삼양삼동", "제주시 건입동"],
+            "area_level": ["법정동", "법정동"],
+            "status": [LINKED, LINKED],
+            "users": [1, 2],
+        }
+    )
+    out = convert_legal_to_admin(linked, build_pair_mapping(pairs))
+    assert out["conversion"].tolist() == [CONVERTED_WEAK, CONVERTED]
+    assert out["area"].tolist() == ["제주시 화북동", "제주시 건입동"]
