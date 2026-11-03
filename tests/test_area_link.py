@@ -3,6 +3,7 @@ import pytest
 
 from analytics.area_link import (
     AMBIGUOUS,
+    EXCLUDE_TRAIL,
     LINKED,
     NO_ADDRESS,
     NOT_FOUND,
@@ -233,22 +234,28 @@ def test_cross_city_station_is_excluded():
     }
 
 
-def test_olle_course_is_excluded_but_cross_city_rule_is_bus_only():
+def test_multi_area_trails_are_excluded_but_cross_city_rule_is_bus_only():
     wifi = pd.DataFrame(
         {
-            "wifi_place_name": ["6코스", "사려니숲길", "도두봉"],
-            "users": [5, 6, 7],
-            "status": [AMBIGUOUS, AMBIGUOUS, LINKED],
+            "wifi_place_name": [
+                "6코스",
+                "사려니숲길",
+                "제주환상자전거길",
+                "화순 곶자왈 생태탐방숲길",
+            ],
+            "users": [5, 6, 7, 8],
+            "status": [AMBIGUOUS, AMBIGUOUS, AMBIGUOUS, LINKED],
             "candidates": [
                 "서귀포시 동홍동 / 서귀포시 보목동",
                 "서귀포시 표선면 / 제주시 봉개동",
-                "",
+                "서귀포시 법환동 / 제주시 한경면",
+                "서귀포시 안덕면",
             ],
-            "category": ["올레·코스", "기타", "기타"],
+            "category": ["올레·코스", "기타", "기타", "기타"],
         }
     )
     reasons = mark_exclusions(wifi)["excluded_reason"].tolist()
-    assert reasons == ["올레 코스", None, None]
+    assert reasons == [EXCLUDE_TRAIL] * 3 + [None]
 
 
 def test_boundary_station_joins_group_when_all_candidates_inside():

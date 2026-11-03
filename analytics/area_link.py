@@ -199,20 +199,24 @@ def candidate_city(candidates: str) -> str:
 
 
 # 동네별 집계에서 빼는 항목
-EXCLUDE_OLLE = "올레 코스"
+EXCLUDE_TRAIL = "여러 동을 지나는 길 (올레·자전거길·숲길)"
 EXCLUDE_CROSS_CITY = "다른 시에 같은 이름의 정류소"
+# 올레 코스는 이름 형식(`wifi_category`)으로, 나머지 길은 이름으로 정한다
+MULTI_AREA_TRAILS = frozenset({"제주환상자전거길", "사려니숲길"})
 
 
 def mark_exclusions(linked: pd.DataFrame) -> pd.DataFrame:
     """동네별 집계에서 뺄 항목에 `excluded_reason`을 붙인다.
 
-    - 올레 코스 (와이파이): 여러 동을 지나는 선형 경로라 한 동에 붙일 수 없다
+    - 여러 동을 지나는 길 (와이파이 올레 코스, 제주환상자전거길, 사려니숲길):
+      선형 경로라 한 동에 붙일 수 없다
     - 다른 시에 같은 이름의 정류소 (버스): 이용 자료에 이름만 있어 서로 다른 정류소를 나눌 수 없다
     """
     df = linked.copy()
     df["excluded_reason"] = None
     if "category" in df:
-        df.loc[df["category"] == "올레·코스", "excluded_reason"] = EXCLUDE_OLLE
+        trail = df["category"].eq("올레·코스") | df["wifi_place_name"].isin(MULTI_AREA_TRAILS)
+        df.loc[trail, "excluded_reason"] = EXCLUDE_TRAIL
     if "station_key" in df:
         cross_city = df["status"].eq(AMBIGUOUS) & df["candidates"].map(candidate_city).eq("여러 시")
         df.loc[cross_city, "excluded_reason"] = EXCLUDE_CROSS_CITY
