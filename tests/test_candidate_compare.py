@@ -3,6 +3,7 @@ import pandas as pd
 from analytics.area_link import AMBIGUOUS, LINKED, NOT_FOUND
 from analytics.candidate_compare import (
     ADMIN,
+    AMBIG,
     EXCLUDED,
     LEGAL,
     UNPLACED,
@@ -11,6 +12,7 @@ from analytics.candidate_compare import (
     month_list,
     months_in,
     placement,
+    region,
     split_totals,
 )
 from analytics.periods import AnalysisPeriod
@@ -30,6 +32,7 @@ def linked() -> pd.DataFrame:
             "area_level": ["읍면", "행정동", "법정동", None, None, "읍면"],
             "status": [LINKED, LINKED, LINKED, AMBIGUOUS, NOT_FOUND, LINKED],
             "excluded_reason": [None, None, None, None, None, "여러 동을 지나는 길"],
+            "candidates": ["", "", "", "제주시 일도1동 / 제주시 이도1동", "", ""],
             "users": [10, 20, 30, 40, 50, 60],
         }
     )
@@ -41,7 +44,11 @@ def test_months_in():
 
 
 def test_placement():
-    assert placement(linked()).tolist() == [ADMIN, ADMIN, LEGAL, UNPLACED, UNPLACED, EXCLUDED]
+    assert placement(linked()).tolist() == [ADMIN, ADMIN, LEGAL, AMBIG, UNPLACED, EXCLUDED]
+
+
+def test_region_uses_level_or_candidates():
+    assert region(linked()).tolist() == ["읍면", "동", "동", "동", None, "읍면"]
 
 
 def test_split_totals_keeps_legal_dong_apart_and_skips_exclusions():
@@ -53,7 +60,9 @@ def test_split_totals_keeps_legal_dong_apart_and_skips_exclusions():
 def test_coverage_adds_up_to_total():
     row = coverage(linked(), "users", "테스트", "명").iloc[0]
     assert row["전체"] == 210
-    assert row[ADMIN] + row[LEGAL] + row[EXCLUDED] + row[UNPLACED] == row["전체"]
+    assert row[ADMIN] + row[LEGAL] + row[AMBIG] + row[EXCLUDED] + row[UNPLACED] == row["전체"]
+    # 동 지역(연동 20, 이도일동 30, 애매함 40) 중 행정동 표는 연동뿐
+    assert row["동 지역 행정동 반영 (%)"] == 20 / 90 * 100
     assert coverage(linked(), None, "테스트", "곳").iloc[0]["전체"] == 6
 
 
