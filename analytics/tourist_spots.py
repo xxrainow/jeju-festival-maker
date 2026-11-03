@@ -20,13 +20,14 @@ import pandas as pd
 
 from analytics.area_link import area_level, build_lookup, load_bus_stations, load_wifi_ap
 from analytics.boundary import load_jeju_boundaries
-from analytics.dong_mapping import build_pair_mapping, collect_pairs
+from analytics.dong_mapping import WEAK_EVIDENCE, build_pair_mapping, collect_pairs
 
 TOURIST_SPOTS_PATH = Path("data/raw/jejuhub_tourist_spot_visitors.csv")
 SPOT_AREAS_PATH = Path("analytics/reference/tourist_spot_areas.csv")
 
 CONFIRMED = "확인"
 NEEDS_CHECK = "확인 필요"
+EXCLUDED = "제외"  # 위치를 정하지 못해 집계에서 뺌
 METHOD_AP = "AP 이름 일치"
 METHOD_AP_ALIAS = "AP 별칭"
 METHOD_WEB = "관광 안내 자료"
@@ -40,6 +41,12 @@ AP_ALIASES = {
     "제주항일기념관": "항일기념관",
     "제주현대미술관": "현대미술관",
 }
+
+# 주소가 본관이 아닐 수 있어 이름에 키워드가 들어간 인근 AP 좌표로 판정하는 곳
+NEARBY_AP_KEYWORDS = {"이중섭미술관": "이중섭"}
+METHOD_NEARBY = "AP 좌표(인근)"
+# fill_admin_areas가 계산하는 방법 (다시 채울 때 지우고 새로 계산). 지도 확인 등 직접 넣은 값은 유지
+COMPUTED_METHODS = ("주소 읍면", "AP 좌표", "변환표")
 
 MULTI_AREA_SPOTS = {
     "한라산국립공원": "제주시·서귀포시 여러 읍면동에 걸침",
@@ -174,6 +181,7 @@ def fill_admin_areas(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
     """비어 있는 `admin_area`를 채운다. 이미 채운 행(직접 확인한 곳 포함)은 건드리지 않는다."""
     df = df.copy()
     used = mapping[mapping["used"]].groupby("legal_dong")["admin_dong"].agg(list)
+    weak = set(mapping.loc[mapping["evidence"].eq(WEAK_EVIDENCE), "legal_dong"])
     known = set(mapping["legal_dong"])
     for idx, row in df.iterrows():
         if isinstance(row["admin_area"], str) and row["admin_area"]:
@@ -191,13 +199,49 @@ def fill_admin_areas(df: pd.DataFrame, mapping: pd.DataFrame) -> pd.DataFrame:
         elif row["area"] in used:
             admins = used[row["area"]]
             if len(admins) == 1:
-                df.loc[idx, ["admin_area", "admin_method"]] = [admins[0], "변환표"]
+                method = f"변환표 ({WEAK_EVIDENCE})" if row["area"] in weak else "변환표"
+                df.loc[idx, ["admin_area", "admin_method"]] = [admins[0], method]
             else:
                 df.loc[idx, "admin_method"] = f"변환표 애매함: {' / '.join(sorted(admins))}"
         else:
             df.loc[idx, "admin_method"] = (
                 "변환표 근거 부족" if row["area"] in known else "변환표 없음"
             )
+    return df
+
+
+def nearby_ap_admins(keyword: str, ap: pd.DataFrame, boundaries) -> tuple[list[str], list[str]]:
+    """AP 그룹명에 keyword가 들어간 AP의 그룹명과, 좌표로 판정한 행정동 (경계 밖 제외)."""
+    found = ap[ap["apGroupName"].str.contains(keyword, regex=False, na=False)]
+    admins = {
+        boundaries.locate(lat, lon) for lat, lon in zip(found["latitude"], found["longitude"])
+    }
+    return sorted(set(found["place_key"])), sorted(a for a in admins if a)
+
+
+def apply_nearby_ap(df: pd.DataFrame, ap: pd.DataFrame, boundaries) -> pd.DataFrame:
+    """`NEARBY_AP_KEYWORDS` 관광지: 인근 AP가 한 행정동이면 채우고 확인, 없거나 여러 동이면 제외."""
+    df = df.copy()
+    for name, keyword in NEARBY_AP_KEYWORDS.items():
+        idx = df.index[df["sight_name"] == name]
+        if idx.empty:
+            continue
+        places, admins = nearby_ap_admins(keyword, ap, boundaries)
+        df.loc[idx, "matched_name"] = " / ".join(places)
+        df.loc[idx, "coord_admin_ref"] = " / ".join(admins)
+        df.loc[idx, "note"] = (
+            f"주소가 본관이 아닐 수 있어 이름에 '{keyword}'가 들어간 인근 AP "
+            f"({', '.join(places) or '없음'}) 좌표로 판정"
+        )
+        if len(admins) == 1:
+            df.loc[idx, ["admin_area", "admin_method", "confirmed"]] = [
+                admins[0],
+                METHOD_NEARBY,
+                CONFIRMED,
+            ]
+        else:
+            reason = "인근 AP 없음" if not admins else "인근 AP가 여러 행정동"
+            df.loc[idx, ["admin_area", "admin_method", "confirmed"]] = [None, reason, EXCLUDED]
     return df
 
 
@@ -242,7 +286,12 @@ def main(argv: list[str] | None = None) -> None:
         for col in COLUMNS:
             if col not in table:
                 table[col] = None
-        table = fill_admin_areas(table[COLUMNS], mapping)
+        table = table[COLUMNS].copy()
+        computed = table["admin_method"].fillna("").str.startswith(COMPUTED_METHODS)
+        computed &= ~table["admin_method"].eq(METHOD_NEARBY)
+        table.loc[computed, ["admin_area", "admin_method"]] = None
+        table = fill_admin_areas(table, mapping)
+        table = apply_nearby_ap(table, ap, boundaries)
         table.to_csv(SPOT_AREAS_PATH, index=False, encoding="utf-8-sig")
         print(table["admin_method"].fillna("-").value_counts().to_string())
         return

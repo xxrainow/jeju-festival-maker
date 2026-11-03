@@ -3,11 +3,14 @@ import pandas as pd
 from analytics.area_link import load_wifi_ap
 from analytics.tourist_spots import (
     CONFIRMED,
+    EXCLUDED,
     METHOD_AP,
     METHOD_AP_ALIAS,
     METHOD_MULTI,
+    METHOD_NEARBY,
     METHOD_WEB,
     NEEDS_CHECK,
+    apply_nearby_ap,
     build_draft,
     fill_admin_areas,
     load_spot_areas,
@@ -86,6 +89,7 @@ def test_fill_admin_areas():
                 "제주시 봉개동",
             ],
             "used": [True, False, True, True, False],
+            "evidence": ["보통", None, "보통", "보통", None],
         }
     )
     table = pd.DataFrame(
@@ -147,3 +151,76 @@ def test_fill_admin_areas():
     assert out.loc["애매", "admin_method"].startswith("변환표 애매함")
     assert out.loc["근거 부족", "admin_method"] == "변환표 근거 부족"
     assert out.loc["직접 확인", "admin_method"] == "지도 확인"
+
+
+class FakeBoundaries:
+    def __init__(self, by_lat: dict):
+        self.by_lat = by_lat
+
+    def locate(self, lat, lon):
+        return self.by_lat.get(float(lat))
+
+
+def nearby_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "sight_name": ["이중섭미술관"],
+            "matched_name": [None],
+            "coord_admin_ref": [None],
+            "admin_area": [None],
+            "admin_method": ["변환표 애매함: ..."],
+            "note": [""],
+            "confirmed": [NEEDS_CHECK],
+        }
+    )
+
+
+def ap_points(names: list[str], lats: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"apGroupName": names, "place_key": names, "latitude": lats, "longitude": [0] * len(names)}
+    )
+
+
+def test_nearby_ap_single_admin_fills_and_confirms():
+    ap = ap_points(["이중섭거리", "이중섭거리", "서귀포매일올레시장"], [1, 1, 2])
+    b = FakeBoundaries({1.0: "서귀포시 정방동", 2.0: "서귀포시 중앙동"})
+    row = apply_nearby_ap(nearby_table(), ap, b).iloc[0]
+    assert row["admin_area"] == "서귀포시 정방동"
+    assert row["admin_method"] == METHOD_NEARBY
+    assert row["matched_name"] == "이중섭거리"
+    assert row["confirmed"] == CONFIRMED
+
+
+def test_nearby_ap_missing_or_split_is_excluded():
+    b = FakeBoundaries({1.0: "서귀포시 정방동", 2.0: "서귀포시 중앙동"})
+    split = apply_nearby_ap(nearby_table(), ap_points(["이중섭거리", "이중섭공원"], [1, 2]), b)
+    assert split.iloc[0]["confirmed"] == EXCLUDED
+    assert pd.isna(split.iloc[0]["admin_area"])
+    none = apply_nearby_ap(nearby_table(), ap_points(["서귀포매일올레시장"], [2]), b)
+    assert none.iloc[0]["admin_method"] == "인근 AP 없음"
+    assert none.iloc[0]["confirmed"] == EXCLUDED
+
+
+def test_weak_mapping_is_marked_in_admin_method():
+    mapping = pd.DataFrame(
+        {
+            "legal_dong": ["서귀포시 상예동"],
+            "admin_dong": ["서귀포시 예래동"],
+            "used": [True],
+            "evidence": ["근거 약함"],
+        }
+    )
+    table = pd.DataFrame(
+        {
+            "sight_name": ["가"],
+            "method": [METHOD_WEB],
+            "area": ["서귀포시 상예동"],
+            "area_level": ["법정동"],
+            "coord_admin_ref": [None],
+            "admin_area": [None],
+            "admin_method": [None],
+        }
+    )
+    out = fill_admin_areas(table, mapping).iloc[0]
+    assert out["admin_area"] == "서귀포시 예래동"
+    assert out["admin_method"] == "변환표 (근거 약함)"
