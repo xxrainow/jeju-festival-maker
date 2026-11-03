@@ -1,10 +1,12 @@
 """정류소·와이파이 장소의 읍면동 연결 결과를 만들고 매칭률을 보고한다.
 
-실행: uv run python -m analytics.report_area_link [--start 202301 --end 202510]
+실행: uv run python -m analytics.report_area_link [--start 202301 --end 202510] [--groups 묶음.json]
+묶음 파일 형식: {"묶음 이름": ["제주시 일도1동", "제주시 일도2동", ...], ...}
 결과: data/processed/area_link_bus.csv, data/processed/area_link_wifi.csv
 """
 
 import argparse
+import json
 import numbers
 from pathlib import Path
 
@@ -15,11 +17,15 @@ from analytics.area_link import (
     LINKED,
     NO_ADDRESS,
     NOT_FOUND,
+    AreaGroup,
+    area_totals,
+    assign_groups,
     candidate_city,
     link_bus_usage,
     link_wifi_places,
     load_bus_stations,
     load_wifi_ap,
+    mark_exclusions,
     match_summary,
     nearest_area_reference,
 )
@@ -64,7 +70,40 @@ def unmatched_city_table(linked: pd.DataFrame, city: pd.Series) -> str:
     return table(out[["시", LINKED, "미연결", f"{LINKED} 비중(%)", "미연결 비중(%)"]])
 
 
-def bus_report(period) -> list[str]:
+def load_groups(path: Path) -> list[AreaGroup]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [AreaGroup(name, frozenset(dongs)) for name, dongs in data.items()]
+
+
+def aggregation_section(
+    linked: pd.DataFrame, groups: list[AreaGroup]
+) -> tuple[pd.DataFrame, list[str]]:
+    """동네별 집계 제외 요약과 후보지 묶음 합계."""
+    linked = mark_exclusions(linked)
+    _, excluded = area_totals(linked)
+    excluded.columns = ["제외 사유", "장소 수", "이용자 수"]
+    lines = ["### 동네별 집계에서 뺀 항목", table(excluded) if len(excluded) else "없음"]
+    if groups:
+        linked = assign_groups(linked, groups)
+        totals, _ = area_totals(linked, by="group")
+        boundary = (
+            linked[linked["group_method"].eq("경계 묶음") & linked["excluded_reason"].isna()]
+            .groupby("group")["users"]
+            .agg(["size", "sum"])
+        )
+        totals = totals.merge(boundary, how="left", left_on="group", right_index=True).fillna(0)
+        totals.columns = [
+            "묶음",
+            "장소 수",
+            "이용자 수",
+            "경계 묶음 장소 수",
+            "경계 묶음 이용자 수",
+        ]
+        lines += ["### 후보지 묶음 합계", table(totals)]
+    return linked, lines
+
+
+def bus_report(period, groups: list[AreaGroup]) -> list[str]:
     stations = load_bus_stations()
     bus = load_bus_usage(start=period.start_date, end=period.end_date)
     totals = (
@@ -85,6 +124,7 @@ def bus_report(period) -> list[str]:
     linked.loc[no_address, "city"] = (
         linked.loc[no_address, "nearest_area_ref"].fillna("").map(candidate_city)
     )
+    linked, aggregation = aggregation_section(linked, groups)
     linked.to_csv(OUTPUT_DIR / "area_link_bus.csv", index=False, encoding="utf-8-sig")
 
     unmatched = linked[linked["status"] != LINKED]
@@ -113,10 +153,11 @@ def bus_report(period) -> list[str]:
         unmatched_city_table(linked, linked["city"]),
         "### 주소 없는 정류소의 좌표 최근접 지역 상위 10 (참고)",
         table(na_area),
+        *aggregation,
     ]
 
 
-def wifi_report(period) -> list[str]:
+def wifi_report(period, groups: list[AreaGroup]) -> list[str]:
     stations = load_bus_stations()
     users = period.filter_months(load_wifi_users())
     totals = (
@@ -128,6 +169,7 @@ def wifi_report(period) -> list[str]:
     linked["city"] = linked["area"].fillna("").map(candidate_city)
     ambiguous = linked["status"] == AMBIGUOUS
     linked.loc[ambiguous, "city"] = linked.loc[ambiguous, "candidates"].map(candidate_city)
+    linked, aggregation = aggregation_section(linked, groups)
     linked.to_csv(OUTPUT_DIR / "area_link_wifi.csv", index=False, encoding="utf-8-sig")
 
     method = (
@@ -170,6 +212,7 @@ def wifi_report(period) -> list[str]:
         unmatched_city_table(linked, linked["city"]),
         "### 장소 유형별 미연결 비율",
         table(category),
+        *aggregation,
     ]
 
 
@@ -177,11 +220,13 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="읍면동 연결 매칭률 보고")
     parser.add_argument("--start", help="시작 월 YYYYMM")
     parser.add_argument("--end", help="끝 월 YYYYMM")
+    parser.add_argument("--groups", type=Path, help="후보지 행정동 묶음 JSON")
     args = parser.parse_args(argv)
     period = analysis_period(args.start, args.end, default=CANDIDATE_PERIOD)
+    groups = load_groups(args.groups) if args.groups else []
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    lines = bus_report(period) + wifi_report(period)
+    lines = bus_report(period, groups) + wifi_report(period, groups)
     print("\n\n".join(lines))
     print(f"\n상태 값: {LINKED}, {AMBIGUOUS}, {NO_ADDRESS}, {NOT_FOUND}")
 
