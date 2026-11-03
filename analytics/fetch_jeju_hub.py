@@ -129,7 +129,8 @@ def fetch(hub: HubClient, dataset: Dataset, check_only: bool = False) -> pd.Data
         rows.extend(body["data"])
 
     print(f"[{dataset.title}] {len(rows)}건 수집, 호출 {hub.calls[dataset.name]}회")
-    return pd.DataFrame(rows)
+    # 빈 칸이 섞인 정수 열이 소수로 바뀌지 않게 응답값을 그대로 둔다
+    return pd.DataFrame(rows, dtype=object)
 
 
 def main(argv: list[str] | None = None) -> None:

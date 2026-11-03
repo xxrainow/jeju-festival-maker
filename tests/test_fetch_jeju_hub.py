@@ -89,3 +89,13 @@ def test_key_not_printed(monkeypatch, tmp_path, capsys):
     assert KEY not in out
     assert "호출 횟수 버스 정류소 기본 정보: 1회" in out
     assert (tmp_path / "jejuhub_bus_stations.csv").exists()
+
+
+def test_integer_columns_with_blanks_stay_integers():
+    def handler(request):
+        data = [{"name": "a", "roomCount": 61}, {"name": "b", "roomCount": None}]
+        return httpx.Response(200, json={"totCnt": 2, "hasMore": False, "data": data})
+
+    hub = HubClient(KEY, httpx.Client(transport=httpx.MockTransport(handler)))
+    df = fetch(hub, DATASET)
+    assert df.to_csv(index=False) == "name,roomCount\na,61\nb,\n"
