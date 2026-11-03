@@ -55,11 +55,15 @@ class BusUsage:
     daily: pd.DataFrame  # 일별 합계와 이상일 판정 (조회 기간)
     excluded_dates: list[date] = field(default_factory=list)
     abnormal_ratio: float = BUS_ABNORMAL_RATIO
+    start: date | None = None  # 조회 기간
+    end: date | None = None
 
     def notes(self) -> list[str]:
         """분석 결과 warnings에 넣을 제외 기간 설명."""
+        notes = []
         start, end = BUS_MISSING_PERIOD
-        notes = [f"버스 이용 인원: {start.isoformat()} ~ {end.isoformat()} 원자료 없음"]
+        if (self.start is None or self.start <= end) and (self.end is None or self.end >= start):
+            notes.append(f"버스 이용 인원: {start.isoformat()} ~ {end.isoformat()} 원자료 없음")
         if self.excluded_dates:
             dates = ", ".join(d.isoformat() for d in self.excluded_dates)
             notes.append(
@@ -151,7 +155,7 @@ def load_bus_usage(
     df["base_date"] = df["base_date"].dt.date
     keys = {name: normalize_station_name(name) for name in df["station_name"].unique()}
     df["station_key"] = df["station_name"].map(keys)
-    return BusUsage(df, daily, excluded, abnormal_ratio)
+    return BusUsage(df, daily, excluded, abnormal_ratio, start, end)
 
 
 def _load_wifi(path: Path, value_column: str) -> pd.DataFrame:

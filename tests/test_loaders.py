@@ -254,3 +254,11 @@ def test_festivals_header_row_and_jeju_filter(tmp_path, monkeypatch):
     assert calls["header"] == 1
     assert df["축제명"].tolist() == ["제22회 쇠소깍축제", "2026 하영 빛나는 서귀포"]
     assert df["is_duplicate"].tolist() == [False, True]
+
+
+def test_bus_missing_period_note_only_when_range_overlaps(tmp_path):
+    path = write(tmp_path / "bus.csv", BUS_HEADER + JANUARY_MONDAYS)
+    outside = load_bus_usage(path, start=date(2023, 1, 1)).notes()
+    assert not any("원자료 없음" in note for note in outside)
+    inside = load_bus_usage(path, start=date(2022, 9, 1), end=date(2022, 10, 1)).notes()
+    assert any("2022-08-12 ~ 2022-11-23 원자료 없음" in note for note in inside)
