@@ -27,6 +27,7 @@ BUS_STATIONS_PATH = RAW_DIR / "jejuhub_bus_stations.csv"
 WIFI_AP_PATH = RAW_DIR / "jejuhub_wifi_ap.csv"
 
 LINKED, AMBIGUOUS, NO_ADDRESS, NOT_FOUND = "연결", "애매함", "주소 없음", "이름 없음"
+METHOD_AP_COORD = "AP 좌표"
 STATUSES = [LINKED, AMBIGUOUS, NO_ADDRESS, NOT_FOUND]
 
 _CITY = re.compile(r"(제주시|서귀포시)")
@@ -129,16 +130,65 @@ def link_bus_usage(totals: pd.DataFrame, stations: pd.DataFrame) -> pd.DataFrame
     return linked
 
 
+def _has_dong(candidates: str) -> bool:
+    return any(area_level(c, "동") == "동" for c in candidates.split(" / ") if c)
+
+
+def relink_by_ap_coords(linked: pd.DataFrame, ap: pd.DataFrame, boundaries) -> pd.DataFrame:
+    """AP 그룹명으로 찾았지만 주소가 동(법정동)인 장소를 AP 좌표가 들어가는 행정동으로 다시 붙인다.
+
+    그룹의 AP가 모두 한 행정동 안이면 연결, 여러 행정동이면 애매함. 경계 밖 AP는 빼고 본다.
+    좌표가 모두 경계 밖이면 주소(법정동) 연결을 그대로 둔다. 원래 주소 결과는 `address_area`에 남긴다.
+    """
+    df = linked.copy()
+    df["address_area"] = df["area"].where(df["status"] == LINKED, df["candidates"])
+    target = df["method"].eq("AP 그룹명") & (
+        df["area_level"].eq("법정동")
+        | (df["status"].eq(AMBIGUOUS) & df["candidates"].map(_has_dong))
+    )
+    names = set(df.loc[target, "wifi_place_name"])
+    points = ap[ap["place_key"].isin(names)]
+    admins = (
+        pd.Series(
+            [
+                boundaries.locate(lat, lon)
+                for lat, lon in zip(points["latitude"], points["longitude"])
+            ],
+            index=points.index,
+        )
+        .groupby(points["place_key"])
+        .agg(lambda s: sorted(set(s.dropna())))
+    )
+    for idx in df.index[target]:
+        found = admins.get(df.at[idx, "wifi_place_name"], [])
+        if not found:
+            continue
+        df.at[idx, "method"] = METHOD_AP_COORD
+        df.at[idx, "candidates"] = " / ".join(found)
+        if len(found) == 1:
+            df.at[idx, "status"] = LINKED
+            df.at[idx, "area"] = found[0]
+            df.at[idx, "area_level"] = area_level(found[0], "행정동")
+        else:
+            df.at[idx, "status"] = AMBIGUOUS
+            df.at[idx, "area"] = None
+            df.at[idx, "area_level"] = None
+    return df
+
+
 def link_wifi_places(
-    totals: pd.DataFrame, ap: pd.DataFrame, stations: pd.DataFrame
+    totals: pd.DataFrame, ap: pd.DataFrame, stations: pd.DataFrame, boundaries=None
 ) -> pd.DataFrame:
     """와이파이 장소별 이용자(`wifi_place_name`, `users`)에 읍면동을 붙인다.
 
     1) AP 그룹명과 같은 이름(법정동) 2) 장소명 끝의 정류소 ID로 정류소 주소(행정동) 순서로 찾는다.
+    boundaries를 주면 동 지역 AP 그룹은 AP 좌표로 행정동을 판정한다 (`relink_by_ap_coords`).
     """
     linked = _apply_lookup(
         totals, "wifi_place_name", build_lookup(ap, "place_key", "area"), "AP 그룹명", "법정동"
     )
+    if boundaries is not None:
+        linked = relink_by_ap_coords(linked, ap, boundaries)
 
     by_id = build_lookup(stations, "stationId", "area").set_index("key")
     ids = linked.loc[linked["status"] == NOT_FOUND, "wifi_place_name"].map(

@@ -5,6 +5,7 @@ from analytics.area_link import (
     AMBIGUOUS,
     EXCLUDE_TRAIL,
     LINKED,
+    METHOD_AP_COORD,
     NO_ADDRESS,
     NOT_FOUND,
     AreaGroup,
@@ -290,3 +291,58 @@ def test_area_totals_skip_exclusions_and_report_them():
     ]
     by_group, _ = area_totals(df, by="group")
     assert by_group.to_dict("records") == [{"group": "원도심", "places": 3, "users": 90}]
+
+
+class FakeBoundaries:
+    def __init__(self, by_lat: dict):
+        self.by_lat = by_lat
+
+    def locate(self, lat, lon):
+        return self.by_lat.get(float(lat))
+
+
+def test_dong_ap_groups_are_relinked_by_coordinates(tmp_path):
+    ap = pd.DataFrame(
+        {
+            "apGroupName": [
+                "제주동문시장 #1",
+                "제주동문시장 #2",
+                "도두봉",
+                "탑동 #1",
+                "탑동 #2",
+                "함덕",
+            ],
+            "addressDong": [
+                "제주특별자치도 제주시 이도일동",
+                "제주특별자치도 제주시 일도일동",
+                "제주특별자치도 제주시 도두일동",
+                "제주특별자치도 제주시 삼도이동",
+                "제주특별자치도 제주시 삼도이동",
+                "제주특별자치도 제주시 조천읍 함덕리",
+            ],
+            "latitude": ["1", "1", "9", "2", "3", "4"],
+            "longitude": ["0"] * 6,
+        }
+    )
+    path = tmp_path / "ap.csv"
+    ap.to_csv(path, index=False, encoding="utf-8-sig")
+    ap = load_wifi_ap(path)
+    b = FakeBoundaries(
+        {1.0: "제주시 일도1동", 2.0: "제주시 삼도2동", 3.0: "제주시 건입동", 4.0: "제주시 구좌읍"}
+    )
+    totals = pd.DataFrame(
+        {"wifi_place_name": ["제주동문시장", "도두봉", "탑동", "함덕"], "users": [1, 2, 3, 4]}
+    )
+    linked = link_wifi_places(totals, ap, stations(tmp_path, ""), b).set_index("wifi_place_name")
+    # 법정동 두 곳에 걸려 애매했던 곳도 좌표가 한 행정동이면 연결
+    assert linked.loc["제주동문시장", "status"] == LINKED
+    assert linked.loc["제주동문시장", "area"] == "제주시 일도1동"
+    assert linked.loc["제주동문시장", "area_level"] == "행정동"
+    assert linked.loc["제주동문시장", "method"] == METHOD_AP_COORD
+    # 좌표가 경계 밖이면 주소(법정동) 연결 유지
+    assert linked.loc["도두봉", "area_level"] == "법정동"
+    # AP가 여러 행정동에 떨어지면 애매함
+    assert linked.loc["탑동", "status"] == AMBIGUOUS
+    assert linked.loc["탑동", "candidates"] == "제주시 건입동 / 제주시 삼도2동"
+    # 읍면 주소는 좌표와 달라도 주소 그대로
+    assert linked.loc["함덕", "area"] == "제주시 조천읍"
