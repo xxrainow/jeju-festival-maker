@@ -28,6 +28,7 @@ WIFI_AP_PATH = RAW_DIR / "jejuhub_wifi_ap.csv"
 
 LINKED, AMBIGUOUS, NO_ADDRESS, NOT_FOUND = "연결", "애매함", "주소 없음", "이름 없음"
 METHOD_AP_COORD = "AP 좌표"
+METHOD_AP_COORD_CONFLICT = "AP 좌표 (주소와 불일치)"
 STATUSES = [LINKED, AMBIGUOUS, NO_ADDRESS, NOT_FOUND]
 
 _CITY = re.compile(r"(제주시|서귀포시)")
@@ -134,10 +135,18 @@ def _has_dong(candidates: str) -> bool:
     return any(area_level(c, "동") == "동" for c in candidates.split(" / ") if c)
 
 
+def _address_conflict(address: str, admin: str) -> bool:
+    """주소가 동 하나인데 좌표 판정이 읍면이거나 다른 시이면 True."""
+    if not isinstance(address, str) or " / " in address or area_level(address, "동") != "동":
+        return False
+    return area_level(admin, "동") == "읍면" or address.split()[0] != admin.split()[0]
+
+
 def relink_by_ap_coords(linked: pd.DataFrame, ap: pd.DataFrame, boundaries) -> pd.DataFrame:
     """AP 그룹명으로 찾았지만 주소가 동(법정동)인 장소를 AP 좌표가 들어가는 행정동으로 다시 붙인다.
 
     그룹의 AP가 모두 한 행정동 안이면 연결, 여러 행정동이면 애매함. 경계 밖 AP는 빼고 본다.
+    주소는 동인데 좌표가 읍면이나 다른 시로 나오면 주소와 좌표를 후보로 둔 애매함.
     좌표가 모두 경계 밖이면 주소(법정동) 연결을 그대로 둔다. 원래 주소 결과는 `address_area`에 남긴다.
     """
     df = linked.copy()
@@ -165,6 +174,12 @@ def relink_by_ap_coords(linked: pd.DataFrame, ap: pd.DataFrame, boundaries) -> p
             continue
         df.at[idx, "method"] = METHOD_AP_COORD
         df.at[idx, "candidates"] = " / ".join(found)
+        address = df.at[idx, "address_area"]
+        if len(found) == 1 and _address_conflict(address, found[0]):
+            # 주소는 동인데 좌표가 읍면·다른 시: 어느 쪽이 맞는지 몰라 애매함
+            df.at[idx, "method"] = METHOD_AP_COORD_CONFLICT
+            df.at[idx, "candidates"] = f"{address} / {found[0]}"
+            found = [address, found[0]]
         if len(found) == 1:
             df.at[idx, "status"] = LINKED
             df.at[idx, "area"] = found[0]

@@ -6,6 +6,7 @@ from analytics.area_link import (
     EXCLUDE_TRAIL,
     LINKED,
     METHOD_AP_COORD,
+    METHOD_AP_COORD_CONFLICT,
     NO_ADDRESS,
     NOT_FOUND,
     AreaGroup,
@@ -311,6 +312,7 @@ def test_dong_ap_groups_are_relinked_by_coordinates(tmp_path):
                 "탑동 #1",
                 "탑동 #2",
                 "함덕",
+                "종달리수국길",
             ],
             "addressDong": [
                 "제주특별자치도 제주시 이도일동",
@@ -319,9 +321,10 @@ def test_dong_ap_groups_are_relinked_by_coordinates(tmp_path):
                 "제주특별자치도 제주시 삼도이동",
                 "제주특별자치도 제주시 삼도이동",
                 "제주특별자치도 제주시 조천읍 함덕리",
+                "제주특별자치도 제주시 노형동",
             ],
-            "latitude": ["1", "1", "9", "2", "3", "4"],
-            "longitude": ["0"] * 6,
+            "latitude": ["1", "1", "9", "2", "3", "4", "4"],
+            "longitude": ["0"] * 7,
         }
     )
     path = tmp_path / "ap.csv"
@@ -331,7 +334,10 @@ def test_dong_ap_groups_are_relinked_by_coordinates(tmp_path):
         {1.0: "제주시 일도1동", 2.0: "제주시 삼도2동", 3.0: "제주시 건입동", 4.0: "제주시 구좌읍"}
     )
     totals = pd.DataFrame(
-        {"wifi_place_name": ["제주동문시장", "도두봉", "탑동", "함덕"], "users": [1, 2, 3, 4]}
+        {
+            "wifi_place_name": ["제주동문시장", "도두봉", "탑동", "함덕", "종달리수국길"],
+            "users": [1, 2, 3, 4, 5],
+        }
     )
     linked = link_wifi_places(totals, ap, stations(tmp_path, ""), b).set_index("wifi_place_name")
     # 법정동 두 곳에 걸려 애매했던 곳도 좌표가 한 행정동이면 연결
@@ -346,3 +352,7 @@ def test_dong_ap_groups_are_relinked_by_coordinates(tmp_path):
     assert linked.loc["탑동", "candidates"] == "제주시 건입동 / 제주시 삼도2동"
     # 읍면 주소는 좌표와 달라도 주소 그대로
     assert linked.loc["함덕", "area"] == "제주시 조천읍"
+    # 주소는 동인데 좌표가 읍면이면 애매함
+    assert linked.loc["종달리수국길", "status"] == AMBIGUOUS
+    assert linked.loc["종달리수국길", "candidates"] == "제주시 노형동 / 제주시 구좌읍"
+    assert linked.loc["종달리수국길", "method"] == METHOD_AP_COORD_CONFLICT
