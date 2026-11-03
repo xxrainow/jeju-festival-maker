@@ -14,6 +14,7 @@
 """
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -32,13 +33,13 @@ _CITY = re.compile(r"(제주시|서귀포시)")
 _EUPMYEON = re.compile(r"^\S+[읍면]$")
 _DONG = re.compile(r"^\S+동$")
 _LOT_NUMBER = re.compile(r"\s\d+(?:-\d+)?(?:번지)?$")
-_STATION_ID = re.compile(r"[\[(](\d{9})[\])]$")
+_STATION_ID = re.compile(r"[\[(](\d{9})[\])]")
 
 _WIFI_CATEGORIES = [
     ("버스정류소", re.compile(r"버스정류소")),
     ("전기차충전소", re.compile(r"^전기차충전소")),
     ("공원", re.compile(r"공원$")),
-    ("올레·코스", re.compile(r"코스$")),
+    ("올레·코스", re.compile(r"^\d+(?:-\d+)?(?:-[A-Z])?코스(?:\(.*\))?$")),
 ]
 
 
@@ -63,9 +64,9 @@ def area_level(area: str | None, dong_level: str) -> str | None:
 
 
 def station_id_from_wifi_name(place_name: str) -> str | None:
-    """`버스정류소_효돈초등학교_(효돈중학교방면)_[406000459]`의 정류소 ID."""
-    match = _STATION_ID.search(place_name)
-    return match.group(1) if match else None
+    """`버스정류소_효돈초등학교_(효돈중학교방면)_[406000459]`의 정류소 ID. 여러 개면 마지막."""
+    ids = _STATION_ID.findall(place_name)
+    return ids[-1] if ids else None
 
 
 def wifi_category(place_name: str) -> str:
@@ -195,3 +196,95 @@ def candidate_city(candidates: str) -> str:
     if len(cities) == 1:
         return cities[0]
     return "여러 시" if cities else "알 수 없음"
+
+
+# 동네별 집계에서 빼는 항목
+EXCLUDE_OLLE = "올레 코스"
+EXCLUDE_CROSS_CITY = "다른 시에 같은 이름의 정류소"
+
+
+def mark_exclusions(linked: pd.DataFrame) -> pd.DataFrame:
+    """동네별 집계에서 뺄 항목에 `excluded_reason`을 붙인다.
+
+    - 올레 코스 (와이파이): 여러 동을 지나는 선형 경로라 한 동에 붙일 수 없다
+    - 다른 시에 같은 이름의 정류소 (버스): 이용 자료에 이름만 있어 서로 다른 정류소를 나눌 수 없다
+    """
+    df = linked.copy()
+    df["excluded_reason"] = None
+    if "category" in df:
+        df.loc[df["category"] == "올레·코스", "excluded_reason"] = EXCLUDE_OLLE
+    if "station_key" in df:
+        cross_city = df["status"].eq(AMBIGUOUS) & df["candidates"].map(candidate_city).eq("여러 시")
+        df.loc[cross_city, "excluded_reason"] = EXCLUDE_CROSS_CITY
+    return df
+
+
+@dataclass(frozen=True)
+class AreaGroup:
+    """후보지로 쓰는 행정동 묶음. dongs는 `시 행정동` 또는 `시 읍면` 형식."""
+
+    name: str
+    dongs: frozenset[str]
+
+
+def validate_groups(groups: list[AreaGroup]) -> None:
+    seen: dict[str, str] = {}
+    for group in groups:
+        for dong in group.dongs:
+            if dong in seen:
+                raise ValueError(f"{dong}이(가) {seen[dong]}과 {group.name}에 모두 들어 있습니다")
+            seen[dong] = group.name
+
+
+def assign_groups(linked: pd.DataFrame, groups: list[AreaGroup]) -> pd.DataFrame:
+    """행정동 단위로 연결된 장소에 후보지 묶음을 붙인다.
+
+    - 연결된 장소: 행정동·읍면이 묶음 안에 있으면 그 묶음 (`동 연결`)
+    - 애매한 장소: 후보 동이 모두 같은 묶음 안에 있으면 그 묶음 (`경계 묶음`). 상태는 애매함 그대로
+    법정동으로만 연결된 장소는 행정동 변환 전까지 묶음에 넣지 않는다.
+    """
+    validate_groups(groups)
+    owner = {dong: group.name for group in groups for dong in group.dongs}
+    df = linked.copy()
+    df["group"] = None
+    df["group_method"] = None
+
+    admin = df["status"].eq(LINKED) & df["area_level"].isin(["행정동", "읍면"])
+    df.loc[admin, "group"] = df.loc[admin, "area"].map(owner)
+    df.loc[admin & df["group"].notna(), "group_method"] = "동 연결"
+
+    def boundary_group(candidates: str) -> str | None:
+        names = {owner.get(c) for c in candidates.split(" / ")}
+        return names.pop() if len(names) == 1 else None
+
+    # 와이파이 애매함 후보는 법정동이라 행정동 묶음과 비교하지 않는다
+    is_admin_source = df.get("method", pd.Series(index=df.index)).ne("AP 그룹명")
+    ambiguous = df["status"].eq(AMBIGUOUS) & is_admin_source
+    df.loc[ambiguous, "group"] = df.loc[ambiguous, "candidates"].map(boundary_group)
+    df.loc[ambiguous & df["group"].notna(), "group_method"] = "경계 묶음"
+    return df
+
+
+def area_totals(linked: pd.DataFrame, by: str = "area") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """동네별(`area`) 또는 묶음별(`group`) 이용자 합계와 제외 요약.
+
+    제외 항목(`excluded_reason`)은 합계에 넣지 않고 사유별 개수와 이용자 수만 돌려준다.
+    """
+    df = linked if "excluded_reason" in linked else mark_exclusions(linked)
+    excluded = df["excluded_reason"].notna()
+    summary = (
+        df[excluded]
+        .groupby("excluded_reason")
+        .agg(places=("users", "size"), users=("users", "sum"))
+        .reset_index()
+    )
+    kept = df[~excluded & df[by].notna()]
+    if by == "area":
+        kept = kept[kept["status"] == LINKED]
+    totals = (
+        kept.groupby(by)
+        .agg(places=("users", "size"), users=("users", "sum"))
+        .sort_values("users", ascending=False)
+        .reset_index()
+    )
+    return totals, summary

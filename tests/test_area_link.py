@@ -6,12 +6,16 @@ from analytics.area_link import (
     LINKED,
     NO_ADDRESS,
     NOT_FOUND,
+    AreaGroup,
     area_level,
+    area_totals,
+    assign_groups,
     candidate_city,
     link_bus_usage,
     link_wifi_places,
     load_bus_stations,
     load_wifi_ap,
+    mark_exclusions,
     match_summary,
     nearest_area_reference,
     parse_area,
@@ -64,6 +68,12 @@ def test_station_id_from_wifi_name():
     )
     assert station_id_from_wifi_name("서홍동복지회관 버스정류소(406000491)") == "406000491"
     assert station_id_from_wifi_name("버스정류소_반석아파트[동]") is None
+    assert (
+        station_id_from_wifi_name(
+            "버스정류소_매일올레시장 7번입구_(동문로터리방면)_[406001804]_매일올레시장 7번입구"
+        )
+        == "406001804"
+    )
 
 
 def test_wifi_category():
@@ -71,6 +81,10 @@ def test_wifi_category():
     assert wifi_category("전기차충전소_제주보건소") == "전기차충전소"
     assert wifi_category("1-93호공원") == "공원"
     assert wifi_category("17코스") == "올레·코스"
+    assert wifi_category("3-B코스") == "올레·코스"
+    assert wifi_category("14-1코스") == "올레·코스"
+    assert wifi_category("16코스(고내포구-항파두리-광령1리)") == "올레·코스"
+    assert wifi_category("서귀포매일올레시장") == "기타"
     assert wifi_category("중앙도서관") == "기타"
 
 
@@ -186,3 +200,86 @@ def test_nearest_area_reference_is_only_for_no_address(tmp_path):
     ref = nearest_area_reference(linked, df)
     assert ref.to_dict() == {2: "제주시 삼도2동"}
     assert pd.isna(linked.loc[2, "area"])
+
+
+OLD_TOWN = AreaGroup("원도심", frozenset({"제주시 일도2동", "제주시 이도2동", "제주시 건입동"}))
+
+
+def bus_linked() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "station_key": ["문예회관", "사라봉", "시민회관", "세기아파트", "한라병원", "동문시장"],
+            "users": [10, 20, 30, 40, 50, 60],
+            "status": [AMBIGUOUS, AMBIGUOUS, AMBIGUOUS, AMBIGUOUS, LINKED, LINKED],
+            "candidates": [
+                "제주시 이도2동 / 제주시 일도2동",
+                "제주시 건입동 / 제주시 일도2동",
+                "제주시 삼도2동 / 제주시 이도1동",
+                "서귀포시 동홍동 / 제주시 연동",
+                "제주시 연동",
+                "제주시 일도2동",
+            ],
+            "area": [None, None, None, None, "제주시 연동", "제주시 일도2동"],
+            "area_level": [None, None, None, None, "행정동", "행정동"],
+            "method": ["정류소명"] * 6,
+        }
+    )
+
+
+def test_cross_city_station_is_excluded():
+    df = mark_exclusions(bus_linked())
+    assert df.set_index("station_key")["excluded_reason"].dropna().to_dict() == {
+        "세기아파트": "다른 시에 같은 이름의 정류소"
+    }
+
+
+def test_olle_course_is_excluded_but_cross_city_rule_is_bus_only():
+    wifi = pd.DataFrame(
+        {
+            "wifi_place_name": ["6코스", "사려니숲길", "도두봉"],
+            "users": [5, 6, 7],
+            "status": [AMBIGUOUS, AMBIGUOUS, LINKED],
+            "candidates": [
+                "서귀포시 동홍동 / 서귀포시 보목동",
+                "서귀포시 표선면 / 제주시 봉개동",
+                "",
+            ],
+            "category": ["올레·코스", "기타", "기타"],
+        }
+    )
+    reasons = mark_exclusions(wifi)["excluded_reason"].tolist()
+    assert reasons == ["올레 코스", None, None]
+
+
+def test_boundary_station_joins_group_when_all_candidates_inside():
+    df = assign_groups(bus_linked(), [OLD_TOWN]).set_index("station_key")
+    assert df.loc["문예회관", "group"] == "원도심"
+    assert df.loc["문예회관", "group_method"] == "경계 묶음"
+    assert df.loc["문예회관", "status"] == AMBIGUOUS
+    assert df.loc["사라봉", "group"] == "원도심"
+    assert pd.isna(df.loc["시민회관", "group"])  # 후보 동이 묶음 밖에 있음
+    assert df.loc["동문시장", "group_method"] == "동 연결"
+    assert pd.isna(df.loc["한라병원", "group"])
+
+
+def test_legal_dong_ambiguity_is_not_grouped():
+    wifi = bus_linked().assign(method="AP 그룹명")
+    df = assign_groups(wifi, [OLD_TOWN])
+    assert df.loc[df["status"] == AMBIGUOUS, "group"].isna().all()
+
+
+def test_overlapping_groups_are_rejected():
+    other = AreaGroup("동부", frozenset({"제주시 건입동", "제주시 화북동"}))
+    with pytest.raises(ValueError, match="건입동"):
+        assign_groups(bus_linked(), [OLD_TOWN, other])
+
+
+def test_area_totals_skip_exclusions_and_report_them():
+    df = assign_groups(mark_exclusions(bus_linked()), [OLD_TOWN])
+    by_area, excluded = area_totals(df)
+    assert by_area.set_index("area")["users"].to_dict() == {"제주시 일도2동": 60, "제주시 연동": 50}
+    assert excluded.to_dict("records") == [
+        {"excluded_reason": "다른 시에 같은 이름의 정류소", "places": 1, "users": 40}
+    ]
+    by_group, _ = area_totals(df, by="group")
+    assert by_group.to_dict("records") == [{"group": "원도심", "places": 3, "users": 90}]
