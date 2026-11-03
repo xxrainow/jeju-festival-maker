@@ -28,10 +28,17 @@ from analytics.area_link import (
     parse_area,
 )
 from analytics.boundary import load_jeju_boundaries
-from analytics.dong_mapping import build_pair_mapping, collect_pairs, convert_legal_to_admin
+from analytics.dong_mapping import (
+    CONVERTED,
+    CONVERTED_WEAK,
+    build_pair_mapping,
+    collect_pairs,
+    convert_legal_to_admin,
+)
 from analytics.loaders import load_bus_usage, load_festivals, load_wifi_users
 from analytics.periods import COMPARISON_PERIOD, AnalysisPeriod, analysis_period
 from analytics.report_area_link import table
+from analytics.tourist_spots import EXCLUDED as SPOT_EXCLUDED
 from analytics.tourist_spots import (
     METHOD_MULTI,
     load_spot_areas,
@@ -203,7 +210,7 @@ def lodging_frame(path: Path = LODGING_PATH) -> pd.DataFrame:
 
 def converted_rooms(df: pd.DataFrame, mapping: pd.DataFrame) -> float:
     """변환표로 행정동 하나로 바뀐 숙박업 객실 수."""
-    return df.loc[df["conversion"].eq("1:1 변환"), "rooms"].sum()
+    return df.loc[df["conversion"].isin([CONVERTED, CONVERTED_WEAK]), "rooms"].sum()
 
 
 def lodging_indicator(mapping: pd.DataFrame):
@@ -258,7 +265,9 @@ def spot_frame(period: AnalysisPeriod) -> pd.DataFrame:
     table["area"] = table["admin_area"].where(table["sight_name"].isin(usable))
     # 동 지역 여부는 주소(법정동·읍면)로 판단
     table["candidates"] = table["area"].fillna(table["admin_area"]).fillna(table["address_area"])
-    table["excluded_reason"] = table["method"].eq(METHOD_MULTI).map({True: "여러 동에 걸침"})
+    table["excluded_reason"] = None
+    table.loc[table["method"].eq(METHOD_MULTI), "excluded_reason"] = "여러 동에 걸침"
+    table.loc[table["confirmed"].eq(SPOT_EXCLUDED), "excluded_reason"] = "위치 미확정"
     cols = ["sight_name", "area", "candidates", "excluded_reason"]
     df = per_spot.merge(table[cols], on="sight_name", how="left", validate="1:1")
     df["area_level"] = df["area"].map(lambda a: area_level(a, "행정동"))
@@ -409,6 +418,7 @@ def mapping_table(mapping: pd.DataFrame) -> pd.DataFrame:
             "used",
             "suspect_reason",
             "admin_count",
+            "evidence",
         ]
     ]
     out.columns = [
@@ -420,6 +430,7 @@ def mapping_table(mapping: pd.DataFrame) -> pd.DataFrame:
         "변환 근거",
         "오류 의심 사유",
         "근거 행정동 수",
+        "근거 강도",
     ]
     return out
 
