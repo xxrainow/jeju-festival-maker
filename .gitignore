@@ -15,3 +15,7 @@ data/processed/*
 outputs/*
 !outputs/.gitkeep
 *.log
+
+# 참고 문서 원본 (hwp, 데이터 명세서 xlsx)
+docs/*.hwp
+docs/*.xlsx
