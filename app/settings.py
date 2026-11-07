@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     search_provider: str = ""
     search_api_key: SecretStr = SecretStr("")
+
+    naver_client_id: SecretStr = SecretStr("")
+    naver_client_secret: SecretStr = SecretStr("")
+    tavily_api_key: SecretStr = SecretStr("")
+
     jeju_hub_key: SecretStr = SecretStr("")
+
     max_agent_steps: int = Field(default=6, ge=1, le=20)
     request_timeout_seconds: int = Field(default=30, ge=1, le=120)

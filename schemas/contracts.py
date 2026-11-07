@@ -1,6 +1,6 @@
 """Shared contracts: coordinate changes between AI and data developers."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
@@ -19,6 +19,7 @@ class FestivalCase(BaseModel):
     source_url: HttpUrl
     published_at: date | None = None
     event_date: date | None = None
+    retrieved_at: datetime  # 수집 시점. 저장 사례를 쓸 때 화면에 표시한다
     evidence_text: str
     evidence_status: Literal["full_text", "snippet_only", "unavailable"]
 
@@ -28,7 +29,8 @@ class FestivalIdea(BaseModel):
     title: str
     summary: str
     programs: list[str]
-    target_audience: str
+    target_audience: list[str] = Field(min_length=1, max_length=3)  # 첫 항목이 주 대상
+    rationale: str  # 제주에 적용할 이유
     case_ids: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     status: Literal["unreviewed"] = "unreviewed"
