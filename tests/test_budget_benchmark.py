@@ -111,3 +111,74 @@ def test_link_jeju():
     assert out["admin_area"].iloc[3:].isna().all()
     assert out["place_check"].iloc[1] == "법정동 이름이기도 함 (확인 필요)"
     assert out["place_check"].iloc[5] == "시군구와 장소명의 시가 다름"
+
+
+def test_per_capita_summary_side_by_side():
+    from analytics.budget_benchmark import per_capita_summary
+
+    df = plan(
+        per_capita_krw=[1000.0, 3000.0, None],
+        per_capita_telecom_krw=[None, None, 500.0],
+    )
+    row = per_capita_summary(df).iloc[0]
+    assert row["계측 건수"] == 2 and row["계측 중간값"] == 2000
+    assert row["통신 데이터 건수"] == 1 and row["통신 데이터 중간값"] == 500
+
+
+def test_match_standard_by_name():
+    from analytics.budget_benchmark import festival_key, match_standard
+
+    assert festival_key("2026 제21회 중문칠선녀축제") == "중문칠선녀축제"
+    standard = pd.DataFrame(
+        {
+            "std_name": [
+                "제21회 중문칠선녀축제",
+                "네 번째. 서홍동 웃물교 벚꽃구경",
+                "가을국화축제 체험",
+                "가을국화축제 공연",
+            ],
+            "std_admin_area": ["서귀포시 중문동", None, "가", "나"],
+        }
+    )
+    names = pd.Series(
+        ["2026 제21회 중문칠선녀축제", "네 번째 서홍동 웃물교 벚꽃구경", "가을국화축제", "없음"]
+    )
+    out = match_standard(names, standard)
+    assert out["std_name"].tolist()[:2] == [
+        "제21회 중문칠선녀축제",
+        "네 번째. 서홍동 웃물교 벚꽃구경",
+    ]
+    assert out["std_name"].iloc[2:].isna().all()  # 여러 개가 맞거나 없으면 매칭 안 함
+
+
+def test_link_jeju_uses_standard_coordinates():
+    df = pd.DataFrame(
+        {
+            "sido": ["제주"] * 4,
+            "name": ["칠십리축제", "칠선녀축제", "다른동축제", "웃물교벚꽃"],
+            "place_sigungu": ["서귀포시"] * 4,
+            "place_emd": ["-", "중문동", "서홍동", "서홍동"],
+            "place_name": ["천지연폭포 주차장", "천제연", "솜반천", "웃물교"],
+        }
+    )
+    mapping = pd.DataFrame(
+        {
+            "legal_dong": ["서귀포시 중문동", "서귀포시 서홍동"],
+            "admin_dong": ["서귀포시 중문동", "서귀포시 천지동"],
+            "used": [True, True],
+            "evidence": ["보통", "보통"],
+        }
+    )
+    standard = pd.DataFrame(
+        {
+            "std_name": ["칠십리축제", "칠선녀축제", "다른동축제", "웃물교벚꽃"],
+            "std_admin_area": ["서귀포시 천지동", "서귀포시 중문동", "서귀포시 천지동", None],
+        }
+    )
+    out = link_jeju(df, mapping, standard).set_index("name")
+    assert out.loc["칠십리축제", "link_result"] == "표준데이터 좌표"
+    assert out.loc["칠십리축제", "admin_area"] == "서귀포시 천지동"
+    assert out.loc["칠선녀축제", "place_check"] == "표준데이터 좌표로 확인 (같음)"
+    assert out.loc["다른동축제", "place_check"] == "표준데이터 좌표는 서귀포시 천지동 (다름)"
+    assert out.loc["다른동축제", "admin_area"] == "서귀포시 서홍동"  # 바꾸지 않고 표시만
+    assert out.loc["웃물교벚꽃", "place_check"] == "법정동 이름이기도 함 (표준데이터에 좌표 없음)"
