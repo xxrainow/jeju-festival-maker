@@ -58,3 +58,17 @@ if report.data is not None:                 # 오류가 없을 때만 표가 있
 - 4-11 원자료는 센터 밖으로 반출할 수 없고 가공 결과만 반출 가능하다. 10 미만 값이 있으면 반출 전에 가리거나 합친다
 - 데모 파일: `data/demo/flow_demo_20250512_20250525.csv.gz` (2025-05-12~05-25, 가짜 데이터). 다시 만들기: `uv run python -m analytics.make_demo_flow`
 - 데모 파일의 권역(`dstrct_se`)은 명세서에 근거가 없는 값이다. 권역 단위 분석에는 쓰지 않는다
+
+## 5. 예산 벤치마크 (문체부 2026 지역축제 개최 계획)
+
+```python
+import pandas as pd
+
+bench = pd.read_csv("data/processed/festival_budget_benchmark.csv")  # uv run python -m analytics.budget_benchmark 먼저
+row = bench[(bench["축제 유형"] == "지역특산물") & (bench["장소 유형"] == "마을형") & (bench["기간"] == "2~3일")]
+```
+
+- 열: 축제 유형, 장소 유형, 기간(2~3일 / 4일 이상), 건수, 하위25%, 중간값, 상위25% (단위 백만원), 비고("표본 부족"이면 5건 미만)
+- 기획안에는 "문체부 2026 지역축제 개최 계획 중 유사 축제 N건의 예산 중간값"처럼 건수와 출처를 함께 쓴다
+- 1인당 비용은 방문객을 계측한 축제만 계산한 값이다. 방문객 수는 주최 측 발표라 점수 계산에 쓰지 않는다
+- 축제별 표(`festival_plan_2026.parquet`)의 `suspect_reasons`가 있는 축제는 사례로 인용할 때 주의 문구를 붙인다
