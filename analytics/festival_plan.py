@@ -4,6 +4,7 @@
 - 담당자 칸(소속, 부서명, 직급/직책, 성명, 연락처)은 읽지 않는다. 결과 파일에도 남지 않는다
 - "미집계", "최초 개최", "모름", "미확정" 같은 글자는 결측으로 바꾸고 원래 글자를 `*_missing`에 남긴다
 - 방문객 계측 방법(계측/추정/미집계/기타/무응답)은 그대로 두고, 1인당 비용은 "계측"만 계산한다
+- "추정"이면서 계측 방법 비고가 통신 데이터인 축제는 `per_capita_telecom_krw`에 따로 계산한다 (기본값에 섞지 않음)
 """
 
 import re
@@ -81,6 +82,11 @@ _CODE = re.compile(r"^\s*(\d+)\.\s*(.+?)\s*$")
 # 구분자가 있는 번호(064-710-1234) 또는 구분자 없는 휴대전화(01012345678). 소수 숫자와 헷갈리지 않게 앞뒤 숫자·점 제외
 _PHONE = re.compile(r"(?<![\d.])(?:0\d{1,2}[-)\s]\d{3,4}[-\s]\d{4}|01[016789]\d{7,8})(?![\d.])")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+
+# 축제별 메모 (광역, 축제명) → 메모. 수치는 바꾸지 않고 해석할 때 주의할 점만 남긴다
+FESTIVAL_MEMOS = {
+    ("제주", "제19회 전농로 왕벚꽃 축제"): "거리형 행사라 통행 인원이 포함됐을 수 있음",
+}
 
 MEASURED = "계측"
 ESTIMATED = "추정"
@@ -197,6 +203,9 @@ def add_quality_flags(df: pd.DataFrame) -> pd.DataFrame:
     df["telecom_estimate"] = df["visitor_method"].eq(ESTIMATED) & df["visitor_method_note"].fillna(
         ""
     ).str.contains("통신")
+    telecom = df["telecom_estimate"] & df["visitors"].gt(0) & df["budget_total"].notna()
+    df["per_capita_telecom_krw"] = (df["budget_total"] * 1_000_000 / df["visitors"]).where(telecom)
+    df["memo"] = [FESTIVAL_MEMOS.get((sido, name)) for sido, name in zip(df["sido"], df["name"])]
 
     reasons = pd.DataFrame(index=df.index)
     has_visitors = df["visitors"].notna()

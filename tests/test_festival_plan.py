@@ -145,3 +145,18 @@ def test_changed_header_is_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="헤더"):
         load_festival_plan(path)
+
+
+def test_telecom_per_capita_is_separate_and_memo(tmp_path):
+    rows = [
+        festival(1, method="02. 추정", note="통신 데이터", visitors=10000),
+        festival(2, method="02. 추정", note="주차면수", visitors=10000),
+        festival(3, visitors=10000),
+    ]
+    rows[2][4] = "제19회 전농로 왕벚꽃 축제"
+    df = load_festival_plan(write_plan(tmp_path, rows))
+    assert df["per_capita_telecom_krw"].tolist()[0] == 10000
+    assert df["per_capita_telecom_krw"].iloc[1:].isna().all()
+    assert df["per_capita_krw"].iloc[:2].isna().all()  # 기본값(계측)에 섞지 않음
+    assert df["memo"].iloc[2] == "거리형 행사라 통행 인원이 포함됐을 수 있음"
+    assert df["memo"].iloc[:2].isna().all()
