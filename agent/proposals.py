@@ -1,13 +1,18 @@
 """화면(B)이 부르는 아이디어 제안 진입점.
 
-지금은 데모 응답만 준다. 실제 검색(Tavily)과 LLM(Gemini 예정)이 붙어도
-화면 쪽 호출 코드(propose_ideas)와 돌려주는 모양(IdeaProposal)은 그대로 둔다.
+- propose_ideas: 기존 뉴스 사례 기반 흐름 (v1 계약). 회의에서 뉴스 모듈 정리 후 없앤다
+- propose_idea_cards: 새 설계(트렌드 × 제주 재료) 흐름 (v2 초안 계약, agent/draft_contracts.py)
 """
 
 from pydantic import BaseModel, Field
 
+from agent import draft_contracts as v2
 from agent.demo import demo_cases, demo_ideas
+from agent.demo_cards import demo_proposal
+from agent.idea_cards import CardGenerationError, generate_idea_cards
+from agent.idea_gen import TrendData
 from agent.ideas import IdeaGenerationError
+from agent.llm import LLMClient
 from schemas.contracts import FestivalCase, FestivalIdea, UserRequest
 
 DEMO_NOTICE = "데모 응답이에요. 사례와 아이디어는 모두 가상 자료이며 실제 검색 결과가 아니에요."
@@ -46,3 +51,30 @@ def propose_ideas(request: UserRequest, *, demo: bool = True) -> IdeaProposal:
         is_demo=True,
         notices=[DEMO_NOTICE, DRAFT_NOTICE],
     )
+
+
+def propose_idea_cards(
+    request: v2.UserRequest,
+    *,
+    demo: bool = True,
+    llm: LLMClient | None = None,
+    data: TrendData | None = None,
+) -> v2.IdeaProposal:
+    """사용자 조건으로 아이디어 카드 3장을 제안한다 (새 설계).
+
+    demo=True: 기획서 9-2 "애월 감귤" 예시 카드를 준다. 입력 조건과 상관없이 같은 카드다.
+    demo=False: 문체부 패널로 후보를 만들고 llm이 3개를 고른다. llm이 없으면 CardGenerationError.
+    data를 넘기지 않으면 data/processed/의 축제 패널을 읽는다.
+    """
+    if demo:
+        return demo_proposal()
+    if llm is None:
+        raise CardGenerationError("AI 공급자가 아직 연결 전이에요. 지금은 데모로 확인해주세요.")
+    if data is None:
+        from research.trends import load_panel
+
+        try:
+            data = TrendData.from_panel(load_panel())
+        except FileNotFoundError as exc:
+            raise CardGenerationError(str(exc)) from exc
+    return generate_idea_cards(request, data, llm)
