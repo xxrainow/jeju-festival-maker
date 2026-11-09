@@ -62,6 +62,8 @@ def test_prompt_lists_candidates_as_json(trend_data):
     cset = build_candidates(REQUEST, trend_data)
     prompt = build_user_prompt(REQUEST, cset, trend_data)
     assert "<candidates>" in prompt and "cand_01" in prompt
+    assert "제주 같은 재료 기존 축제" in prompt
+    assert "단정하지 마세요" in SYSTEM_PROMPT
     assert "목록에 없는 조합을 만들지 마세요" in SYSTEM_PROMPT
 
 
@@ -100,9 +102,9 @@ def test_parse_picks_rejects_numbers_in_text(trend_data):
     ids = distinct_ids(cset)
     with pytest.raises(CardResponseError, match="숫자"):
         parse_picks(picks_for(cset, ids, concept="방문객 5만 명이 오는 축제"), cset)
-    with pytest.raises(CardResponseError, match="월·시각이 아닌 숫자"):
+    with pytest.raises(CardResponseError, match="연령대가 아닌 숫자"):
         parse_picks(picks_for(cset, ids, hypotheses=["매출 30% 증가"]), cset)
-    ok = picks_for(cset, ids, hypotheses=["12월 18시 이후에도 버스가 있다"])
+    ok = picks_for(cset, ids, hypotheses=["12월 18시 이후에도 버스가 있다", "30~40대 가족이 많다"])
     assert parse_picks(ok, cset)
 
 
@@ -144,8 +146,9 @@ def test_demo_entry_point_works_offline():
     assert proposal.ideas[0].evidence.trend.new_lift == 3.6
 
 
-def test_real_path_needs_llm():
-    with pytest.raises(CardGenerationError, match="AI 공급자"):
+def test_real_path_needs_llm(monkeypatch):
+    monkeypatch.setattr("agent.proposals.default_llm", lambda: None)  # .env와 상관없이
+    with pytest.raises(CardGenerationError, match="AI 설정이 없어요"):
         propose_idea_cards(DEMO_REQUEST, demo=False)
 
 

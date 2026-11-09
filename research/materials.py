@@ -19,6 +19,7 @@
 결과: data/processed/jeju_materials.csv, data/processed/jeju_material_review.csv
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -61,20 +62,39 @@ def load_keywords(path: Path = KEYWORDS_PATH) -> pd.DataFrame:
 
 
 def jeju_festivals(panel: pd.DataFrame, standard: pd.DataFrame | None) -> pd.DataFrame:
-    """제주 축제 (축제명, 월, 출처). 같은 축제의 연도별 행은 (정규명, 월)로 한 번만 센다."""
-    j = panel[panel["시도"] == "제주"][["축제명", "월"]].copy()
+    """제주 축제 (축제명, 월, 연도, 출처). 같은 축제의 연도별 행은 (정규명, 월)로 한 번만 센다.
+
+    월이 해마다 다르면(예: 유채꽃 3월·4월) 둘 다 남겨 제철 월 계산에 쓴다.
+    """
+    j = panel[panel["시도"] == "제주"][["축제명", "월", "연도"]].copy()
     j["출처"] = "문체부"
     frames = [j]
     if standard is not None and len(standard):
         s = standard[~standard.get("is_duplicate", False)].copy()
-        s["월"] = pd.to_datetime(s["축제시작일자"], errors="coerce").dt.month
+        start = pd.to_datetime(s["축제시작일자"], errors="coerce")
+        s["월"] = start.dt.month
+        s["연도"] = start.dt.year
         s["출처"] = "표준데이터"
-        frames.append(s[["축제명", "월", "출처"]])
+        frames.append(s[["축제명", "월", "연도", "출처"]])
     out = pd.concat(frames, ignore_index=True)
     out["축제명"] = out["축제명"].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
     out["_k"] = out["축제명"].map(norm_name)
+    out = out.sort_values("연도", ascending=False, na_position="last")
     out = out.drop_duplicates(["_k", "월"]).drop(columns="_k")
     return out.reset_index(drop=True)
+
+
+def latest_festivals(hit: pd.DataFrame) -> list[dict]:
+    """같은 축제(정규명)는 가장 최근 연도 한 번만 남겨 [{name, month}]로 돌려준다."""
+    if hit.empty:
+        return []
+    h = hit.assign(_k=hit["축제명"].map(norm_name))
+    h = h.sort_values("연도", ascending=False, na_position="last").drop_duplicates("_k")
+    h = h.sort_values(["월", "축제명"], na_position="last")
+    return [
+        {"name": n, "month": None if pd.isna(m) else int(m)}
+        for n, m in zip(h["축제명"], h["월"], strict=True)
+    ]
 
 
 def wifi_place_shares(
@@ -126,6 +146,7 @@ def build_dictionary(
             "keywords": pat,
             "festival_count": len(hit),
             "festivals": "; ".join(hit["축제명"]),
+            "existing_festivals": json.dumps(latest_festivals(hit), ensure_ascii=False),
             "festival_months": "|".join(str(m) for m in sorted(set(months))),
             "months": "|".join(str(m) for m in final_months) if final_months else "",
             "months_basis": basis,

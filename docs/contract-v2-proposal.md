@@ -39,6 +39,7 @@
 7. 라운드 수: 기획서 루프 의사코드는 3번째 수정 뒤 다시 확인하지 않는다. "처음 확인 1회 + 수정 후 재확인 최대 3회 = 최대 4라운드"로 정했다.
 8. `purpose_match`에 `"불일치"` 추가, `purpose`가 없으면 `null`.
 9. `TrendEvidence`에 `verdict`, `interpretation`, `strategy` 추가: 기획서 3절 판정과 4절 해석 틀(공급 신호 × 지정 사례)을 카드에 싣는다. 최신 정의는 `agent/draft_contracts.py` 기준.
+10. `IdeaCard.existing_jeju_festivals` 추가: 같은 재료의 기존 제주 축제(이름, 월, 최대 3개). 겹침 판정은 ④ `check_risk`가 하고 카드에는 참고로 보여준다.
 
 ## 1. 모델 정의 (제안 코드)
 
