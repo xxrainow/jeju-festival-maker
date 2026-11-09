@@ -5,12 +5,12 @@ from agent.draft_contracts import UserRequest
 from agent.idea_gen import build_candidates, build_card, load_materials, materials_from_dictionary
 from research.materials import (
     KEYWORDS_PATH,
-    MATERIALS_PATH,
     NEUTRAL_INTEREST,
     build_dictionary,
     jeju_festivals,
     latest_festivals,
     load_keywords,
+    materials_path,
     wifi_place_shares,
 )
 
@@ -129,9 +129,7 @@ def test_dictionary_feeds_candidates_and_cards(trend_data):
     assert card.evidence.visitor_interest.status == "pending"
 
 
-@pytest.mark.skipif(
-    not MATERIALS_PATH.exists(), reason="실데이터 소재 사전 없음 (research.materials로 생성)"
-)
+@pytest.mark.skipif(not materials_path().exists(), reason="실데이터 소재 사전 없음")
 def test_real_dictionary_loads():
     mats = load_materials()
     assert len(mats) >= 30
