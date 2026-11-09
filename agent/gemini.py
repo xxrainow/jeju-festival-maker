@@ -9,14 +9,25 @@
 응답이 계약에 맞는지는 호출하는 쪽(idea_cards 등)이 코드로 검사한다.
 """
 
+import time
+
 import httpx
 
 from agent.llm import LLMError
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 API_REVISION = "2026-05-20"
-DEFAULT_MODEL = "gemini-3.5-flash-lite"  # 무료 하루 요청이 Flash보다 넉넉함. .env의 LLM_MODEL로 바꾼다
+DEFAULT_MODEL = (
+    "gemini-3.5-flash-lite"  # 무료 하루 요청이 Flash보다 넉넉함. .env의 LLM_MODEL로 바꾼다
+)
 MAX_OUTPUT_TOKENS = 4096
+RETRY_STATUSES = {
+    500,
+    502,
+    503,
+    504,
+}  # 일시적 서버 오류 (2026-11-10 시험에서 503이 간헐적으로 나옴)
+RETRY_DELAYS = (2.0, 5.0)  # 다시 시도하기 전 기다리는 초. 429(한도)는 다시 시도하지 않는다
 
 _STATUS_HINTS = {
     400: "요청 형식이 맞지 않아요. 모델 이름(LLM_MODEL)을 확인해주세요.",
@@ -37,12 +48,16 @@ class GeminiClient:
         *,
         timeout: float = 30,
         transport: httpx.BaseTransport | None = None,
+        retry_delays: tuple[float, ...] = RETRY_DELAYS,
+        sleep=time.sleep,
     ):
         if not api_key:
             raise LLMError("Gemini API 키가 없어요. .env의 LLM_API_KEY를 채워주세요.")
         self._key = api_key
         self.model = model or DEFAULT_MODEL
         self._client = httpx.Client(timeout=timeout, transport=transport)
+        self._retry_delays = retry_delays
+        self._sleep = sleep
 
     def complete_json(self, system: str, user: str) -> str:
         body = {
@@ -57,12 +72,7 @@ class GeminiClient:
             "Api-Revision": API_REVISION,
             "Content-Type": "application/json",
         }
-        try:
-            res = self._client.post(ENDPOINT, json=body, headers=headers)
-        except httpx.TimeoutException as exc:
-            raise LLMError("AI 응답이 너무 오래 걸려요. 잠시 뒤에 다시 시도해주세요.") from exc
-        except httpx.HTTPError as exc:
-            raise LLMError("AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해주세요.") from exc
+        res = self._post_with_retry(body, headers)
         if res.status_code != 200:
             hint = _STATUS_HINTS.get(
                 res.status_code, "AI 서버 오류예요. 잠시 뒤에 다시 시도해주세요."
@@ -72,6 +82,20 @@ class GeminiClient:
             return extract_text(res.json())
         except (ValueError, KeyError, TypeError) as exc:
             raise LLMError("AI 응답을 읽지 못했어요.") from exc
+
+    def _post_with_retry(self, body: dict, headers: dict) -> httpx.Response:
+        """일시적 서버 오류(5xx)면 잠깐 기다렸다가 다시 보낸다. 마지막 응답을 돌려준다."""
+        for attempt in range(len(self._retry_delays) + 1):
+            try:
+                res = self._client.post(ENDPOINT, json=body, headers=headers)
+            except httpx.TimeoutException as exc:
+                raise LLMError("AI 응답이 너무 오래 걸려요. 잠시 뒤에 다시 시도해주세요.") from exc
+            except httpx.HTTPError as exc:
+                raise LLMError("AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해주세요.") from exc
+            if res.status_code not in RETRY_STATUSES or attempt == len(self._retry_delays):
+                return res
+            self._sleep(self._retry_delays[attempt])
+        return res
 
 
 def extract_text(data: dict) -> str:

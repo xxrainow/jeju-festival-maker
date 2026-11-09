@@ -34,7 +34,7 @@ def ok_response(text: str) -> dict:
 
 
 def client_with(handler) -> GeminiClient:
-    return GeminiClient(KEY, transport=httpx.MockTransport(handler))
+    return GeminiClient(KEY, transport=httpx.MockTransport(handler), sleep=lambda s: None)
 
 
 def test_request_shape_and_text_extraction():
@@ -119,3 +119,36 @@ def test_from_settings():
         )
     )
     assert client.model == "gemini-3.8-flash"
+
+
+def test_retries_transient_5xx_then_succeeds():
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503)
+        return httpx.Response(200, json=ok_response('{"ok": true}'))
+
+    waits = []
+    client = GeminiClient(KEY, transport=httpx.MockTransport(handler), sleep=waits.append)
+    assert client.complete_json("s", "u") == '{"ok": true}'
+    assert len(calls) == 3 and waits == [2.0, 5.0]
+
+
+def test_gives_up_after_retries_and_does_not_retry_429():
+    calls = []
+
+    def always(status):
+        def handler(request):
+            calls.append(status)
+            return httpx.Response(status)
+
+        return handler
+
+    with pytest.raises(LLMError, match="서버 오류"):
+        client_with(always(503)).complete_json("s", "u")
+    assert calls.count(503) == 3
+    with pytest.raises(LLMError, match="한도"):
+        client_with(always(429)).complete_json("s", "u")
+    assert calls.count(429) == 1

@@ -100,9 +100,9 @@ def test_parse_picks_rejects_numbers_in_text(trend_data):
     ids = distinct_ids(cset)
     with pytest.raises(CardResponseError, match="숫자"):
         parse_picks(picks_for(cset, ids, concept="방문객 5만 명이 오는 축제"), cset)
-    with pytest.raises(CardResponseError, match="월·시각이 아닌 숫자"):
+    with pytest.raises(CardResponseError, match="연령대가 아닌 숫자"):
         parse_picks(picks_for(cset, ids, hypotheses=["매출 30% 증가"]), cset)
-    ok = picks_for(cset, ids, hypotheses=["12월 18시 이후에도 버스가 있다"])
+    ok = picks_for(cset, ids, hypotheses=["12월 18시 이후에도 버스가 있다", "30~40대 가족이 많다"])
     assert parse_picks(ok, cset)
 
 
