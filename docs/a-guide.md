@@ -5,6 +5,25 @@
 > 계약은 합의 전까지 `agent/draft_contracts.py`(v2 초안)를 쓴다. 모양은 `docs/contract-v2-proposal.md` 참고.
 > `schemas/contracts.py`로 옮기면 import 경로만 바뀐다.
 
+## 0. 한 문장 입력 (선택)
+
+```python
+from agent.request_parser import RequestParseError, parse_request
+
+try:
+    parsed = parse_request("애월에서 감귤로 상권 살리는 축제, 예산 1천만 원")
+except RequestParseError as e:
+    st.warning(str(e))          # 화면에 그대로 보여줘도 되는 문장. 칸에 직접 입력하게 한다
+else:
+    request = parsed.request    # region="제주시 애월읍", budget_max_krw=10000000 ...
+    for note in parsed.notes:   # 예: "'협재'을(를) 읍면동으로 정하지 못했어요. 지역을 직접 골라주세요."
+        st.info(note)
+```
+
+- 결과를 입력 칸에 채워 보여주고 사용자가 고친 뒤 확정하게 한다 (자동 확정하지 않는다)
+- 지역은 행정동 43개 이름 중 하나로만 들어온다. 못 정하면 비우고 `notes`로 알린다
+- 예산 금액은 LLM이 아니라 코드가 글자("1천만 원")를 읽어 원 단위로 바꾼다
+
 ## 1. 아이디어 카드
 
 ```python
