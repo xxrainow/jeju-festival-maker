@@ -21,14 +21,19 @@ def propose_idea_cards(
     """사용자 조건으로 아이디어 카드 3장을 제안한다.
 
     demo=True: 기획서 9-2 "애월 감귤" 예시 카드를 준다. 입력 조건과 상관없이 같은 카드다.
-    demo=False: 문체부 패널로 후보를 만들고 llm이 3개를 고른다. llm이 없으면 CardGenerationError.
+    demo=False: 문체부 패널로 후보를 만들고 llm이 3개를 고른다.
+    llm을 넘기지 않으면 .env 설정(LLM_PROVIDER=gemini, LLM_API_KEY)으로 만든다. 설정도 없으면 CardGenerationError.
     data, materials를 넘기지 않으면 data/processed/의 축제 패널과 제주 소재 사전을 읽는다.
     소재 사전이 없으면 임시 재료 목록을 쓰고 카드 안내 문장에 그 사실을 적는다.
     """
     if demo:
         return demo_proposal()
     if llm is None:
-        raise CardGenerationError("AI 공급자가 아직 연결 전이에요. 지금은 데모로 확인해주세요.")
+        llm = default_llm()
+    if llm is None:
+        raise CardGenerationError(
+            "AI 설정이 없어요. .env에 LLM_PROVIDER=gemini와 LLM_API_KEY를 넣거나 데모로 확인해주세요."
+        )
     if data is None:
         from research.trends import load_panel
 
@@ -42,3 +47,11 @@ def propose_idea_cards(
         except FileNotFoundError:
             materials = SEED_MATERIALS
     return generate_idea_cards(request, data, llm, materials=materials)
+
+
+def default_llm() -> LLMClient | None:
+    """.env 설정으로 LLM 클라이언트를 만든다. 정해진 공급자나 키가 없으면 None."""
+    from agent.gemini import from_settings
+    from app.settings import Settings
+
+    return from_settings(Settings())

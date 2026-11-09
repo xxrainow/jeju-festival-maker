@@ -144,8 +144,9 @@ def test_demo_entry_point_works_offline():
     assert proposal.ideas[0].evidence.trend.new_lift == 3.6
 
 
-def test_real_path_needs_llm():
-    with pytest.raises(CardGenerationError, match="AI 공급자"):
+def test_real_path_needs_llm(monkeypatch):
+    monkeypatch.setattr("agent.proposals.default_llm", lambda: None)  # .env와 상관없이
+    with pytest.raises(CardGenerationError, match="AI 설정이 없어요"):
         propose_idea_cards(DEMO_REQUEST, demo=False)
 
 
