@@ -1,7 +1,13 @@
 import pandas as pd
 import pytest
 
-from research.designation import DESIGNATION, attach_designation, match_designation
+from research.designation import (
+    DESIGNATION,
+    add_interpretation,
+    attach_designation,
+    interpret,
+    match_designation,
+)
 from research.trends import (
     PANEL_PATH,
     add_tags,
@@ -109,3 +115,41 @@ def test_real_panel_matches_design_document():
     assert jeju_gap(panel).loc["수산물", "제주건수"] == 8
     assert tag_budgets(panel)["시장·상권"]["예산_원"].median() == 60_000_000
     assert match_designation(panel)["fid"].notna().sum() == 65
+
+
+@pytest.mark.parametrize(
+    ("signal", "count", "expected"),
+    [
+        ("↑", 2, "검증된 성장 분야"),
+        ("↑", 0, "신흥·선점 기회"),
+        ("↓", 1, "성숙·강자 존재"),
+        ("↓", 0, "쇠퇴·포화"),
+        ("→", 3, "성숙·강자 존재"),  # 정체는 ↓ 줄로 읽는다
+    ],
+)
+def test_interpret_quadrants(signal, count, expected):
+    assert interpret(signal, count)[0] == expected
+
+
+def test_add_interpretation_joins_designations():
+    old = [("서울", f"구{i}", f"전통문화제{i}", 2000, 10, 5) for i in range(20)]
+    new = [("부산", f"구{i}", f"골목시장 마켓{i}", 2024, 10, 5) for i in range(12)]
+    coffee = [("강원", "강릉시", "제18회 강릉커피축제", 2009, 500, 10)]
+    panel = link_panel(
+        [raw_year(2024, old), raw_year(2025, old), raw_year(2026, old + new + coffee)]
+    )
+    out = add_interpretation(tag_trends(panel, min_n=1), panel)
+    assert out.loc["시장·상권", "해석"] == "신흥·선점 기회"
+    assert out.loc["시장·상권", "전략"] == "먼저 자리 잡기"
+    assert out.loc["푸드·디저트", "지정축제수"] == 1
+    assert "강릉커피축제(문화관광)" in out.loc["푸드·디저트", "지정사례"]
+
+
+@pytest.mark.skipif(not PANEL_PATH.exists(), reason="실데이터 패널 없음 (research.trends로 생성)")
+def test_real_interpretation_matches_design_document():
+    """기획서 4절 예시: 음악·공연은 공급 ↓ + 지정 사례 있음 → 성숙·강자 존재."""
+    panel = load_panel()
+    out = add_interpretation(tag_trends(panel), panel)
+    assert out.loc["음악·공연", "해석"] == "성숙·강자 존재"
+    assert out.loc["푸드·디저트", "지정축제수"] == 6
+    assert out.loc["시장·상권", "해석"] == "신흥·선점 기회"

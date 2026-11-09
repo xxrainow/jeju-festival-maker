@@ -87,9 +87,12 @@ def test_build_card_fills_numbers_from_code(trend_data):
     assert card.timing.recommended_months == [12, 1]
     assert card.timing.jeju_festivals_in_month == 1
     assert card.purpose_match == "일치"
+    assert card.evidence.trend.interpretation == "신흥·선점 기회"
+    assert card.evidence.trend.strategy == "먼저 자리 잡기"
     food = next(c for c in cset.candidates if c.format == "푸드·디저트")
     food_card = build_card(food, 2, AEWOL, trend_data, title="t", concept="c", hypotheses=["h"])
     assert food_card.reference.type == "성공 사례"
+    assert food_card.evidence.trend.interpretation == "검증된 성장 분야"
 
 
 def test_year_round_candidate_gets_quiet_months(trend_data):

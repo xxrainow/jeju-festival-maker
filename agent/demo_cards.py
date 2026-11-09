@@ -25,6 +25,13 @@ _TREND_SOURCE = "문체부 지역축제 2024-2026"
 _JEJU_SOURCE = "제주 축제 목록 (문체부 지역축제 2026)"
 
 
+def _interpretation(ref: dict) -> dict:
+    """데모 카드의 형식은 모두 공급 ↑라서 지정 사례 유무로만 해석이 갈린다 (기획서 4절)."""
+    if ref.get("designated_festivals"):
+        return {"interpretation": "검증된 성장 분야", "strategy": "차별화 포인트 확보"}
+    return {"interpretation": "신흥·선점 기회", "strategy": "먼저 자리 잡기"}
+
+
 def _card(rank, title, concept, fmt, match, reason, new_count, lift, ref, median, examples, hyps):
     return {
         "idea_id": f"idea_{rank:03d}",
@@ -38,7 +45,13 @@ def _card(rank, title, concept, fmt, match, reason, new_count, lift, ref, median
         "purpose_match": match,
         "pick_reason": reason,
         "evidence": {
-            "trend": {"new_count": new_count, "new_lift": lift, "source": _TREND_SOURCE},
+            "trend": {
+                "new_count": new_count,
+                "new_lift": lift,
+                "verdict": "확실한 상승",
+                **_interpretation(ref),
+                "source": _TREND_SOURCE,
+            },
             "jeju_gap": {"jeju_count": 0, "source": _JEJU_SOURCE},
             "visitor_interest": {"source": "와이파이 AP별 이용 현황", "status": "pending"},
         },
