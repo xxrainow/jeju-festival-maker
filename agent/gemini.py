@@ -15,7 +15,7 @@ from agent.llm import LLMError
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 API_REVISION = "2026-05-20"
-DEFAULT_MODEL = "gemini-3.6-flash"  # 문서상 Stable Flash. .env의 LLM_MODEL로 바꾼다
+DEFAULT_MODEL = "gemini-3.5-flash-lite"  # 무료 하루 요청이 Flash보다 넉넉함. .env의 LLM_MODEL로 바꾼다
 MAX_OUTPUT_TOKENS = 4096
 
 _STATUS_HINTS = {
