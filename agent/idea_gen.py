@@ -112,6 +112,14 @@ class FormatStats:
     jeju_count: int
     budgets_krw: tuple[tuple[str, int], ...] = ()  # (축제명, 예산 원), 오름차순
     designated: tuple[tuple[str, str], ...] = ()  # (지정명, 2026 등급)
+    supply_signal: str = "↑"  # 공급 신호 (↑ / → / ↓)
+
+    @property
+    def interpretation(self) -> tuple[str, str]:
+        """(해석, 전략). 기획서 4절 공급 신호 × 지정 사례."""
+        from research.designation import interpret
+
+        return interpret(self.supply_signal, len(self.designated))
 
 
 @dataclass(frozen=True)
@@ -152,6 +160,7 @@ class TrendData:
                 jeju_count=int(gap.loc[fmt, "제주건수"]),
                 budgets_krw=tuple(budgets[fmt].itertuples(index=False, name=None)),
                 designated=tuple(zip(des["지정명"], des["지정_2026"], strict=True)),
+                supply_signal=str(row["공급신호"]),
             )
         strength = gap["강점비"].dropna().round(2).to_dict()
         return cls(formats, strength, jeju_festivals_by_month(panel))
@@ -406,7 +415,12 @@ def build_card(
         pick_reason=pick_reason,
         evidence=IdeaEvidence(
             trend=TrendEvidence(
-                new_count=stats.new_count, new_lift=stats.new_lift, source=data.trend_source
+                new_count=stats.new_count,
+                new_lift=stats.new_lift,
+                verdict=stats.verdict,
+                interpretation=stats.interpretation[0],
+                strategy=stats.interpretation[1],
+                source=data.trend_source,
             ),
             jeju_gap=JejuGapEvidence(jeju_count=stats.jeju_count, source=data.jeju_source),
             visitor_interest=_visitor_evidence(candidate),

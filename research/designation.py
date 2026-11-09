@@ -98,3 +98,49 @@ def attach_designation(panel: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFra
     out["지정_2026"] = out["fid"].map(m["지정_2026"])
     out["지정_2027"] = out["fid"].map(m["지정_2027"])
     return out
+
+
+# ---------- 해석 칸 (설계 기획서 4절: 공급 신호 × 지정 사례) ----------
+
+# (공급 ↑ 여부, 지정 사례 있음) → (해석, 전략)
+INTERPRETATIONS = {
+    (True, True): ("검증된 성장 분야", "차별화 포인트 확보"),
+    (True, False): ("신흥·선점 기회", "먼저 자리 잡기"),
+    (False, True): ("성숙·강자 존재", "벤치마킹·틈새, 요소로 활용"),
+    (False, False): ("쇠퇴·포화", "만들 이유를 따로 증명"),
+}
+
+
+def interpret(supply_signal: str, designated_count: int) -> tuple[str, str]:
+    """공급 신호(↑/→/↓)와 지정 축제 수로 해석과 전략을 정한다.
+
+    기획서 4절 그림은 공급 ↑/↓ 두 줄뿐이라, 정체(→)는 ↓ 줄로 읽는다 (새로 늘지 않는 분야).
+    """
+    return INTERPRETATIONS[(supply_signal == "↑", designated_count > 0)]
+
+
+def tag_designations(panel: pd.DataFrame, year: int = 2026) -> pd.DataFrame:
+    """태그별 그 해 지정 축제 수와 이름 (공식 지정명, 등급)."""
+    from research.trends import TAGS, add_tags
+
+    tagged = add_tags(attach_designation(panel, match_designation(panel)))
+    cur = tagged[(tagged["연도"] == year) & tagged["지정_2026"].notna()]
+    rows = []
+    for tag in TAGS:
+        hit = cur[cur[tag]].sort_values("지정명")
+        names = " / ".join(
+            f"{n}({g})" for n, g in zip(hit["지정명"], hit["지정_2026"], strict=True)
+        )
+        rows.append({"태그": tag, "지정축제수": len(hit), "지정사례": names})
+    return pd.DataFrame(rows).set_index("태그")
+
+
+def add_interpretation(trends: pd.DataFrame, panel: pd.DataFrame) -> pd.DataFrame:
+    """tag_trends 결과에 지정축제수, 지정사례, 해석, 전략 칸을 붙인다."""
+    out = trends.join(tag_designations(panel), how="left")
+    out["지정축제수"] = out["지정축제수"].fillna(0).astype(int)
+    out["지정사례"] = out["지정사례"].fillna("")
+    pairs = [interpret(s, n) for s, n in zip(out["공급신호"], out["지정축제수"], strict=True)]
+    out["해석"] = [p[0] for p in pairs]
+    out["전략"] = [p[1] for p in pairs]
+    return out

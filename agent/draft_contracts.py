@@ -52,6 +52,9 @@ class TrendEvidence(BaseModel):
 
     new_count: int | None = None  # 2023년 이후 신설 축제 수
     new_lift: float | None = None  # 신설리프트
+    verdict: str | None = None  # 판정 (확실한 상승 / 관찰 대상 / 정체 / 성숙·감소)
+    interpretation: str | None = None  # 공급 신호 × 지정 사례 해석 (기획서 4절)
+    strategy: str | None = None  # 해석에 따른 전략 (예: "먼저 자리 잡기")
     source: str  # 예: "문체부 지역축제 2024-2026"
     status: DataStatus = "ready"
 
