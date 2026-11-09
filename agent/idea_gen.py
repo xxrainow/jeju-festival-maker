@@ -385,10 +385,10 @@ def materials_from_dictionary(d: pd.DataFrame) -> tuple[Material, ...]:
 
 
 def load_materials(path=None) -> tuple[Material, ...]:
-    """저장된 제주 소재 사전을 읽는다. 없으면 FileNotFoundError."""
-    from research.materials import MATERIALS_PATH
+    """제주 소재 사전을 읽는다 (직접 만든 것 → Git 가공본 순서). 없으면 FileNotFoundError."""
+    from research.materials import materials_path
 
-    path = MATERIALS_PATH if path is None else path
+    path = materials_path() if path is None else path
     return materials_from_dictionary(pd.read_csv(path, dtype={"months": str}))
 
 

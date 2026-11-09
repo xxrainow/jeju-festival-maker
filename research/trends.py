@@ -7,8 +7,9 @@
 - 방문객 성장률은 지자체 자체 보고라 참고값으로만 남긴다 (CLAUDE.md 3절)
 - 예산 단위는 원자료 그대로 백만 원이다. 원으로 바꿀 때는 `BUDGET_UNIT_KRW`를 곱한다
 
-원자료 → 패널 저장 (최초 1회):
-    uv run python -m research.trends
+원자료 → 패널 저장 (원자료가 바뀌었을 때만):
+    uv run --with python-calamine python -m research.trends            # data/processed/에 저장
+    uv run --with python-calamine python -m research.trends --publish  # Git에 올릴 가공본도 갱신
 원자료 위치: data/raw/mcst/mcst_2024.xlsx, mcst_2025.xlsx, mcst_2026.xlsx (Git 제외)
 """
 
@@ -22,6 +23,8 @@ import pandas as pd
 
 RAW_DIR = Path("data/raw/mcst")
 PANEL_PATH = Path("data/processed/festival_panel_2024_2026.parquet")
+# Git에 올린 가공본. 원자료가 없는 PC(팀원, 센터)는 이 파일을 읽는다
+PUBLISHED_PANEL_PATH = Path(__file__).parent / "reference" / "festival_panel_2024_2026.parquet"
 YEARS = (2024, 2025, 2026)
 SOURCE = "문체부 지역축제 개최계획 2024-2026"
 BUDGET_UNIT_KRW = 1_000_000  # 원자료 예산 단위: 백만 원
@@ -307,7 +310,13 @@ def build_panel(raw_dir: Path = RAW_DIR, engine: str = "calamine") -> pd.DataFra
     return link_panel(dfs)
 
 
-def load_panel(path: Path = PANEL_PATH) -> pd.DataFrame:
+def panel_path() -> Path:
+    """직접 만든 패널이 있으면 그것, 없으면 Git에 올린 가공본."""
+    return PANEL_PATH if PANEL_PATH.exists() else PUBLISHED_PANEL_PATH
+
+
+def load_panel(path: Path | None = None) -> pd.DataFrame:
+    path = panel_path() if path is None else path
     if not path.exists():
         raise FileNotFoundError(
             f"축제 패널 파일이 없어요: {path}. 먼저 `uv run python -m research.trends`로 만들어주세요."
@@ -317,14 +326,17 @@ def load_panel(path: Path = PANEL_PATH) -> pd.DataFrame:
 
 def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
-    raw_dir = Path(argv[0]) if argv else RAW_DIR
+    publish = "--publish" in argv
+    rest = [a for a in argv if a != "--publish"]
+    raw_dir = Path(rest[0]) if rest else RAW_DIR
     panel = build_panel(raw_dir)
-    PANEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    panel.astype({"기간_raw": "string", "연번": "string", "장소명": "string"}).to_parquet(
-        PANEL_PATH, index=False
-    )
+    out = panel.astype({"기간_raw": "string", "연번": "string", "장소명": "string"})
+    targets = [PANEL_PATH, PUBLISHED_PANEL_PATH] if publish else [PANEL_PATH]
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        out.to_parquet(target, index=False)
     print(panel.groupby("연도").size().to_string())
-    print(f"저장: {PANEL_PATH}")
+    print("저장:", ", ".join(str(t) for t in targets))
 
 
 if __name__ == "__main__":

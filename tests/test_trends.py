@@ -9,13 +9,13 @@ from research.designation import (
     match_designation,
 )
 from research.trends import (
-    PANEL_PATH,
     add_tags,
     jeju_festivals_by_month,
     jeju_gap,
     link_panel,
     load_panel,
     norm_name,
+    panel_path,
     standardize,
     tag_budgets,
     tag_trends,
@@ -102,7 +102,7 @@ def test_match_designation_finds_renamed_festival():
     assert out.loc[out["축제명"].str.contains("탐라"), "지정_2026"].isna().all()
 
 
-@pytest.mark.skipif(not PANEL_PATH.exists(), reason="실데이터 패널 없음 (research.trends로 생성)")
+@pytest.mark.skipif(not panel_path().exists(), reason="실데이터 패널 없음")
 def test_real_panel_matches_design_document():
     """설계 기획서 2·3·9절 숫자가 그대로 나오는지 확인 (문체부 실데이터)."""
     panel = load_panel()
@@ -145,7 +145,7 @@ def test_add_interpretation_joins_designations():
     assert "강릉커피축제(문화관광)" in out.loc["푸드·디저트", "지정사례"]
 
 
-@pytest.mark.skipif(not PANEL_PATH.exists(), reason="실데이터 패널 없음 (research.trends로 생성)")
+@pytest.mark.skipif(not panel_path().exists(), reason="실데이터 패널 없음")
 def test_real_interpretation_matches_design_document():
     """기획서 4절 예시: 음악·공연은 공급 ↓ + 지정 사례 있음 → 성숙·강자 존재."""
     panel = load_panel()

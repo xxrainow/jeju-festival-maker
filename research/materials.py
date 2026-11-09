@@ -15,8 +15,9 @@
 와이파이는 아이디어 단계(앞단)에만 쓰고 기간을 2023~2024로 둔다.
 검증 단계(뒷단) 장소 확인은 2025년 자료를 써서 같은 숫자로 고르고 검증하지 않게 한다.
 
-실행: uv run python -m research.materials
-결과: data/processed/jeju_materials.csv, data/processed/jeju_material_review.csv
+실행: uv run python -m research.materials            # data/processed/에 저장
+      uv run python -m research.materials --publish  # Git에 올릴 가공본(research/reference/)도 갱신
+결과: jeju_materials.csv(사전), jeju_material_review.csv(검수 목록)
 """
 
 import json
@@ -31,6 +32,11 @@ from research.trends import load_panel, norm_name
 KEYWORDS_PATH = Path(__file__).parent / "reference" / "jeju_material_keywords.csv"
 MATERIALS_PATH = Path("data/processed/jeju_materials.csv")
 REVIEW_PATH = Path("data/processed/jeju_material_review.csv")
+# Git에 올린 가공본. 와이파이 원본이 없는 PC(팀원, 센터)는 이 파일을 읽는다.
+# 와이파이 정보는 재료별 집계 비율(%)만 들어 있다
+PUBLISHED_DIR = Path(__file__).parent / "reference"
+PUBLISHED_MATERIALS_PATH = PUBLISHED_DIR / "jeju_materials.csv"
+PUBLISHED_REVIEW_PATH = PUBLISHED_DIR / "jeju_material_review.csv"
 STANDARD_FESTIVALS_PATH = Path("data/raw/전국문화축제표준데이터-20261103.xls")
 
 INTEREST_PERIOD = ("202301", "202412")
@@ -44,6 +50,11 @@ EXCLUDED_PLACE = re.compile(
     r"^(?:버스정류소|전기차충전소)|어린이 ?공원|어린이|보건소|주민센터|도서관|복지|학교|병원|청사"
     r"|사무소|마을회관|경로당|문화의집|노인|요양"
 )
+
+
+def materials_path() -> Path:
+    """직접 만든 사전이 있으면 그것, 없으면 Git에 올린 가공본."""
+    return MATERIALS_PATH if MATERIALS_PATH.exists() else PUBLISHED_MATERIALS_PATH
 
 
 def load_keywords(path: Path = KEYWORDS_PATH) -> pd.DataFrame:
@@ -194,14 +205,18 @@ def main(argv: list[str] | None = None) -> None:
     standard = load_festivals(STANDARD_FESTIVALS_PATH) if STANDARD_FESTIVALS_PATH.exists() else None
     places = wifi_place_shares(load_wifi_usage())
     d, review = build_dictionary(panel, standard, places)
-    MATERIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    d.to_csv(MATERIALS_PATH, index=False, encoding="utf-8-sig")
-    review.to_csv(REVIEW_PATH, index=False, encoding="utf-8-sig")
+    pairs = [(MATERIALS_PATH, REVIEW_PATH)]
+    if "--publish" in argv:
+        pairs.append((PUBLISHED_MATERIALS_PATH, PUBLISHED_REVIEW_PATH))
+    for materials_path, review_path in pairs:
+        materials_path.parent.mkdir(parents=True, exist_ok=True)
+        d.to_csv(materials_path, index=False, encoding="utf-8-sig")
+        review.to_csv(review_path, index=False, encoding="utf-8-sig")
     cols = ["material", "category", "festival_count", "months", "place_count",
             "tourist_share_pct", "national_share_pct", "strength"]  # fmt: skip
     print(d[cols].sort_values("strength", ascending=False).to_string(index=False))
     print(f"전체 장소 관광 사용량 비중: {d.attrs['base_tourist_share_pct']}%")
-    print(f"저장: {MATERIALS_PATH}, 검수 목록: {REVIEW_PATH}")
+    print("저장:", ", ".join(str(p) for pair in pairs for p in pair))
 
 
 if __name__ == "__main__":
