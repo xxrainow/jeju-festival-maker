@@ -9,7 +9,7 @@
 | 지금 (v1) | 제안 (v2) | 이유 |
 |---|---|---|
 | `UserRequest` (`purpose` 필수) | `UserRequest` + `season`, `target`, 모든 항목 선택 | 기획서 9-1: 비어 있으면 데이터가 추천 |
-| `FestivalCase` (뉴스 사례) | **삭제** | 뉴스 검색이 주 흐름에서 빠짐. 사례 근거는 `IdeaReference`(문화관광축제 명단)가 대신 |
+| `FestivalCase` (뉴스 사례) | **삭제** | 뉴스 모듈 삭제(확정). 사례 근거는 `IdeaReference`(문화관광축제 명단)가 대신 |
 | `FestivalIdea` | `IdeaCard` | 형식×재료 조합, 근거 3칸, 사례, 시기, 예산, 검증할 가설 |
 | `IdeaProposal` (`agent/proposals.py`) | `IdeaProposal` (계약으로 옮김) | B 화면이 직접 읽는 모양이라 공동 계약에 둔다 |
 | `AnalysisRequest`, `AnalysisResult` | `CheckResult`, `CheckRound`, `VerificationRun` | ④ 확인 도구 5개의 공통 출력과 수정 기록 |
@@ -20,8 +20,8 @@
 | 단계 | 자료 | 방향 | 함수 (예정) |
 |---|---|---|---|
 | 1 | `UserRequest` | B 화면 → A | 화면 폼. 한 문장 입력은 A가 LLM으로 변환 |
-| 2~3 | `IdeaProposal` | A → B 화면 | `agent.proposals.propose_ideas(request)` (이름 유지) |
-| 4 | 고른 `idea_id` | B 화면 → A | `agent.verify.verify_idea(proposal, idea_id)` |
+| 2~3 | `IdeaProposal` | A → B 화면 | `agent.proposals.propose_idea_cards(request)` |
+| 4 | 고른 `IdeaCard` | B 화면 → A | `agent.verify.verify_idea(card, request, tools)` |
 | 4 내부 | `CheckResult` | B 확인 도구 → A 루프 | `check_timing(card, request)` 등 5개 |
 | 4 결과 | `VerificationRun` | A → B 화면 | 사용자 확인 화면 ("이대로 진행") |
 | 5~6 | 기획안, 홍보물 | A ↔ B | 추후 합의 |
@@ -654,7 +654,7 @@ class VerificationRun(BaseModel):
 
 ## 6. 합의할 것
 
-1. **`FestivalCase` 삭제와 `research/`**: 뉴스 모듈을 지울지, 선택 기능(최신 사례 참고)으로 남길지. 남기면 `FestivalCase`도 남긴다.
+1. ~~`FestivalCase` 삭제와 `research/`~~: 뉴스 모듈 삭제로 확정. `research/`에는 문체부 트렌드 코드만 남았다.
 2. **`AnalysisRequest/AnalysisResult`**: B의 `visit_pattern`이 지금 이것을 돌려준다. 확인 도구 안에서만 쓰고 계약에서 뺄지, 당분간 같이 둘지.
 3. **확인 도구 담당**: 제안은 B가 `analytics/`에 도구 5개(숫자 계산)를, A가 `agent/`에 루프·문장·수정 적용을 만드는 것. 연결 전까지 A는 가짜 `CheckResult`로 루프를 먼저 돌린다.
 4. **`jeju_festivals_in_month`**: 추천 월이 여러 개일 때 합계로 정했다. 월별로 따로 보여줘야 하면 `{월: 개수}` 모양으로 바꾼다.
