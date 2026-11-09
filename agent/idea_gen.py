@@ -6,8 +6,9 @@
 점수 (질문 3개, 같은 비중. 가중치는 기획서 8절 "가중치 재조정" 전 임시값):
 1. 요즘 뜨는 형식인가? = 신설리프트와 신설 수를 8개 형식 중 최댓값으로 나눈 평균
 2. 제주에 없는 형식인가? = 1 / (1 + 같은 형식 제주 축제 수)
-3. 관광객이 좋아하는 제주 재료인가? = 와이파이 데이터 전까지 임시로 제주 소재 강점비
-   (제주 비중 ÷ 전국 비중, 문체부 2026)를 재료 중 최댓값으로 나눈 값. 연결 태그가 없는 재료는 0.5
+3. 관광객이 좋아하는 제주 재료인가? = 제주 소재 사전(research/materials.py)의 소재 강점
+   (관련 장소 관광 사용량 비중 + 전국 희소성). 사전이 없으면 임시 목록(SEED_MATERIALS)과
+   제주 소재 강점비(제주 비중 ÷ 전국 비중)를 쓴다
 - 궁합 △는 점수 절반, ✕는 후보에서 제외
 - 입력 목적에 맞는 형식은 +PURPOSE_BONUS
 """
@@ -69,9 +70,14 @@ TOP_N = 10  # LLM에 넘기는 후보 수
 MAX_REPEAT = 3  # 상위 후보 안에서 같은 형식·같은 재료의 최대 개수
 IDEA_COUNT = 3
 INTEREST_NOTICE = (
-    "관광객 관심 지표(와이파이)는 데이터 대기 중이에요. 그동안 순위에는 제주 축제의 소재 비중을 "
-    "임시로 썼고, 제주 재료 목록도 사람이 고른 임시 목록이에요."
+    "제주 소재 사전이 없어 임시 재료 목록을 썼어요. 관광객 관심 지표 대신 제주 축제의 소재 비중을 "
+    "순위에 임시로 썼어요."
 )
+PENDING_INTEREST_NOTICE = (
+    "와이파이 장소와 연결되지 않은 재료(주로 수산물·농산물)는 관광객 관심 지표가 없어 중간값으로 "
+    "계산했어요."
+)
+DICTIONARY_SOURCE = "제주 소재 사전 (와이파이 장소별 방문자별 사용량 2023-01~2024-12)"
 
 
 @dataclass(frozen=True)
@@ -79,7 +85,10 @@ class Material:
     name: str
     category: str  # CATEGORIES 중 하나
     months: tuple[int, ...] | None = None  # 소재가 성립하는 월. None = 연중
-    strength_tag: str | None = None  # 임시 강점비를 가져올 트렌드 태그
+    strength_tag: str | None = None  # (임시 목록용) 강점비를 가져올 트렌드 태그
+    strength: float | None = None  # (사전) 소재 강점 0~1. 있으면 strength_tag보다 우선
+    tourist_share_pct: float | None = None  # (사전) 관련 장소 관광 사용량 비중. 없으면 pending
+    existing_festivals: tuple[str, ...] = ()  # 같은 재료의 기존 제주 축제 (④ 겹침 확인용)
 
 
 # 제주 소재 사전(기획서 6절, D 단계)이 나오기 전 임시 목록. 제철 월은 팀 검수 전 가정이다
@@ -158,6 +167,8 @@ class Candidate(BaseModel):
     score: float
     parts: dict[str, float]  # 질문별 점수 (설명용)
     purpose_boosted: bool
+    tourist_share_pct: float | None = None  # 카드의 관광객 관심 근거 (없으면 pending)
+    interest_source: str | None = None
 
 
 @dataclass
@@ -201,7 +212,10 @@ def build_candidates(
     top_n: int = TOP_N,
 ) -> CandidateSet:
     usable, notice = resolve_interest(request.interest, materials)
-    notices = [INTEREST_NOTICE] + ([notice] if notice else [])
+    from_dictionary = all(m.strength is not None for m in materials)
+    notices = [] if from_dictionary else [INTEREST_NOTICE]
+    if notice:
+        notices.append(notice)
     fixed = request.interest is not None and notice is None
     boosted = PURPOSE_BOOST.get(request.purpose or "", ())
 
@@ -234,8 +248,11 @@ def build_candidates(
             if not months:
                 off_season.add(m.name)
                 continue
-            s = data.strength.get(m.strength_tag) if m.strength_tag else None
-            interest = s / max_strength if s else NEUTRAL_INTEREST
+            if m.strength is not None:
+                interest = m.strength
+            else:
+                s = data.strength.get(m.strength_tag) if m.strength_tag else None
+                interest = s / max_strength if s else NEUTRAL_INTEREST
             score = (trend + gap + interest) / 3
             if mark == "△":
                 score *= TRIANGLE_FACTOR
@@ -247,7 +264,11 @@ def build_candidates(
                 parts={"trend": round(trend, 4), "jeju_gap": round(gap, 4),
                        "visitor_interest": round(interest, 4)},
                 purpose_boosted=fmt in boosted,
+                tourist_share_pct=m.tourist_share_pct,
+                interest_source=DICTIONARY_SOURCE if m.tourist_share_pct is not None else None,
             ))  # fmt: skip
+    if from_dictionary and any(c.tourist_share_pct is None for c in out):
+        notices.append(PENDING_INTEREST_NOTICE)
     skipped = sorted(off_season - {c.material for c in out})
     if skipped:
         notices.append(f"입력한 계절에 맞지 않아 뺀 재료: {', '.join(skipped)}")
@@ -307,6 +328,42 @@ def _recommended_months(months: list[int], data: TrendData) -> list[int]:
     return sorted(ranked[:3])
 
 
+def _visitor_evidence(candidate: Candidate) -> VisitorInterestEvidence:
+    if candidate.tourist_share_pct is None:
+        return VisitorInterestEvidence(source="와이파이 장소별 방문자별 사용량", status="pending")
+    return VisitorInterestEvidence(
+        value=candidate.tourist_share_pct,
+        metric="관련 장소 관광 사용량 비중(%)",
+        source=candidate.interest_source or DICTIONARY_SOURCE,
+    )
+
+
+def materials_from_dictionary(d: pd.DataFrame) -> tuple[Material, ...]:
+    """research.materials의 사전 표 → Material 목록."""
+    out = []
+    for r in d.itertuples(index=False):
+        months = (
+            tuple(int(m) for m in str(r.months).split("|"))
+            if str(r.months) not in ("", "nan")
+            else None
+        )
+        share = None if pd.isna(r.tourist_share_pct) else float(r.tourist_share_pct)
+        fests = tuple(f for f in str(r.festivals).split("; ") if f and f != "nan")
+        out.append(Material(
+            name=r.material, category=r.category, months=months,
+            strength=float(r.strength), tourist_share_pct=share, existing_festivals=fests,
+        ))  # fmt: skip
+    return tuple(out)
+
+
+def load_materials(path=None) -> tuple[Material, ...]:
+    """저장된 제주 소재 사전을 읽는다. 없으면 FileNotFoundError."""
+    from research.materials import MATERIALS_PATH
+
+    path = MATERIALS_PATH if path is None else path
+    return materials_from_dictionary(pd.read_csv(path, dtype={"months": str}))
+
+
 def _median(values: list[int]) -> int | None:
     return int(pd.Series(values).median()) if values else None
 
@@ -352,9 +409,7 @@ def build_card(
                 new_count=stats.new_count, new_lift=stats.new_lift, source=data.trend_source
             ),
             jeju_gap=JejuGapEvidence(jeju_count=stats.jeju_count, source=data.jeju_source),
-            visitor_interest=VisitorInterestEvidence(
-                source="와이파이 AP별 이용 현황", status="pending"
-            ),
+            visitor_interest=_visitor_evidence(candidate),
         ),
         reference=IdeaReference(
             type="성공 사례" if designated else "선점 기회", designated_festivals=designated

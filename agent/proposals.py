@@ -6,7 +6,7 @@
 from agent import draft_contracts as v2
 from agent.demo_cards import demo_proposal
 from agent.idea_cards import CardGenerationError, generate_idea_cards
-from agent.idea_gen import TrendData
+from agent.idea_gen import SEED_MATERIALS, Material, TrendData, load_materials
 from agent.llm import LLMClient
 
 
@@ -16,12 +16,14 @@ def propose_idea_cards(
     demo: bool = True,
     llm: LLMClient | None = None,
     data: TrendData | None = None,
+    materials: tuple[Material, ...] | None = None,
 ) -> v2.IdeaProposal:
     """사용자 조건으로 아이디어 카드 3장을 제안한다.
 
     demo=True: 기획서 9-2 "애월 감귤" 예시 카드를 준다. 입력 조건과 상관없이 같은 카드다.
     demo=False: 문체부 패널로 후보를 만들고 llm이 3개를 고른다. llm이 없으면 CardGenerationError.
-    data를 넘기지 않으면 data/processed/의 축제 패널을 읽는다.
+    data, materials를 넘기지 않으면 data/processed/의 축제 패널과 제주 소재 사전을 읽는다.
+    소재 사전이 없으면 임시 재료 목록을 쓰고 카드 안내 문장에 그 사실을 적는다.
     """
     if demo:
         return demo_proposal()
@@ -34,4 +36,9 @@ def propose_idea_cards(
             data = TrendData.from_panel(load_panel())
         except FileNotFoundError as exc:
             raise CardGenerationError(str(exc)) from exc
-    return generate_idea_cards(request, data, llm)
+    if materials is None:
+        try:
+            materials = load_materials()
+        except FileNotFoundError:
+            materials = SEED_MATERIALS
+    return generate_idea_cards(request, data, llm, materials=materials)

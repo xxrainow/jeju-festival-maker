@@ -12,7 +12,7 @@ from agent.idea_cards import (
     generate_idea_cards,
     parse_picks,
 )
-from agent.idea_gen import build_candidates
+from agent.idea_gen import SEED_MATERIALS, build_candidates
 from agent.llm import LLMError
 from agent.proposals import propose_idea_cards
 
@@ -152,5 +152,7 @@ def test_real_path_needs_llm():
 def test_real_path_with_fake_llm(trend_data):
     cset = build_candidates(REQUEST, trend_data)
     llm = FakeLLM(picks_for(cset, distinct_ids(cset)))
-    proposal = propose_idea_cards(REQUEST, demo=False, llm=llm, data=trend_data)
+    proposal = propose_idea_cards(
+        REQUEST, demo=False, llm=llm, data=trend_data, materials=SEED_MATERIALS
+    )
     assert len(proposal.ideas) == 3
