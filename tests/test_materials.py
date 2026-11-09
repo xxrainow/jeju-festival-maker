@@ -63,6 +63,16 @@ def test_festivals_deduplicated_across_years():
     assert set(fests["출처"]) == {"문체부"}
 
 
+def test_match_places_false_skips_wifi(trend_data):
+    kw = KEYWORDS.copy()
+    kw["match_places"] = [True, True, False, True]  # 해녀 장소 연결 끔
+    d, review = build_dictionary(panel(), None, wifi_place_shares(usage()), kw)
+    d = d.set_index("material")
+    assert d.loc["해녀", "place_count"] == 0
+    assert d.loc["해녀", "interest_status"] == "pending"
+    assert not ((review["material"] == "해녀") & (review["kind"] == "와이파이 장소")).any()
+
+
 def test_place_shares_use_interest_period_and_skip_facilities():
     places = wifi_place_shares(usage())
     assert "버스정류소_해녀박물관[동]" not in places.index

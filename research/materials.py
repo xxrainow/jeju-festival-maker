@@ -48,6 +48,10 @@ EXCLUDED_PLACE = re.compile(
 def load_keywords(path: Path = KEYWORDS_PATH) -> pd.DataFrame:
     kw = pd.read_csv(path, dtype=str, keep_default_na=False)
     kw["seasonal"] = kw["seasonal"].str.lower() == "true"
+    # match_places=false: 장소 이름이 재료와 다른 것을 가리켜(예: 테우 → 이호테우해변) 연결하지 않음
+    if "match_places" not in kw:
+        kw["match_places"] = "true"
+    kw["match_places"] = kw["match_places"].str.lower() != "false"
     kw["manual_months"] = kw["manual_months"].map(
         lambda s: tuple(int(m) for m in s.split("|")) if s else ()
     )
@@ -132,7 +136,7 @@ def build_dictionary(
             "tourist_vs_avg": None,
         }
         review += [{"material": r["material"], "kind": "축제", "name": n} for n in hit["축제명"]]
-        if places is not None:
+        if places is not None and r.get("match_places", True):
             matched = places[places.index.to_series().str.contains(pat, regex=True)]
             row["place_count"] = len(matched)
             top = matched.sort_values("total", ascending=False).index[:10]
