@@ -9,7 +9,15 @@ import json
 import re
 
 from agent.draft_contracts import IdeaProposal, UserRequest
-from agent.idea_gen import IDEA_COUNT, CandidateSet, TrendData, build_candidates, build_card
+from agent.idea_gen import (
+    IDEA_COUNT,
+    SEED_MATERIALS,
+    CandidateSet,
+    Material,
+    TrendData,
+    build_candidates,
+    build_card,
+)
 from agent.llm import LLMClient, LLMError
 
 MAX_HYPOTHESES = 3
@@ -70,6 +78,7 @@ def build_user_prompt(request: UserRequest, cset: CandidateSet, data: TrendData)
             "점수": c.score,
             "목적 가산점": c.purpose_boosted,
             "제주 같은 형식 축제 수": stats.jeju_count,
+            "재료 관련 장소 관광 비중(%)": c.tourist_share_pct,
             "전국 지정 축제 사례": [name for name, _ in stats.designated[:3]],
         })  # fmt: skip
     return (
@@ -148,12 +157,13 @@ def generate_idea_cards(
     data: TrendData,
     llm: LLMClient,
     *,
+    materials: tuple[Material, ...] = SEED_MATERIALS,
     max_attempts: int = 2,
 ) -> IdeaProposal:
     """후보를 만들고 LLM이 3개를 고르게 한 뒤 카드 묶음을 돌려준다."""
     if max_attempts < 1:
         raise ValueError("max_attempts는 1 이상이어야 해요.")
-    cset = build_candidates(request, data)
+    cset = build_candidates(request, data, materials)
     if len({c.format for c in cset.candidates}) < IDEA_COUNT:
         raise CardGenerationError(
             "조건에 맞는 형식이 3개보다 적어요. 관심 소재나 계절 조건을 넓혀 다시 시도해주세요."

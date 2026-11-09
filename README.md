@@ -59,6 +59,15 @@ uv run --with python-calamine python -m research.trends
 
 엑셀 읽기용 `python-calamine`은 아직 의존성에 넣지 않아 `--with`로 임시 설치합니다.
 
+3. 제주 소재 사전을 만듭니다. 와이파이 CSV 2개(`와이파이장소별방문자별사용량.csv`, `와이파이장소별사용자현황.csv`)와
+   전국문화축제표준데이터를 `data/raw/`에 둡니다. 결과: `data/processed/jeju_materials.csv`, 검수 목록 `jeju_material_review.csv`
+
+```sh
+uv run python -m research.materials
+```
+
+재료 키워드는 `research/reference/jeju_material_keywords.csv`에서 고칩니다.
+
 ## 다음 작업
 
 1. A: LLM 공급자 연결, 한 문장 입력 변환, 기획서 생성.
