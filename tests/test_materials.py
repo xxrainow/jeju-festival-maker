@@ -9,6 +9,7 @@ from research.materials import (
     NEUTRAL_INTEREST,
     build_dictionary,
     jeju_festivals,
+    latest_festivals,
     load_keywords,
     wifi_place_shares,
 )
@@ -104,7 +105,8 @@ def test_dictionary_feeds_candidates_and_cards(trend_data):
     mats = materials_from_dictionary(d)
     by_name = {m.name: m for m in mats}
     assert by_name["방어"].months == (11,) and by_name["해녀"].months is None
-    assert by_name["유채꽃"].existing_festivals == ("제40회 서귀포유채꽃축제",)
+    assert by_name["유채꽃"].existing_festivals == (("제40회 서귀포유채꽃축제", 3),)
+    assert by_name["감귤"].existing_festivals == (("효돈 귤꽃축제", 5),)
 
     req = UserRequest(interest="유채꽃")
     cset = build_candidates(req, trend_data, mats)
@@ -114,6 +116,9 @@ def test_dictionary_feeds_candidates_and_cards(trend_data):
     )
     ev = card.evidence.visitor_interest
     assert ev.status == "ready" and ev.value == 80.0 and "와이파이" in ev.source
+    assert [(f.name, f.month) for f in card.existing_jeju_festivals] == [
+        ("제40회 서귀포유채꽃축제", 3)
+    ]
 
     req = UserRequest(interest="방어")
     cset = build_candidates(req, trend_data, mats)
@@ -131,3 +136,25 @@ def test_real_dictionary_loads():
     mats = load_materials()
     assert len(mats) >= 30
     assert all(0 <= m.strength <= 1 for m in mats)
+
+
+def test_latest_festivals_dedupes_years_and_keeps_month():
+    rows = [
+        ("제40회 서귀포유채꽃축제", 3, 2024),
+        ("제42회 서귀포유채꽃축제", 4, 2026),
+        ("가시리 유채 걷기", 3, 2025),
+    ]
+    hit = pd.DataFrame(rows, columns=["축제명", "월", "연도"])
+    assert latest_festivals(hit) == [
+        {"name": "가시리 유채 걷기", "month": 3},
+        {"name": "제42회 서귀포유채꽃축제", "month": 4},
+    ]
+
+
+def test_existing_festivals_prefer_candidate_months(trend_data):
+    from agent.idea_gen import Material
+
+    fests = (("봄 축제", 4), ("여름 축제", 7), ("겨울 축제", 12), ("가을 축제", 10))
+    mats = (Material("감귤", "농산물", (11, 12, 1), strength=0.8, existing_festivals=fests),)
+    cand = build_candidates(UserRequest(interest="감귤"), trend_data, mats).candidates[0]
+    assert cand.existing_festivals == [("겨울 축제", 12), ("봄 축제", 4), ("여름 축제", 7)]

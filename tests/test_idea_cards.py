@@ -62,6 +62,8 @@ def test_prompt_lists_candidates_as_json(trend_data):
     cset = build_candidates(REQUEST, trend_data)
     prompt = build_user_prompt(REQUEST, cset, trend_data)
     assert "<candidates>" in prompt and "cand_01" in prompt
+    assert "제주 같은 재료 기존 축제" in prompt
+    assert "단정하지 마세요" in SYSTEM_PROMPT
     assert "목록에 없는 조합을 만들지 마세요" in SYSTEM_PROMPT
 
 

@@ -69,6 +69,10 @@ def _card(rank, title, concept, fmt, match, reason, new_count, lift, ref, median
             "source": "문체부 지역축제 2026",
         },
         "hypotheses": hyps,
+        "existing_jeju_festivals": [
+            {"name": "2026 효돈감귤꽃축제", "month": 5},
+            {"name": "제4회 의귀리 귤꽃축제", "month": 5},
+        ],
     }
 
 

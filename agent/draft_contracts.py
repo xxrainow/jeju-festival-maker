@@ -124,6 +124,14 @@ class IdeaBudget(BaseModel):
     source: str = "문체부 지역축제 2026"
 
 
+class ExistingFestival(BaseModel):
+    """같은 재료의 기존 제주 축제. 겹침 판정은 ④ check_risk가 하고, 카드에는 참고로만 보여준다."""
+
+    name: str
+    month: int | None = None
+    source: str = "제주 축제 (문체부 지역축제 2024-2026, 전국문화축제표준데이터)"
+
+
 class VenueCandidate(BaseModel):
     name: str
     admin_area: str  # 행정동·읍면 (예: "제주시 애월읍")
@@ -146,6 +154,7 @@ class IdeaCard(BaseModel):
     timing: IdeaTiming
     budget: IdeaBudget
     hypotheses: list[str] = Field(min_length=1)  # ④ 검증으로 넘김
+    existing_jeju_festivals: list[ExistingFestival] = Field(default_factory=list)  # 코드, 최대 3개
     # 아래 둘은 아이디어 단계에서는 비어 있고 ④ 검증·수정에서 채운다
     venue: list[VenueCandidate] = Field(default_factory=list)
     programs: list[str] = Field(default_factory=list)

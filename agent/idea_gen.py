@@ -13,6 +13,7 @@
 - 입력 목적에 맞는 형식은 +PURPOSE_BONUS
 """
 
+import json
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -22,6 +23,7 @@ from agent.draft_contracts import (
     AppliedRules,
     BudgetExample,
     DesignatedFestival,
+    ExistingFestival,
     FestivalFormat,
     IdeaBudget,
     IdeaCard,
@@ -67,6 +69,7 @@ PURPOSE_BONUS = 0.1
 TRIANGLE_FACTOR = 0.5
 NEUTRAL_INTEREST = 0.5
 TOP_N = 10  # LLM에 넘기는 후보 수
+MAX_EXISTING = 3  # 후보·카드에 붙이는 기존 제주 축제 수
 MAX_REPEAT = 3  # 상위 후보 안에서 같은 형식·같은 재료의 최대 개수
 IDEA_COUNT = 3
 INTEREST_NOTICE = (
@@ -88,7 +91,9 @@ class Material:
     strength_tag: str | None = None  # (임시 목록용) 강점비를 가져올 트렌드 태그
     strength: float | None = None  # (사전) 소재 강점 0~1. 있으면 strength_tag보다 우선
     tourist_share_pct: float | None = None  # (사전) 관련 장소 관광 사용량 비중. 없으면 pending
-    existing_festivals: tuple[str, ...] = ()  # 같은 재료의 기존 제주 축제 (④ 겹침 확인용)
+    existing_festivals: tuple[
+        tuple[str, int | None], ...
+    ] = ()  # 같은 재료의 기존 제주 축제 (이름, 월)
 
 
 # 제주 소재 사전(기획서 6절, D 단계)이 나오기 전 임시 목록. 제철 월은 팀 검수 전 가정이다
@@ -177,6 +182,9 @@ class Candidate(BaseModel):
     parts: dict[str, float]  # 질문별 점수 (설명용)
     purpose_boosted: bool
     tourist_share_pct: float | None = None  # 카드의 관광객 관심 근거 (없으면 pending)
+    existing_festivals: list[
+        tuple[str, int | None]
+    ] = []  # 같은 재료 기존 제주 축제, 가능한 월 우선
     interest_source: str | None = None
 
 
@@ -274,6 +282,7 @@ def build_candidates(
                        "visitor_interest": round(interest, 4)},
                 purpose_boosted=fmt in boosted,
                 tourist_share_pct=m.tourist_share_pct,
+                existing_festivals=_pick_existing(m.existing_festivals, months),
                 interest_source=DICTIONARY_SOURCE if m.tourist_share_pct is not None else None,
             ))  # fmt: skip
     if from_dictionary and any(c.tourist_share_pct is None for c in out):
@@ -337,6 +346,14 @@ def _recommended_months(months: list[int], data: TrendData) -> list[int]:
     return sorted(ranked[:3])
 
 
+def _pick_existing(
+    festivals: tuple[tuple[str, int | None], ...], months: list[int]
+) -> list[tuple[str, int | None]]:
+    """후보의 가능한 월에 열리는 축제를 먼저, 그다음 월 순서로 최대 MAX_EXISTING개."""
+    ranked = sorted(festivals, key=lambda f: (f[1] not in months, f[1] or 99, f[0]))
+    return list(ranked[:MAX_EXISTING])
+
+
 def _visitor_evidence(candidate: Candidate) -> VisitorInterestEvidence:
     if candidate.tourist_share_pct is None:
         return VisitorInterestEvidence(source="와이파이 장소별 방문자별 사용량", status="pending")
@@ -357,7 +374,9 @@ def materials_from_dictionary(d: pd.DataFrame) -> tuple[Material, ...]:
             else None
         )
         share = None if pd.isna(r.tourist_share_pct) else float(r.tourist_share_pct)
-        fests = tuple(f for f in str(r.festivals).split("; ") if f and f != "nan")
+        raw = getattr(r, "existing_festivals", "[]")
+        items = json.loads(raw) if isinstance(raw, str) and raw.startswith("[") else []
+        fests = tuple((f["name"], f.get("month")) for f in items)
         out.append(Material(
             name=r.material, category=r.category, months=months,
             strength=float(r.strength), tourist_share_pct=share, existing_festivals=fests,
@@ -441,4 +460,7 @@ def build_card(
             source=data.budget_source,
         ),
         hypotheses=hypotheses,
+        existing_jeju_festivals=[
+            ExistingFestival(name=n, month=m) for n, m in candidate.existing_festivals
+        ],
     )
