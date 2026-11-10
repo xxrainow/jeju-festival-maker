@@ -97,9 +97,9 @@ evidence, sources, warnings = timing_weather_evidence(request.region, card.timin
 ```python
 from agent.fake_checks import FAKE_TOOLS
 from agent.verify import verify_idea
-from analytics.check_timing import REAL_TOOLS
+from analytics.real_checks import REAL_TOOLS  # check_timing, check_budget
 
-run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # check_timing만 실제 버전으로
+run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 나머지 3개는 가짜 그대로
 ```
 
 - 먼저 표를 만든다: `uv run python -m analytics.weather` → `uv run python -m analytics.check_timing --build`. 표가 없으면 pending과 안내 문장을 돌려준다
@@ -110,3 +110,14 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # check_timing�
 - 외지인 지수는 지금 와이파이 관광 사용량(대체 지표)이라 `is_synthetic=False`이고, "사람 수가 아님" 경고가 붙는다. 4-11 가짜 데이터로 만든 지수를 쓰면 `is_synthetic=True`
 - **데모 후보**: 대정읍 방어 11·12월 → 12월 바람으로 fail → 제안 "11월만" → 재확인 conditional (방어 축제 날짜 미확인). 실데이터 애월읍 감귤 12월은 지수 0.90이라 conditional이고 fail이 아니다
 - 다른 판정 기준(배수, 연수)은 `BAD_RATIO`, `MIN_BAD_YEARS`
+
+## 8. 규모 확인 `check_budget` (실제 버전)
+
+- 7절의 `REAL_TOOLS`에 들어 있다. 따로 만들 표는 없고, A의 카드와 같은 패널(`research.trends.load_panel()`)을 읽는다
+- 입출력은 가짜 `check_budget`과 같다. 입력 예산은 `request.budget_max_krw`, 없으면 `card.budget.input_krw`
+- 사례 범위는 A의 `tag_budgets`와 같다: 2026년, 예산 > 0, 형식 태그. 그래서 `format_median_krw`가 카드 값과 같다 (다르면 경고)
+- 판정: 예산 없음·중간값 이상 → pass / 중간값 미만이지만 그 예산 이하 같은 형식 사례 있음 → conditional("소규모 버전", 사례 최대 3개) / 사례 없음 + 카드 scale "기본" → fail, `Suggestion(field="budget.scale", value="소규모 버전")` / 사례 없음 + 이미 "소규모 버전" → conditional + "비슷한 규모 사례 없음" 경고
+- 카드를 만들 때 입력 예산이 중간값보다 작으면 A가 scale을 이미 "소규모 버전"으로 두므로, 실제로는 대부분 conditional이 나온다. 계약은 바꾸지 않았고 "축소"는 "소규모 버전"을 뜻한다
+- evidence: `input_krw`, `format_median_krw`, `format_q25_krw`, `scale`(확인 후 규모), `card_scale`, `small_examples`(name, budget_krw, visitors, region, year; 입력에 가까운 것부터), `basis`, `sample_count`, `visitors_estimate`(+ `_text`), `reduction_methods`
+- 카드의 `small_examples`는 A 코드가 예산이 작은 것부터 3개를 고르고, `check_budget`은 입력 예산에 가까운 것부터 3개를 고른다. 화면에서 둘을 함께 보여주면 다르게 보일 수 있다
+- 형식 태그 오탐 후보는 `docs/tag-review-for-a.md`
