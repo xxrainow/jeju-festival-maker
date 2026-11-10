@@ -90,4 +90,23 @@ evidence, sources, warnings = timing_weather_evidence(request.region, card.timin
 - `CheckResult.evidence`에 `months`와 함께 넣고, `sources`·`warnings`는 CheckResult의 같은 칸에 더한다
 - **주 기준은 상대 기준**: `worse_than_usual`(예: `["바람", "비"]`)은 추천 월이 같은 지점 평소보다 나쁜 항목, `relative_to_station`은 항목별 배수(1보다 크면 평소보다 나쁨). 지점끼리 비교하지 않는다
 - `*_days`는 추천 월을 합친 연평균 일수(2017~2025 9년 평균)로 절대 기준 참고값이다. 14m/s 강풍일은 warnings의 "참고" 문장으로만 나온다
-- 지역이 없거나 지점 연결이 없으면 값은 None이고 이유가 `warnings`에 있다. 날씨와 외지인 방문을 합쳐 pass/fail을 정하는 방식은 A·B가 정한 뒤 반영한다
+- 지역이 없거나 지점 연결이 없으면 값은 None이고 이유가 `warnings`에 있다. 날씨와 외지인 방문을 합친 판정은 7절 `check_timing`이 한다
+
+## 7. 시기 확인 `check_timing` (실제 버전)
+
+```python
+from agent.fake_checks import FAKE_TOOLS
+from agent.verify import verify_idea
+from analytics.check_timing import REAL_TOOLS
+
+run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # check_timing만 실제 버전으로
+```
+
+- 먼저 표를 만든다: `uv run python -m analytics.weather` → `uv run python -m analytics.check_timing --build`. 표가 없으면 pending과 안내 문장을 돌려준다
+- 입출력은 가짜 `check_timing`과 같다: `check_timing(card, request) -> CheckResult`. evidence에 가짜의 `months`, `low_months`, `outsider_visitors_index`(가짜는 None, 실제는 `{월: 지수}`)가 그대로 있다
+- 더 들어가는 evidence: `outsider_index_source`, 6절 날씨 칸, `weather_rule`, `bad_weather_months`, `recommended_weeks`(예: "5월 2주차 (5/14~5/20)"), `overlapping_festivals`(이름·시작·끝·날짜 확인 여부·출처·월), `month_checks`(월별 결과·좋은 주·나쁜 주와 이유)
+- 판정: fail(지수 < 1 또는 그 달 모든 주가 나쁨) > conditional(같은 재료 제주 축제가 그 달에 있음) > pass. 지역이 없거나 그 동네 자료가 없으면 pending (suggestion 없음)
+- fail 제안: 일부 달만 fail이면 그 달을 빼고, 전부 fail이면 통과하는 다른 달 중 지수가 가장 높은 한 달 (재료 제철 안에서). 고를 달이 없으면 suggestion이 None이라 루프가 멈추고 다른 아이디어로 넘어간다
+- 외지인 지수는 지금 와이파이 관광 사용량(대체 지표)이라 `is_synthetic=False`이고, "사람 수가 아님" 경고가 붙는다. 4-11 가짜 데이터로 만든 지수를 쓰면 `is_synthetic=True`
+- **데모 주의**: 실데이터에서 애월읍 감귤 12월은 fail이지만, 감귤 제철(11·12·1월)이 모두 지수 1 미만이라 11월 제안이 나오지 않는다. 데모 시나리오는 지역이나 재료를 바꿔야 할 수 있다 (예: 남원읍 감귤 11·1월 → "1월만")
+- 다른 판정 기준(배수, 연수)은 `BAD_RATIO`, `MIN_BAD_YEARS`
