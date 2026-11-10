@@ -1,60 +1,85 @@
 # A 기능 사용 안내 (B용)
 
-아이디어 카드 화면에서 축제 아이디어 3개를 받아오는 방법이다. 함수는 `agent/`에 있다.
+아이디어 카드 3장을 받아오고, 고른 아이디어를 검증·수정하는 방법이다. 함수는 `agent/`에 있다.
 
-> 이 안내는 jiwoo 브랜치의 계약 변경(`rationale`, `target_audience` 목록, `retrieved_at`)을 전제로 한다.
-> 합의 전이므로 바뀌면 이 문서도 같이 고친다.
+> 계약은 합의 전까지 `agent/draft_contracts.py`(v2 초안)를 쓴다. 모양은 `docs/contract-v2-proposal.md` 참고.
+> `schemas/contracts.py`로 옮기면 import 경로만 바뀐다.
 
-## 1. 흐름
+## 0. 한 문장 입력 (선택)
 
 ```python
-from agent.proposals import propose_ideas
-from schemas.contracts import UserRequest
+from agent.request_parser import RequestParseError, parse_request
 
-request = UserRequest(region="제주시 애월읍", purpose="지역 상권 활성화", interest="감귤")
-proposal = propose_ideas(request, demo=True)   # 지금은 demo=True만 동작
-
-for notice in proposal.notices:                # 데모 안내, 검토 전 안내
-    st.info(notice)
-
-for idea in proposal.ideas:                    # 정확히 3개
-    st.subheader(idea.title)
-    st.write(idea.summary)
-    st.write("핵심 프로그램:", ", ".join(idea.programs))
-    st.write("주 대상:", idea.target_audience[0])
-    st.caption(idea.rationale)                 # 제주에 적용할 이유 (가설)
-    for case in proposal.cases_for(idea):      # 이 아이디어가 인용한 사례
-        st.caption(f"참고: [{case.title}]({case.source_url}) · 수집 {case.retrieved_at:%Y-%m-%d}")
+try:
+    parsed = parse_request("애월에서 감귤로 상권 살리는 축제, 예산 1천만 원")
+except RequestParseError as e:
+    st.warning(str(e))          # 화면에 그대로 보여줘도 되는 문장. 칸에 직접 입력하게 한다
+else:
+    request = parsed.request    # region="제주시 애월읍", budget_max_krw=10000000 ...
+    for note in parsed.notes:   # 예: "'협재'을(를) 읍면동으로 정하지 못했어요. 지역을 직접 골라주세요."
+        st.info(note)
 ```
 
-`st.session_state`에 넣을 때는 `proposal.model_dump(mode="json")`로 저장하고
-`IdeaProposal.model_validate(...)`로 다시 읽는다.
+- 결과를 입력 칸에 채워 보여주고 사용자가 고친 뒤 확정하게 한다 (자동 확정하지 않는다)
+- 지역은 행정동 43개 이름 중 하나로만 들어온다. 못 정하면 비우고 `notes`로 알린다
+- 예산 금액은 LLM이 아니라 코드가 글자("1천만 원")를 읽어 원 단위로 바꾼다
 
-## 2. `IdeaProposal`
+## 1. 아이디어 카드
 
-| 필드 | 내용 |
-|---|---|
-| `request` | 넘긴 `UserRequest` 그대로 |
-| `ideas` | `FestivalIdea` 3개. `idea_id`는 `idea_001`~`idea_003`, `status`는 `"unreviewed"` |
-| `cases` | 아이디어가 인용한 `FestivalCase`. 출처 링크·게시일·수집일 표시에 쓴다 |
-| `is_demo` | `True`면 가상 자료. 화면에 데모임을 꼭 드러낸다 |
-| `notices` | 화면에 그대로 보여줄 안내 문장 목록 |
-| `cases_for(idea)` | 그 아이디어가 인용한 사례만 순서대로 |
+```python
+from agent.draft_contracts import UserRequest
+from agent.proposals import propose_idea_cards
 
-## 3. 화면에서 지킬 것
+request = UserRequest(region="제주시 애월읍", purpose="지역 상권 활성화", interest="감귤",
+                      budget_max_krw=10_000_000, season="겨울", target="가족")
+proposal = propose_idea_cards(request, demo=True)   # LLM 연결 전에는 demo=True
 
-- `is_demo`가 `True`면 `notices`를 빼지 말고 보여준다 (가상 자료 표시)
-- 아이디어는 "데이터 검토 전" 상태다. 확정된 기획처럼 보이지 않게 한다
-- `rationale`은 가설이다. "효과가 있다"처럼 단정하는 문구로 바꾸지 않는다
-- 사례의 `evidence_status`가 `snippet_only`면 "요약만 확보"라고 함께 표시하면 좋다
-- `target_audience`는 1~3개이고 첫 항목이 주 대상이다
+for notice in proposal.notices:                     # 데모 안내, 데이터 대기 안내
+    st.info(notice)
 
-## 4. 오류
+for card in proposal.ideas:                         # 정확히 3장, rank 순서
+    st.subheader(card.title)
+    st.write(card.concept)
+    st.caption(f"{card.format} × {card.material}")
+    ev = card.evidence
+    st.write("요즘 뜨는 형식:", f"신설 {ev.trend.new_count}개, 리프트 {ev.trend.new_lift}", ev.trend.source)
+    st.write("제주 같은 형식 축제:", f"{ev.jeju_gap.jeju_count}개", ev.jeju_gap.source)
+    if ev.visitor_interest.status == "pending":
+        st.write("관광객 관심: 데이터 대기")
+    st.write(card.reference.type, [f.name for f in card.reference.designated_festivals])
+    st.write("추천 시기:", card.timing.recommended_months)
+    st.write("검증할 가설:", card.hypotheses)
+```
 
-- `propose_ideas(..., demo=False)`는 아직 연결 전이라 `IdeaGenerationError`를 던진다
-- `IdeaGenerationError`의 메시지는 화면에 그대로 보여줘도 되는 문장이다
+- `rank`, `score`는 화면에 보여주지 않는다 (순서에만 쓴다)
+- 숫자 칸에는 `source`가 있다. 숫자와 함께 출처를 보여준다
+- `status`가 `"pending"`인 근거는 값 대신 "데이터 대기"로 표시한다
+- `is_demo`가 `True`면 `notices`를 빼지 말고 보여준다
+- `st.session_state`에는 `proposal.model_dump(mode="json")`로 저장하고 `IdeaProposal.model_validate(...)`로 읽는다
 
-## 5. 앞으로 바뀌는 것
+## 2. 검증·수정 (아이디어 선택 후)
 
-- `demo=False`에 실제 사례 검색(Tavily)과 AI 생성(Gemini 예정)이 붙는다. 호출 방법과 `IdeaProposal` 모양은 그대로 둔다
-- 아이디어를 고른 뒤 `AnalysisRequest`를 만드는 함수를 추가할 예정이다 (지역은 B 데이터의 행정동명 기준)
+```python
+from agent.fake_checks import FAKE_TOOLS          # B의 실제 도구가 생기면 교체
+from agent.verify import summarize, verify_idea
+
+run = verify_idea(card, request, FAKE_TOOLS)
+for r in run.rounds[-1].results:                   # 마지막 라운드의 확인 5개
+    st.write(r.check, r.status, r.reason)          # pass ✅ / conditional ⚠️ / fail ❌ / pending 데이터 대기
+for line in summarize(run):                        # 바뀐 점과 이유
+    st.write(line)
+if run.outcome == "ready_for_approval":
+    st.button("이대로 진행")
+else:
+    st.warning("다른 아이디어를 골라보세요.")
+```
+
+- 확인 도구는 `(IdeaCard, UserRequest) -> CheckResult` 함수다. `verify_idea`에 이름별 dict로 넘긴다
+- 연결하지 않은 도구는 `pending`으로 남고 실패로 세지 않는다
+- `is_synthetic=True`인 결과(가짜 도구 포함)는 화면에 가짜 데이터임을 드러낸다
+
+## 3. 오류
+
+- `propose_idea_cards(..., demo=False)`에 LLM을 넘기지 않으면 `CardGenerationError`
+- 축제 패널(`data/processed/festival_panel_2024_2026.parquet`)이 없어도 `CardGenerationError`. 만드는 방법은 메시지에 있다
+- `CardGenerationError`의 메시지는 화면에 그대로 보여줘도 되는 문장이다

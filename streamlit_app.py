@@ -8,8 +8,8 @@ settings = Settings()
 
 st.title("🍊 제주 축제랩")
 st.subheader("우리 지역에서 열어볼 만한 축제는?")
-st.write("축제 사례와 제주 데이터를 연결해 지역에 맞는 기획안을 준비합니다.")
-st.info("개발 초기 화면입니다. 뉴스 검색·AI 제안·CSV 분석은 아직 연결되지 않았습니다.")
+st.write("전국 축제 트렌드와 제주 데이터를 연결해 지역에 맞는 기획안을 준비합니다.")
+st.info("개발 초기 화면입니다. 아이디어 제안·CSV 분석은 아직 연결되지 않았습니다.")
 
 with st.form("initial_request"):
     region = st.text_input("희망 지역", placeholder="미정이면 비워두세요")
@@ -38,7 +38,7 @@ if "request" in st.session_state:
 
 with st.sidebar:
     st.header("개발 상태")
-    st.write("뉴스·아이디어: 연결 예정")
+    st.write("아이디어 카드: 연결 예정")
     st.write("제주 CSV 분석: 연결 예정")
     st.caption("API Key는 화면에 표시하지 않습니다.")
     st.write("LLM 키 설정:", "있음" if settings.llm_api_key.get_secret_value() else "없음")

@@ -8,12 +8,6 @@ class Settings(BaseSettings):
     llm_provider: str = ""
     llm_model: str = ""
     llm_api_key: SecretStr = SecretStr("")
-    search_provider: str = ""
-    search_api_key: SecretStr = SecretStr("")
-
-    naver_client_id: SecretStr = SecretStr("")
-    naver_client_secret: SecretStr = SecretStr("")
-    tavily_api_key: SecretStr = SecretStr("")
 
     jeju_hub_key: SecretStr = SecretStr("")
 

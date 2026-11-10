@@ -1,0 +1,146 @@
+"""2026-2027 문화관광축제·명예·예비축제 명단을 축제 패널에 연결한다.
+
+명단 출처: 문화체육관광부 「2026-2027년 문화관광축제 및 예비축제 목록」 (발표 자료 기준으로 직접 입력).
+설계 기획서 4·5절: 지정 축제는 트렌드 판정 기준이 아니라 사례·기회 근거로만 쓴다.
+"""
+
+import difflib
+
+import pandas as pd
+
+from research.trends import norm_name
+
+SOURCE = "문체부 2026-2027 문화관광축제 및 예비축제 목록"
+GRADES = ("문화관광", "명예", "예비")
+
+# (시도, 축제명, 2026 등급, 2027 등급)
+_C, _H, _P = "문화관광", "명예", "예비"
+DESIGNATION = [
+    # 문화관광축제 27
+    ("부산", "광안리어방축제", _C, _C), ("부산", "동래읍성축제", _C, _C),
+    ("부산", "부산국제록페스티벌", _C, _C), ("대구", "대구치맥페스티벌", _C, _C),
+    ("인천", "인천펜타포트음악축제", _C, _C), ("인천", "부평풍물대축제", _C, _C),
+    ("광주", "광주김치축제", _C, _C), ("울산", "울산옹기축제", _C, _C), ("세종", "세종한글축제", _C, _C),
+    ("경기", "수원화성문화제", _C, _C), ("경기", "시흥갯골축제", _C, _C),
+    ("경기", "연천구석기축제", _C, _C), ("경기", "화성뱃놀이축제", _C, _C),
+    ("경기", "안성맞춤남사당바우덕이축제", _C, None), ("경기", "부천국제만화제", _P, _C),
+    ("강원", "강릉커피축제", _C, _C), ("강원", "정선아리랑제", _C, _C), ("강원", "평창송어축제", _C, _C),
+    ("강원", "철원한탄강얼음트레킹", _C, _C), ("충북", "음성품바축제", _P, _C),
+    ("충남", "논산딸기축제", _C, _C), ("전북", "순창장류축제", _C, None),
+    ("전남", "보성다향대축제", _C, _C), ("전남", "영암왕인문화축제", _C, _C),
+    ("경북", "고령대가야축제", _C, _C), ("경북", "청송사과축제", _C, _C),
+    ("경남", "밀양아리랑대축제", _C, _C),
+    # 명예 문화관광축제 20
+    ("광주", "추억의충장축제", _H, _H), ("강원", "화천산천어축제", _H, _H),
+    ("강원", "평창효석문화제", _H, _H), ("강원", "춘천마임축제", _H, _H),
+    ("충북", "영동난계국악축제", _H, _H), ("충남", "보령머드축제", _H, _H),
+    ("충남", "천안흥타령축제", _H, _H), ("충남", "금산인삼축제", _H, _H),
+    ("전북", "김제지평선축제", _H, _H), ("전북", "무주반딧불축제", _H, _H),
+    ("전남", "담양대나무축제", _H, _H), ("전남", "정남진장흥물축제", _H, _H),
+    ("전남", "함평나비축제", _H, _H), ("경북", "안동탈춤축제", _H, _H),
+    ("경북", "문경찻사발축제", _H, _H), ("경북", "영주풍기인삼축제", _H, _H),
+    ("경남", "진주유등축제", _H, _H), ("경남", "하동야생차문화축제", _H, _H),
+    ("경남", "산청한방약초축제", _H, _H), ("경남", "통영한산대첩축제", _H, _H),
+    # 예비축제 20 (부천국제만화제·음성품바축제는 2026년만 예비 → 위에서 처리)
+    ("서울", "강동선사문화축제", _P, _P), ("부산", "해운대모래축제", _P, _P),
+    ("대전", "대전사이언스페스티벌", _P, _P), ("울산", "태화강마두희축제", _P, _P),
+    ("경기", "여주오곡나루축제", _P, _P), ("경기", "이천도자기축제", _P, _P),
+    ("충남", "계룡군문화축제", _P, _P), ("충남", "서산해미읍성축제", _P, _P),
+    ("충남", "한산모시문화제", _P, _P), ("전북", "임실N치즈축제", _P, _P),
+    ("전북", "진안홍삼축제", _P, _P), ("전북", "장수한우랑사과랑축제", _P, _P),
+    ("전남", "목포항구축제", _P, _P), ("경북", "구미라면축제", _P, _P),
+    ("경북", "김천김밥축제", _P, _P), ("경북", "포항국제불빛축제", _P, _P),
+    ("경남", "김해분청도자기축제", _P, _P), ("경남", "진해군항제", _P, _P),
+]  # fmt: skip
+
+
+def _key(s) -> str:
+    return norm_name(str(s).replace("軍", "군"))
+
+
+def match_designation(panel: pd.DataFrame, thr: float = 0.75) -> pd.DataFrame:
+    """시도가 같은 축제 중 정규명 일치 > 포함관계 > 유사도 순으로 fid를 찾는다. 최근 연도 행을 우선."""
+    p = panel.copy()
+    p["_k"] = p["축제명"].map(_key)
+    rows = []
+    for sido, name, g26, g27 in DESIGNATION:
+        k = _key(name)
+        cand = p[p["시도"] == sido].sort_values("연도", ascending=False).drop_duplicates("fid")
+        best, how, score = None, "미매칭", 0.0
+        for _, r in cand.iterrows():
+            ck = r["_k"]
+            if not ck:
+                continue
+            if ck == k:
+                s, h = 1.0, "정확"
+            elif min(len(ck), len(k)) >= 3 and (k in ck or ck in k):
+                s, h = 0.95, "포함"
+            else:
+                s, h = difflib.SequenceMatcher(None, k, ck).ratio(), "유사"
+            if s > score:
+                best, how, score = r, h, s
+        base = {"시도": sido, "지정명": name, "지정_2026": g26, "지정_2027": g27}
+        if best is None or score < thr:
+            rows.append(base | {"fid": None, "패널축제명": None, "패널연도": None,
+                                "매칭": f"미매칭(최고 {score:.2f})"})  # fmt: skip
+        else:
+            yrs = sorted(panel.loc[panel["fid"] == best["fid"], "연도"].unique().tolist())
+            rows.append(base | {"fid": best["fid"], "패널축제명": best["축제명"], "패널연도": yrs,
+                                "매칭": f"{how}({score:.2f})"})  # fmt: skip
+    return pd.DataFrame(rows)
+
+
+def attach_designation(panel: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
+    """패널에 지정 등급과 공식 지정명을 붙인다. 지정이 아닌 축제는 NaN."""
+    m = matches.dropna(subset=["fid"]).set_index("fid")
+    out = panel.copy()
+    out["지정명"] = out["fid"].map(m["지정명"])
+    out["지정_2026"] = out["fid"].map(m["지정_2026"])
+    out["지정_2027"] = out["fid"].map(m["지정_2027"])
+    return out
+
+
+# ---------- 해석 칸 (설계 기획서 4절: 공급 신호 × 지정 사례) ----------
+
+# (공급 ↑ 여부, 지정 사례 있음) → (해석, 전략)
+INTERPRETATIONS = {
+    (True, True): ("검증된 성장 분야", "차별화 포인트 확보"),
+    (True, False): ("신흥·선점 기회", "먼저 자리 잡기"),
+    (False, True): ("성숙·강자 존재", "벤치마킹·틈새, 요소로 활용"),
+    (False, False): ("쇠퇴·포화", "만들 이유를 따로 증명"),
+}
+
+
+def interpret(supply_signal: str, designated_count: int) -> tuple[str, str]:
+    """공급 신호(↑/→/↓)와 지정 축제 수로 해석과 전략을 정한다.
+
+    기획서 4절 그림은 공급 ↑/↓ 두 줄뿐이라, 정체(→)는 ↓ 줄로 읽는다 (새로 늘지 않는 분야).
+    """
+    return INTERPRETATIONS[(supply_signal == "↑", designated_count > 0)]
+
+
+def tag_designations(panel: pd.DataFrame, year: int = 2026) -> pd.DataFrame:
+    """태그별 그 해 지정 축제 수와 이름 (공식 지정명, 등급)."""
+    from research.trends import TAGS, add_tags
+
+    tagged = add_tags(attach_designation(panel, match_designation(panel)))
+    cur = tagged[(tagged["연도"] == year) & tagged["지정_2026"].notna()]
+    rows = []
+    for tag in TAGS:
+        hit = cur[cur[tag]].sort_values("지정명")
+        names = " / ".join(
+            f"{n}({g})" for n, g in zip(hit["지정명"], hit["지정_2026"], strict=True)
+        )
+        rows.append({"태그": tag, "지정축제수": len(hit), "지정사례": names})
+    return pd.DataFrame(rows).set_index("태그")
+
+
+def add_interpretation(trends: pd.DataFrame, panel: pd.DataFrame) -> pd.DataFrame:
+    """tag_trends 결과에 지정축제수, 지정사례, 해석, 전략 칸을 붙인다."""
+    out = trends.join(tag_designations(panel), how="left")
+    out["지정축제수"] = out["지정축제수"].fillna(0).astype(int)
+    out["지정사례"] = out["지정사례"].fillna("")
+    pairs = [interpret(s, n) for s, n in zip(out["공급신호"], out["지정축제수"], strict=True)]
+    out["해석"] = [p[0] for p in pairs]
+    out["전략"] = [p[1] for p in pairs]
+    return out
