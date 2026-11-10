@@ -73,3 +73,20 @@ row = bench[(bench["축제 유형"] == "지역특산물") & (bench["장소 유�
 - 1인당 비용은 `festival_per_capita_benchmark.csv`에 "계측 기준"과 "통신 데이터 기준"이 나란히 있다. 기본은 계측 기준이고, 둘을 섞지 않는다. 방문객 수는 주최 측 발표라 점수 계산에 쓰지 않는다
 - 축제별 `memo`가 있으면(예: 전농로 왕벚꽃 축제 "거리형 행사라 통행 인원이 포함됐을 수 있음") 인용할 때 함께 쓴다
 - 축제별 표(`festival_plan_2026.parquet`)의 `suspect_reasons`가 있는 축제는 사례로 인용할 때 주의 문구를 붙인다
+
+## 6. 날씨 위험 (check_timing evidence)
+
+```python
+import pandas as pd
+
+from analytics.weather import timing_weather_evidence
+
+monthly = pd.read_csv("data/processed/weather_monthly_risk.csv")  # uv run python -m analytics.weather 먼저
+by_dong = pd.read_csv("data/processed/weather_station_by_dong.csv")  # 지점 좌표 파일이 있어야 생김
+evidence, sources, warnings = timing_weather_evidence(request.region, card.timing.recommended_months, monthly, by_dong)
+# evidence: weather_station, strong_wind_days, heavy_rain_days, rainy_days, heat_days, weather_by_month
+```
+
+- `CheckResult.evidence`에 `months`와 함께 넣고, `sources`·`warnings`는 CheckResult의 같은 칸에 더한다
+- `*_days`는 추천 월을 합친 연평균 일수(2017~2025 9년 평균). 월별 `strong_wind_years`·`heavy_rain_years`는 "9년 중 몇 년"
+- 지역이 없거나 지점 연결이 없으면 값은 None이고 이유가 `warnings`에 있다. 날씨만으로 fail을 정할지는 A와 정한다
