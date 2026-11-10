@@ -290,7 +290,9 @@ def timing_weather_evidence(
             "rainy_days": round(r.rainy_days, 1),
             "heat_days": round(r.heat_days, 1),
             **{f"{k}_ratio": _round(getattr(r, f"{k}_ratio")) for k in RISKS},
-            "worse_than_usual": r.worse_than_usual.split("·") if r.worse_than_usual else [],
+            "worse_than_usual": (
+                r.worse_than_usual.split("·") if isinstance(r.worse_than_usual, str) else []
+            ),  # CSV에서 읽으면 빈칸은 NaN
         }
         for r in rows.sort_values("month").itertuples()
     ]
