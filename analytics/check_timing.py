@@ -4,15 +4,17 @@
 
 추천 월마다 판정하고, 가장 나쁜 결과를 카드 결과로 쓴다.
 - pending: 지역이 없거나 그 동네 외지인 지수(와이파이 자료)가 없음
-- fail: 외지인 지수 < 1, 또는 그 달 모든 주가 나쁜 주
-- conditional: 같은 재료 제주 축제가 그 달에 있음 (날짜를 피할 주가 없어도 conditional + 경고)
-- pass: 세 조건 모두 만족. 날씨 괜찮은 주를 추천 주로 표시
+- fail: 외지인 지수 < LOW_INDEX(0.8), 또는 그 달 모든 주가 나쁜 주
+- conditional: 외지인 지수 0.8~1.0("평소보다 약간 적은 달"), 또는 같은 재료 제주 축제가 그 달에 있음
+  (축제 날짜를 피할 주가 없어도 conditional + 경고)
+- pass: 외지인 지수 1.0 이상 + 날씨 괜찮은 주 있음 + 같은 재료 축제 없음. 날씨 괜찮은 주를 추천 주로 표시
 
 나쁜 주: 폭우 또는 바람이 같은 지점 평소의 BAD_RATIO배 이상이고, 9년 중 MIN_BAD_YEARS년 이상 발생.
 비·더위는 여름에 늘 많아 판정에 쓰지 않고 참고 경고로만 붙인다.
 
 fail 제안: 일부 달만 fail이면 그 달을 빼고, 전부 fail이면 통과하는 다른 달 중 외지인 지수가 가장 높은 달.
-재료에 제철(소재 사전의 months)이 있으면 그 안에서만 고른다.
+재료에 제철이 있으면 그 안에서만 고른다. 제철은 A의 소재 사전 가공본
+(research/reference/jeju_materials.csv)의 months(제철·시기)와 months_basis(근거) 칸을 읽는다.
 
 바꿔 끼우기: tools = {**FAKE_TOOLS, **REAL_TOOLS}
 
@@ -52,6 +54,9 @@ WIFI_WARNING = (
     "4-11 유동인구 실데이터가 1년치 쌓이면 그것으로 바꿔요."
 )
 STATUS_ORDER = {"pass": 0, "conditional": 1, "fail": 2}
+# 외지인 지수 세 단계: PASS_INDEX 이상 pass, LOW_INDEX~PASS_INDEX conditional, LOW_INDEX 미만 fail
+PASS_INDEX = 1.0
+LOW_INDEX = 0.8
 
 
 # ---------- 날씨: 나쁜 주 ----------
@@ -199,7 +204,8 @@ class TimingData:
     outsider: pd.DataFrame | None
     festivals: pd.DataFrame = field(default_factory=pd.DataFrame)
     keywords: pd.DataFrame | None = None
-    material_months: dict[str, list[int]] = field(default_factory=dict)
+    # 재료 → (제철 월, 근거). 소재 사전에서 제철이 비어 있으면(연중) 넣지 않는다
+    material_season: dict[str, tuple[list[int], str]] = field(default_factory=dict)
 
 
 def _read(path: Path, **kw) -> pd.DataFrame | None:
@@ -209,11 +215,11 @@ def _read(path: Path, **kw) -> pd.DataFrame | None:
 @lru_cache(maxsize=1)
 def load_timing_data() -> TimingData:
     """미리 만든 표를 읽는다. 없는 표는 None (해당 판정은 pending)."""
-    from research.materials import load_keywords, materials_path
+    from research.materials import PUBLISHED_MATERIALS_PATH, load_keywords
 
     weekly = _read(WEEKLY_PATH)
     festivals = _read(FESTIVAL_DATES_PATH, parse_dates=["start", "end"], dtype={"months": str})
-    mat = pd.read_csv(materials_path(), dtype=str, keep_default_na=False)
+    mat = pd.read_csv(PUBLISHED_MATERIALS_PATH, dtype=str, keep_default_na=False)
     return TimingData(
         weekly=None if weekly is None else mark_bad_weeks(weekly),
         monthly=_read(MONTHLY_PATH),
@@ -221,8 +227,10 @@ def load_timing_data() -> TimingData:
         outsider=_read(oi.OUTPUT_PATH),
         festivals=pd.DataFrame() if festivals is None else festivals,
         keywords=load_keywords(),
-        material_months={
-            r.material: [int(m) for m in r.months.split("|")] for r in mat.itertuples() if r.months
+        material_season={
+            r.material: ([int(m) for m in r.months.split("|")], r.months_basis)
+            for r in mat.itertuples()
+            if r.months
         },
     )
 
@@ -238,9 +246,13 @@ class MonthCheck:
     recommended_weeks: list[int]
     unavoidable: bool  # 날짜가 확인된 같은 재료 축제를 피할 날씨 괜찮은 주가 없음
 
+    @property
+    def slightly_low(self) -> bool:
+        return LOW_INDEX <= self.index < PASS_INDEX
+
     def fail_reason(self) -> str | None:
-        low = self.index is not None and self.index < 1
-        low_text = f"외지인 방문 지수({self.index:.2f})가 연평균(1)보다 낮"
+        low = self.index < LOW_INDEX
+        low_text = f"외지인 방문 지수({self.index:.2f})가 {LOW_INDEX}보다 낮"
         weather = "모든 주가 평소보다 폭우·바람이 잦아요"
         if low and not self.good_weeks:
             return f"{self.month}월은 {low_text}고, {weather}"
@@ -256,9 +268,9 @@ def _month_check(month, index, station_weeks, fests) -> MonthCheck:
     in_month = [f for _, f in fests.iterrows() if str(month) in f["months"].split("|")]
     free = [w for w in good if not any(_festival_overlaps_week(f, w) for f in in_month)]
     unavoidable = bool(in_month and good and not free)
-    if index < 1 or not good:
+    if index < LOW_INDEX or not good:
         status = "fail"
-    elif in_month:
+    elif index < PASS_INDEX or in_month:
         status = "conditional"
     else:
         status = "pass"
@@ -302,7 +314,7 @@ def _suggest(card, checks, all_checks, data) -> Suggestion | None:
         keep = [m for m in months if m not in {c.month for c in failed}]
         why = "; ".join(c.fail_reason() for c in failed) + ". 그 달을 빼요."
         return Suggestion(field="timing.recommended_months", value=keep, why=why)
-    season = data.material_months.get(card.material)
+    season, basis = data.material_season.get(card.material, (None, None))
     for wanted in ("pass", "conditional"):
         options = [
             c
@@ -312,11 +324,12 @@ def _suggest(card, checks, all_checks, data) -> Suggestion | None:
         if options:
             best = max(options, key=lambda c: c.index)
             why = (
-                f"추천 월이 모두 통과하지 못해, 통과하는 달 중 외지인 방문 지수가 가장 높은 "
+                f"추천 월이 모두 fail이라, 다른 달 중 {'통과하고' if wanted == 'pass' else '조건부로 통과하고'} "
+                f"외지인 방문 지수가 가장 높은 "
                 f"{best.month}월({best.index:.2f})로 바꿔요."
             )
             if season:
-                why += f" 재료 제철({'·'.join(map(str, season))}월) 안에서 골랐어요."
+                why += f" 재료 제철({'·'.join(map(str, season))}월, 근거: {basis}) 안에서 골랐어요."
             return Suggestion(field="timing.recommended_months", value=[best.month], why=why)
     return None
 
@@ -366,7 +379,11 @@ def check_timing(
         warnings.append(note)
     evidence["outsider_visitors_index"] = {m: round(float(index[m]), 2) for m in months}
     evidence["outsider_index_source"] = source
-    evidence["low_months"] = [m for m in months if index[m] < 1]
+    evidence["low_months"] = [m for m in months if index[m] < LOW_INDEX]
+    evidence["slightly_low_months"] = [m for m in months if LOW_INDEX <= index[m] < PASS_INDEX]
+    evidence["outsider_index_rule"] = (
+        f"{PASS_INDEX} 이상 pass, {LOW_INDEX}~{PASS_INDEX} conditional, {LOW_INDEX} 미만 fail"
+    )
 
     # 같은 재료 축제
     pattern, known = material_pattern(card.material, data.keywords)
@@ -407,6 +424,10 @@ def check_timing(
         }
     )
     for c in checks:
+        if c.slightly_low:
+            warnings.append(
+                f"{c.month}월은 외지인 방문이 평소보다 약간 적은 달이에요 (지수 {c.index:.2f})."
+            )
         if c.unavoidable:
             names = ", ".join(f["name"] for f in c.festivals if f["dates_known"])
             warnings.append(
@@ -438,11 +459,18 @@ def check_timing(
         suggestion = None
         weeks = ", ".join(evidence["recommended_weeks"])
         if status == "conditional":
+            parts = []
+            low = [c for c in checks if c.slightly_low]
+            if low:
+                parts.append(
+                    ", ".join(f"{c.month}월" for c in low)
+                    + "은 외지인 방문이 평소보다 약간 적은 달이에요."
+                )
             names = ", ".join(dict.fromkeys(f["name"] for f in evidence["overlapping_festivals"]))
-            reason = (
-                f"같은 재료 제주 축제({names})가 같은 달에 있어요. "
-                f"겹치지 않는 주로 잡으세요: {weeks}."
-            )
+            if names:
+                parts.append(f"같은 재료 제주 축제({names})가 같은 달에 있어요.")
+            parts.append(f"추천 주: {weeks}.")
+            reason = " ".join(parts)
         else:
             reason = (
                 "추천 월의 외지인 방문이 연평균 이상이고, 같은 재료 제주 축제와 겹치지 않아요. "

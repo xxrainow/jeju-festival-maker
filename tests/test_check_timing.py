@@ -100,7 +100,7 @@ def data(weekly=None, outsider=None, festivals=None, season=None) -> TimingData:
         outsider=outsider if outsider is not None else outsider_table(),
         festivals=festivals if festivals is not None else festival_table(),
         keywords=KEYWORDS,
-        material_months={"감귤": season} if season else {},
+        material_season={"감귤": (season, "테스트 근거")} if season else {},
     )
 
 
@@ -153,22 +153,60 @@ def test_rain_and_heat_are_reference_only():
 
 
 def test_fail_drops_only_failing_month():
-    r = check_timing(card([5, 12]), request(), data(outsider=outsider_table({12: 0.8})))
+    r = check_timing(card([5, 12]), request(), data(outsider=outsider_table({12: 0.7})))
     assert r.status == "fail" and r.evidence["low_months"] == [12]
     assert r.suggestion.field == "timing.recommended_months"
     assert r.suggestion.value == [5] and "빼요" in r.suggestion.why
-    assert "12월은 외지인 방문 지수(0.80)가 연평균(1)보다 낮아요" in r.reason
+    assert "12월은 외지인 방문 지수(0.70)가 0.8보다 낮아요" in r.reason
+
+
+def test_outsider_index_three_levels():
+    for value, status in [
+        (1.0, "pass"),
+        (0.95, "conditional"),
+        (0.8, "conditional"),
+        (0.79, "fail"),
+    ]:
+        r = check_timing(card([5]), request(), data(outsider=outsider_table({5: value})))
+        assert r.status == status, value
+    r = check_timing(card([5]), request(), data(outsider=outsider_table({5: 0.9})))
+    assert r.evidence["slightly_low_months"] == [5] and r.evidence["low_months"] == []
+    assert "평소보다 약간 적은 달" in r.reason and r.suggestion is None
+    assert any(
+        "5월은 외지인 방문이 평소보다 약간 적은 달이에요 (지수 0.90)" in w for w in r.warnings
+    )
+
+
+def test_all_fail_falls_back_to_conditional_month():
+    index = {12: 0.7, 11: 0.9}
+    r = check_timing(card([12]), request(), data(outsider=outsider_table(index), season=[11, 12]))
+    assert r.suggestion.value == [11] and "조건부로 통과" in r.suggestion.why
+
+
+def test_season_comes_from_published_material_dictionary():
+    from analytics import check_timing as ct
+
+    ct.load_timing_data.cache_clear()
+    loaded = ct.load_timing_data()
+    ct.load_timing_data.cache_clear()
+    mat = pd.read_csv("research/reference/jeju_materials.csv", dtype=str, keep_default_na=False)
+    row = mat.set_index("material").loc["방어"]
+    assert loaded.material_season["방어"] == (
+        [int(m) for m in row["months"].split("|")],
+        row["months_basis"],
+    )
+    assert "숲길" not in loaded.material_season  # 연중 재료는 제철 제한 없음
 
 
 def test_all_fail_moves_to_best_passing_month_in_season():
-    index = {12: 0.8, 11: 1.2, 1: 1.5, 7: 2.0}
+    index = {12: 0.7, 11: 1.2, 1: 1.5, 7: 2.0}
     jan_bad = weekly_table({w: (2.0, 3) for w in weeks_of(1)})
     r = check_timing(
         card([12]), request(), data(jan_bad, outsider_table(index), season=[11, 12, 1])
     )
     # 7월이 지수가 가장 높지만 감귤 제철이 아니고, 1월은 날씨 fail → 11월
     assert r.status == "fail" and r.suggestion.value == [11]
-    assert "제철" in r.suggestion.why
+    assert "제철(11·12·1월, 근거: 테스트 근거)" in r.suggestion.why
     # 제철 안에 통과하는 달이 없으면 제안 없음
     r = check_timing(card([12]), request(), data(outsider=outsider_table(index), season=[12]))
     assert r.suggestion is None and any("통과하는 다른 달이 없어" in w for w in r.warnings)
@@ -214,7 +252,7 @@ def test_pending_without_region_or_wifi():
 def test_swaps_into_verify_loop():
     tools = {**FAKE_TOOLS, **REAL_TOOLS}
     assert tools["check_timing"] is check_timing
-    tools["check_timing"] = partial(check_timing, data=data(outsider=outsider_table({12: 0.8})))
+    tools["check_timing"] = partial(check_timing, data=data(outsider=outsider_table({12: 0.7})))
     run = verify_idea(card([5, 12]), request(), tools)
     assert run.final.timing.recommended_months == [5]
     assert run.rounds[-1].results[0].status == "pass"
