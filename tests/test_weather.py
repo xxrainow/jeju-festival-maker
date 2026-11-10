@@ -1,3 +1,4 @@
+import unicodedata
 from datetime import date
 from types import SimpleNamespace
 
@@ -12,6 +13,8 @@ from analytics.weather import (
     mark_risk_days,
     monthly_risk,
     nearest_station_by_dong,
+    station_coords_from_meta,
+    station_meta_files,
     timing_weather_evidence,
     week_label,
     week_of_year,
@@ -110,7 +113,9 @@ def test_weekly_and_monthly_risk_counts_over_nine_years(tmp_path):
     assert row["strong_wind_years"] == 4
     assert row["strong_wind_days"] == pytest.approx(4 / 9)
     assert row["rainy_days"] == pytest.approx(1.0)
-    assert row["summary"].startswith(f"고산, {row['week_label']}: 9년 중 4년 강풍")
+    assert row["strong_wind_above_avg"] and row["worse_than_usual"] == "비·바람"
+    assert row["summary"].startswith(f"고산, {row['week_label']}: 평소보다 비·바람 많음")
+    assert "참고: 14m/s 이상 강풍 9년 중 4년" in row["summary"]
     month = monthly_risk(df).set_index(["station", "month"]).loc[("고산", 8)]
     assert month["strong_wind_years"] == 4 and month["observed_days"] == 31 * 9
 
@@ -135,29 +140,42 @@ def test_nearest_station_by_dong():
     assert out.loc["제주시 한경면", "distance_km"] < 1
 
 
-def test_timing_weather_evidence():
-    monthly = pd.DataFrame(
-        {
-            "station": ["고산", "고산", "제주"],
-            "month": [8, 9, 8],
-            "rainy_days": [9.0, 8.0, 1.0],
-            "heavy_rain_days": [1.0, 0.5, 0.0],
-            "strong_wind_days": [6.0, 4.0, 0.0],
-            "heat_days": [2.0, 0.0, 0.0],
-            "strong_wind_years": [9, 8, 0],
-            "heavy_rain_years": [5, 3, 0],
-            "wind_missing_days": [0, 0, 0],
-            "temp_max_missing_days": [0, 0, 0],
-        }
-    )
+def windy_january_rainy_august(tmp_path) -> pd.DataFrame:
+    raw = asos_frame()
+    for year in range(2017, 2026):
+        set_day(raw, "고산", f"{year}-01-10", wind=20.0)
+        set_day(raw, "고산", f"{year}-08-11", precip=12.0)
+    return monthly_risk(mark_risk_days(load_asos_daily(write(tmp_path, raw))))
+
+
+def test_relative_ratio_compares_within_station(tmp_path):
+    monthly = windy_january_rainy_august(tmp_path).set_index(["station", "month"])
+    # 고산 강풍은 1월에만: 1월 비율 ÷ 고산 연평균 비율 = (9/279) ÷ (9/3287)
+    assert monthly.loc[("고산", 1), "strong_wind_ratio"] == pytest.approx(3287 / 279)
+    assert monthly.loc[("고산", 1), "strong_wind_above_avg"]
+    assert monthly.loc[("고산", 8), "strong_wind_ratio"] == 0
+    assert not monthly.loc[("고산", 8), "strong_wind_above_avg"]
+    # 강풍이 한 번도 없는 지점은 배수를 계산하지 않고 나쁘다고 보지 않음
+    assert pd.isna(monthly.loc[("제주", 1), "strong_wind_ratio"])
+    assert not monthly.loc[("제주", 1), "strong_wind_above_avg"]
+
+
+def test_timing_weather_evidence(tmp_path):
+    monthly = windy_january_rainy_august(tmp_path)
     by_dong = pd.DataFrame({"admin_area": ["제주시 한경면"], "station": ["고산"]})
     evidence, sources, warnings = timing_weather_evidence("제주시 한경면", [8, 9], monthly, by_dong)
     assert evidence["weather_station"] == "고산"
-    assert evidence["strong_wind_days"] == 10.0 and evidence["rainy_days"] == 17.0
+    assert evidence["worse_than_usual"] == ["비"]
+    assert evidence["relative_to_station"]["strong_wind"] == 0
+    assert evidence["rainy_days"] == 1.0 and evidence["strong_wind_days"] == 0
     assert [m["month"] for m in evidence["weather_by_month"]] == [8, 9]
-    assert evidence["weather_by_month"][0]["strong_wind_years"] == 9
+    assert evidence["weather_by_month"][0]["worse_than_usual"] == ["비"]
     assert sources == ["기상청 기상자료개방포털 ASOS 일자료 2017~2025"]
-    assert "9년 평균" in warnings[0]
+    assert "9년 평균" in warnings[0] and len(warnings) == 1  # 강풍 없으면 참고 경고 없음
+
+    evidence, _, warnings = timing_weather_evidence("제주시 한경면", [1], monthly, by_dong)
+    assert evidence["worse_than_usual"] == ["바람"]
+    assert any("14m/s 이상 강풍일이 연평균 1.0일" in w for w in warnings)
 
     for region, mapping, text in [
         (None, by_dong, "지역이 없어"),
@@ -165,7 +183,32 @@ def test_timing_weather_evidence():
         ("제주시 없는동", by_dong, "43개에 없는"),
     ]:
         evidence, _, warnings = timing_weather_evidence(region, [8], monthly, mapping)
-        assert evidence["strong_wind_days"] is None and text in warnings[0]
+        assert evidence["strong_wind_days"] is None and evidence["worse_than_usual"] is None
+        assert text in warnings[0]
+
+
+def test_station_coords_from_meta_uses_current_rows(tmp_path):
+    rows = [
+        (184, "1923-05-01", None, "제주", 33.5141, 126.5297),
+        (185, "1988-01-01", None, "고산", 33.2938, 126.1628),
+        (188, "2008-09-04", None, "성산", 33.3868, 126.8802),
+        (188, "1971-07-15", "2008-09-04", "성산", 33.3868, 126.8804),
+        (189, "2010-11-09", None, "서귀포", 33.2462, 126.5653),
+        (90, "1968-01-01", None, "속초", 38.25, 128.56),
+    ]
+    meta = pd.DataFrame(rows, columns=["지점", "시작일", "종료일", "지점명", "위도", "경도"])
+    meta["지점주소"] = "주소"
+    name = unicodedata.normalize("NFD", "META_관측지점정보_test.csv")  # 맥에서 받은 파일 이름
+    meta.to_csv(tmp_path / name, index=False, encoding="cp949")
+    files = station_meta_files(tmp_path)
+    assert len(files) == 1
+    coords = station_coords_from_meta(files[0])
+    assert coords["station_id"].tolist() == [184, 185, 188, 189]
+    assert coords.set_index("station").loc["성산", "longitude"] == 126.8802  # 현재 위치
+    assert coords["source"].str.startswith("기상청 기상자료개방포털 관측지점정보").all()
+    with pytest.raises(ValueError, match="현재 위치"):
+        meta[meta["지점"] != 189].to_csv(tmp_path / name, index=False, encoding="cp949")
+        station_coords_from_meta(files[0])
 
 
 def test_week_label_dates_are_calendar_based():
