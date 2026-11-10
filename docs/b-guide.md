@@ -84,9 +84,10 @@ from analytics.weather import timing_weather_evidence
 monthly = pd.read_csv("data/processed/weather_monthly_risk.csv")  # uv run python -m analytics.weather 먼저
 by_dong = pd.read_csv("data/processed/weather_station_by_dong.csv")  # 지점 좌표 파일이 있어야 생김
 evidence, sources, warnings = timing_weather_evidence(request.region, card.timing.recommended_months, monthly, by_dong)
-# evidence: weather_station, strong_wind_days, heavy_rain_days, rainy_days, heat_days, weather_by_month
+# evidence: weather_station, worse_than_usual, relative_to_station, *_days, weather_by_month
 ```
 
 - `CheckResult.evidence`에 `months`와 함께 넣고, `sources`·`warnings`는 CheckResult의 같은 칸에 더한다
-- `*_days`는 추천 월을 합친 연평균 일수(2017~2025 9년 평균). 월별 `strong_wind_years`·`heavy_rain_years`는 "9년 중 몇 년"
-- 지역이 없거나 지점 연결이 없으면 값은 None이고 이유가 `warnings`에 있다. 날씨만으로 fail을 정할지는 A와 정한다
+- **주 기준은 상대 기준**: `worse_than_usual`(예: `["바람", "비"]`)은 추천 월이 같은 지점 평소보다 나쁜 항목, `relative_to_station`은 항목별 배수(1보다 크면 평소보다 나쁨). 지점끼리 비교하지 않는다
+- `*_days`는 추천 월을 합친 연평균 일수(2017~2025 9년 평균)로 절대 기준 참고값이다. 14m/s 강풍일은 warnings의 "참고" 문장으로만 나온다
+- 지역이 없거나 지점 연결이 없으면 값은 None이고 이유가 `warnings`에 있다. 날씨와 외지인 방문을 합쳐 pass/fail을 정하는 방식은 A·B가 정한 뒤 반영한다
