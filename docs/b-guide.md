@@ -105,8 +105,8 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # check_timing�
 - 먼저 표를 만든다: `uv run python -m analytics.weather` → `uv run python -m analytics.check_timing --build`. 표가 없으면 pending과 안내 문장을 돌려준다
 - 입출력은 가짜 `check_timing`과 같다: `check_timing(card, request) -> CheckResult`. evidence에 가짜의 `months`, `low_months`, `outsider_visitors_index`(가짜는 None, 실제는 `{월: 지수}`)가 그대로 있다
 - 더 들어가는 evidence: `outsider_index_source`, 6절 날씨 칸, `weather_rule`, `bad_weather_months`, `recommended_weeks`(예: "5월 2주차 (5/14~5/20)"), `overlapping_festivals`(이름·시작·끝·날짜 확인 여부·출처·월), `month_checks`(월별 결과·좋은 주·나쁜 주와 이유)
-- 판정: fail(지수 < 1 또는 그 달 모든 주가 나쁨) > conditional(같은 재료 제주 축제가 그 달에 있음) > pass. 지역이 없거나 그 동네 자료가 없으면 pending (suggestion 없음)
-- fail 제안: 일부 달만 fail이면 그 달을 빼고, 전부 fail이면 통과하는 다른 달 중 지수가 가장 높은 한 달 (재료 제철 안에서). 고를 달이 없으면 suggestion이 None이라 루프가 멈추고 다른 아이디어로 넘어간다
+- 판정: fail(지수 < 0.8 또는 그 달 모든 주가 나쁨) > conditional(지수 0.8~1.0 "평소보다 약간 적은 달", 또는 같은 재료 제주 축제가 그 달에 있음) > pass(지수 1.0 이상). 지역이 없거나 그 동네 자료가 없으면 pending (suggestion 없음)
+- fail 제안: 일부 달만 fail이면 그 달을 빼고, 전부 fail이면 다른 달 중 pass(없으면 conditional)이고 지수가 가장 높은 한 달 (재료 제철 안에서. 제철은 `research/reference/jeju_materials.csv`의 `months`). 고를 달이 없으면 suggestion이 None이라 루프가 멈추고 다른 아이디어로 넘어간다
 - 외지인 지수는 지금 와이파이 관광 사용량(대체 지표)이라 `is_synthetic=False`이고, "사람 수가 아님" 경고가 붙는다. 4-11 가짜 데이터로 만든 지수를 쓰면 `is_synthetic=True`
-- **데모 주의**: 실데이터에서 애월읍 감귤 12월은 fail이지만, 감귤 제철(11·12·1월)이 모두 지수 1 미만이라 11월 제안이 나오지 않는다. 데모 시나리오는 지역이나 재료를 바꿔야 할 수 있다 (예: 남원읍 감귤 11·1월 → "1월만")
+- **데모 후보**: 대정읍 방어 11·12월 → 12월 바람으로 fail → 제안 "11월만" → 재확인 conditional (방어 축제 날짜 미확인). 실데이터 애월읍 감귤 12월은 지수 0.90이라 conditional이고 fail이 아니다
 - 다른 판정 기준(배수, 연수)은 `BAD_RATIO`, `MIN_BAD_YEARS`
