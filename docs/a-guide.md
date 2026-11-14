@@ -78,7 +78,28 @@ else:
 - 연결하지 않은 도구는 `pending`으로 남고 실패로 세지 않는다
 - `is_synthetic=True`인 결과(가짜 도구 포함)는 화면에 가짜 데이터임을 드러낸다
 
-## 3. 오류
+## 3. 기획서 (사용자가 "이대로 진행"을 고른 뒤)
+
+```python
+from agent.plan import PlanGenerationError, generate_plan, plan_to_markdown, save_plan
+
+try:
+    plan = generate_plan(run, request, approved=True)   # run: verify_idea 결과
+except PlanGenerationError as e:
+    st.warning(str(e))
+else:
+    st.markdown(plan_to_markdown(plan))                 # 설계 기획서 9-4 항목 순서
+    md_path, json_path = save_plan(plan)                 # outputs/plans/ (Git 제외)
+    if plan.is_synthetic:
+        st.warning("가짜·합성 데이터 결과가 섞여 있어요.")
+```
+
+- 계약은 `FestivalPlan` (설계 기획서 9-6). 숫자 칸·KPI·검증 요약·변경 이력·출처는 코드가, 배경·컨셉·프로그램·홍보·운영·위험·기대효과 문장은 LLM이 쓴다
+- LLM 문장에 입력에 없는 숫자가 나오면 거절하고 다시 요청한다 (월 표기는 허용)
+- 정해지지 않은 날짜·장소·주최·항목별 예산은 "미확인", KPI 기준값·목표치는 "데이터 대기"
+- 처음 만든 기획안은 `status="draft"`. 사용자가 최종 승인하면 `approved`로 바꾸고, 그 뒤에만 홍보물을 만든다
+
+## 4. 오류
 
 - `propose_idea_cards(..., demo=False)`에 LLM을 넘기지 않으면 `CardGenerationError`
 - 축제 패널(`data/processed/festival_panel_2024_2026.parquet`)이 없어도 `CardGenerationError`. 만드는 방법은 메시지에 있다
