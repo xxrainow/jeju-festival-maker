@@ -1,5 +1,6 @@
 """Shared contracts v2 (초안): 트렌드 기반 아이디어 카드 + 확인·수정 루프."""
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -252,4 +253,137 @@ class VerificationRun(BaseModel):
         last_fails = [r for r in self.rounds[-1].results if r.status == "fail"]
         if (self.outcome == "ready_for_approval") == bool(last_fails):
             raise ValueError("outcome과 마지막 라운드의 fail 여부가 맞지 않는다")
+        return self
+
+
+# ---------- 4. 기획안 (설계 기획서 9-4 기획서 구성, 9-5 KPI 성공 기준표) ----------
+# CLAUDE.md 5절 "추가 예정": 프로그램, 장소, 예산, 가정, 미확인 사항, 확정 상태, 근거
+
+UNCONFIRMED = "미확인"
+PlanStatus = Literal["draft", "approved"]  # approved: 사용자가 최종 승인 (그 뒤에만 홍보물 생성)
+
+# LLM이 문장을 쓰는 항목 (9-4 기본 항목 중 문장형). 나머지 항목은 코드가 입력에서 채운다
+PLAN_TEXT_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("background", "추진 배경·필요성"),
+    ("concept", "기본 컨셉"),
+    ("promotion", "홍보 계획"),
+    ("operation", "운영 계획"),
+    ("risk", "위험 관리"),
+    ("expected", "기대효과"),
+)
+PlanTextKey = Literal["background", "concept", "promotion", "operation", "risk", "expected"]
+
+
+class PlanSection(BaseModel):
+    key: PlanTextKey
+    title: str
+    body: str  # LLM 문장. 숫자는 입력에 있는 값만 (코드가 검사)
+
+
+class PlanOverview(BaseModel):
+    """사업 개요 (9-4): 축제명, 기간, 장소, 대상, 예산, 목적. 코드가 채운다."""
+
+    name: str
+    period: str  # 추천 월 + 정확한 날짜 미확인 (예: "11월 중 (날짜 미확인)")
+    region: str | None = None
+    venue: str = UNCONFIRMED
+    target: str | None = None
+    budget_krw: int | None = None
+    purpose: str | None = None
+    organizer: str = UNCONFIRMED  # 주최·주관 (9-4: 사용자 입력)
+
+
+class PlanProgram(BaseModel):
+    """세부 프로그램 (9-4: LLM, 형식·재료 기반)."""
+
+    name: str
+    description: str
+    is_proposal: bool = True  # Agent 제안. 운영 주체·장소 확정 전
+
+
+class PrepStep(BaseModel):
+    """추진 일정 (9-4: 준비 일정 템플릿). 코드가 채운다."""
+
+    when: str  # 예: "D-90"
+    task: str
+
+
+class PlanBudget(BaseModel):
+    """예산 계획 (9-4: 입력 예산 + check_budget 벤치마크). 항목별 금액은 사용자 입력 전까지 미확인."""
+
+    input_krw: int | None = None
+    format_median_krw: int | None = None
+    scale: Literal["기본", "소규모 버전"]
+    small_examples: list[BudgetExample] = Field(default_factory=list)
+    items: str = UNCONFIRMED
+    source: str
+
+
+class KPIValue(BaseModel):
+    value: float | None = None
+    status: DataStatus = "pending"
+    source: str
+
+
+class KPITarget(BaseModel):
+    range: str | None = None  # 기존 제주 축제 실제 효과로 정한 범위. 감으로 정하지 않는다
+    basis: list[str] = Field(default_factory=list)  # 근거로 쓴 기존 제주 축제
+    status: DataStatus = "pending"
+
+
+class PlanKPI(BaseModel):
+    """성공 기준표 한 줄 (9-5)."""
+
+    metric: str  # 예: "외지인 방문 증가율"
+    region: str | None = None
+    formula: str
+    baseline: KPIValue
+    target: KPITarget
+    measure_plan: str
+
+
+class PlanEvidence(BaseModel):
+    """데이터 출처 (9-4): 기획서에 나오는 숫자 하나와 그 출처."""
+
+    label: str
+    value: str
+    source: str
+
+
+class FestivalPlan(BaseModel):
+    """행사 기획안 (A → B 화면, 홍보물의 입력). 9-4 항목 순서대로 내보낸다.
+
+    코드: 개요, 추진 일정, 예산, KPI, 데이터 검증 요약(checks), 변경 이력(changes),
+          참고 사례(idea.reference), 가정과 한계, 데이터 출처
+    LLM: 추진 배경, 기본 컨셉, 세부 프로그램, 홍보, 운영, 위험 관리, 기대효과
+    """
+
+    plan_id: str
+    version: int = Field(default=1, ge=1)
+    status: PlanStatus = "draft"
+    created_at: datetime
+    title: str
+    idea_id: str
+    request: UserRequest
+    idea: IdeaCard  # 검증·수정을 마친 최종 카드
+    overview: PlanOverview
+    sections: list[PlanSection]  # PLAN_TEXT_SECTIONS 순서
+    programs: list[PlanProgram] = Field(default_factory=list)
+    prep_schedule: list[PrepStep] = Field(default_factory=list)
+    budget: PlanBudget
+    kpis: list[PlanKPI] = Field(default_factory=list)
+    checks: list[CheckResult] = Field(default_factory=list)  # 데이터 검증 결과 요약
+    changes: list[IdeaChange] = Field(default_factory=list)  # 변경 이력
+    assumptions: list[str] = Field(default_factory=list)  # 가정 (Agent 해석)
+    unconfirmed: list[str] = Field(default_factory=list)  # 미확인 사항 (사용자 확인·입력 필요)
+    limitations: list[str] = Field(default_factory=list)  # 한계 (간접 지표, 데이터 대기)
+    evidence: list[PlanEvidence] = Field(default_factory=list)  # 데이터 출처
+    is_synthetic: bool = False  # 가짜·합성 데이터 결과가 섞였으면 True (화면에 표시)
+
+    @model_validator(mode="after")
+    def sections_in_order(self):
+        if [s.key for s in self.sections] != [k for k, _ in PLAN_TEXT_SECTIONS]:
+            raise ValueError("sections는 PLAN_TEXT_SECTIONS 순서대로 6개여야 한다")
+        if self.idea_id != self.idea.idea_id:
+            raise ValueError("idea_id가 카드와 다르다")
         return self

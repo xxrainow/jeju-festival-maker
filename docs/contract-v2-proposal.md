@@ -40,6 +40,7 @@
 8. `purpose_match`에 `"불일치"` 추가, `purpose`가 없으면 `null`.
 9. `TrendEvidence`에 `verdict`, `interpretation`, `strategy` 추가: 기획서 3절 판정과 4절 해석 틀(공급 신호 × 지정 사례)을 카드에 싣는다. 최신 정의는 `agent/draft_contracts.py` 기준.
 10. `IdeaCard.existing_jeju_festivals` 추가: 같은 재료의 기존 제주 축제(이름, 월, 최대 3개). 겹침 판정은 ④ `check_risk`가 하고 카드에는 참고로 보여준다.
+11. `FestivalPlan`(기획안) 추가: 설계 기획서 9-4 항목과 9-5 성공 기준표를 그대로 담는다. 항목별 JSON 칸과 채우는 곳(코드·LLM)은 설계 기획서 9-6절.
 
 ## 1. 모델 정의 (제안 코드)
 
