@@ -169,3 +169,22 @@ def test_free_text_purpose_picks_kpi():
     assert [k.metric for k in build_kpis(req2, card)] == ["외지인 방문 증가율", "카드 매출 증가율"]
     req3 = DEMO_REQUEST.model_copy(update={"purpose": "마을 홍보"})
     assert [k.metric for k in build_kpis(req3, card)] == ["외지인 방문 증가율"]  # 기본 KPI
+
+
+def test_approve_plan_and_require_approved():
+    from agent.plan import PlanNotApprovedError, approve_plan, require_approved
+
+    draft = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    with pytest.raises(PlanNotApprovedError, match="최종 승인"):
+        require_approved(draft)
+    later = datetime(2026, 11, 15, 10, 0, tzinfo=UTC)
+    approved = approve_plan(draft, now=later)
+    assert approved.status == "approved" and approved.approved_at == later
+    assert draft.status == "draft" and draft.approved_at is None  # 원본은 그대로
+    assert require_approved(approved) is approved
+    assert approve_plan(approved) is approved  # 두 번 승인해도 같다
+    assert "(v1, 승인)" in plan_to_markdown(approved)
+    # JSON으로 저장했다 읽어도 계약 검사를 통과한다
+    assert FestivalPlan.model_validate_json(approved.model_dump_json()).status == "approved"
+    with pytest.raises(ValueError, match="approved_at"):
+        FestivalPlan.model_validate(draft.model_dump() | {"status": "approved"})

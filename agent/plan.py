@@ -546,6 +546,30 @@ def plan_to_markdown(plan: FestivalPlan) -> str:
     return "\n".join(lines)
 
 
+# ---------- 최종 승인 (설계 기획서 9-6: 승인된 기획안으로만 홍보물을 만든다) ----------
+
+
+class PlanNotApprovedError(RuntimeError):
+    """승인되지 않은 기획안으로 홍보물을 만들려고 함. 메시지는 화면에 그대로 보여줘도 되는 문장이다."""
+
+
+def approve_plan(plan: FestivalPlan, *, now: datetime | None = None) -> FestivalPlan:
+    """사용자가 기획안을 최종 승인했을 때 부른다. 승인 상태의 새 기획안을 돌려준다 (원본은 그대로).
+
+    이미 승인된 기획안이면 그대로 돌려준다. 내용을 고친 수정본은 generate_plan(version=2…)으로 새로 만든 뒤 승인한다.
+    """
+    if plan.status == "approved":
+        return plan
+    return plan.model_copy(update={"status": "approved", "approved_at": now or datetime.now(UTC)})
+
+
+def require_approved(plan: FestivalPlan) -> FestivalPlan:
+    """홍보물 생성 전에 부른다. 승인되지 않았으면 PlanNotApprovedError."""
+    if plan.status != "approved":
+        raise PlanNotApprovedError("기획안을 최종 승인한 뒤에 홍보물을 만들 수 있어요.")
+    return plan
+
+
 def save_plan(plan: FestivalPlan, out_dir: Path = OUTPUT_DIR) -> tuple[Path, Path]:
     """마크다운과 JSON으로 저장한다 (outputs/는 Git 제외). (md 경로, json 경로)."""
     out_dir.mkdir(parents=True, exist_ok=True)

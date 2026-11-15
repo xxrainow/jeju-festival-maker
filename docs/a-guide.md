@@ -101,6 +101,22 @@ else:
 - 정해지지 않은 날짜·장소·주최·항목별 예산은 "미확인", KPI 기준값·목표치는 "데이터 대기"
 - 처음 만든 기획안은 `status="draft"`. 사용자가 최종 승인하면 `approved`로 바꾸고, 그 뒤에만 홍보물을 만든다
 
+```python
+from agent.plan import PlanNotApprovedError, approve_plan, require_approved
+
+if st.button("최종 승인"):
+    plan = approve_plan(plan)          # status="approved", approved_at 기록 (원본은 그대로)
+    save_plan(plan)                    # 같은 파일 이름으로 승인본을 덮어쓴다
+
+# 홍보물 만들기 전 (B)
+try:
+    require_approved(plan)
+except PlanNotApprovedError as e:
+    st.warning(str(e))                 # "기획안을 최종 승인한 뒤에 홍보물을 만들 수 있어요."
+```
+
+- 홍보물에 쓸 칸: `plan.overview`(축제명·기간·지역·대상·예산·목적·주최), `plan.programs`, `plan.sections`(컨셉 `concept`, 홍보 계획 `promotion`), `plan.idea`(형식·재료). 숫자는 기획안 값만 쓰면 정보 일치 검사가 쉬워진다
+
 ## 4. 오류
 
 - `propose_idea_cards(..., demo=False)`에 LLM을 넘기지 않으면 `CardGenerationError`

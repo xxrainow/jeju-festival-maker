@@ -364,6 +364,7 @@ class FestivalPlan(BaseModel):
     version: int = Field(default=1, ge=1)
     status: PlanStatus = "draft"
     created_at: datetime
+    approved_at: datetime | None = None  # 사용자가 최종 승인한 시각 (status="approved"일 때만)
     title: str
     idea_id: str
     request: UserRequest
@@ -388,4 +389,6 @@ class FestivalPlan(BaseModel):
             raise ValueError("sections는 PLAN_TEXT_SECTIONS 순서대로 6개여야 한다")
         if self.idea_id != self.idea.idea_id:
             raise ValueError("idea_id가 카드와 다르다")
+        if (self.status == "approved") != (self.approved_at is not None):
+            raise ValueError("approved 상태와 approved_at이 맞지 않는다")
         return self
