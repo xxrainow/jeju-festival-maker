@@ -163,3 +163,41 @@ def test_parse_request_input_checks_and_llm_errors(monkeypatch):
     monkeypatch.setattr("agent.proposals.default_llm", lambda: None)
     with pytest.raises(RequestParseError, match="AI 설정이 없어요"):
         parse_request("감귤 축제")
+
+
+def test_grounding_drops_guessed_purpose_and_values():
+    """LLM이 문장에 없는 말을 채우면 버린다 (근거 글자 확인)."""
+    text = "성산에서 겨울에 가족 대상 일출 축제, 예산 500만원"
+    fields = {
+        "region_text": "성산", "purpose": "관광객 유치", "purpose_text": None,
+        "interest": "일출", "budget_text": "500만원", "season": "겨울", "target": "가족",
+    }  # fmt: skip
+    parsed = build_request(fields, AREAS, source_text=text)
+    assert parsed.request.purpose is None
+    assert any("목적을 찾지 못해" in n for n in parsed.notes)
+    assert parsed.request.region == "서귀포시 성산읍"
+    assert parsed.request.budget_max_krw == 5_000_000
+    # purpose_text가 문장에 실제로 있으면 받는다
+    ok = build_request({"purpose": "지역 상권 활성화", "purpose_text": "상권 살리는"}, AREAS,
+                       source_text="애월에서 감귤로 상권 살리는 축제")  # fmt: skip
+    assert ok.request.purpose == "지역 상권 활성화"
+    # 근거 글자가 문장에 없으면 버린다
+    fake = build_request({"purpose": "지역 상권 활성화", "purpose_text": "매출 올리기"}, AREAS,
+                         source_text="애월 감귤 축제")  # fmt: skip
+    assert fake.request.purpose is None
+
+
+def test_grounding_for_other_fields_and_months():
+    text = "표선에서 11~12월에 하는 해녀 축제"
+    fields = {"region_text": "표선", "interest": "해녀", "target": "20대 커플",
+              "season": "겨울", "months": [11, 12, 1], "budget_text": "1천만 원"}  # fmt: skip
+    parsed = build_request(fields, AREAS, source_text=text)
+    r = parsed.request
+    assert r.target is None and r.budget_max_krw is None  # 문장에 없는 대상·예산
+    assert r.season is None  # 계절 이름이 문장에 없고, 11·12월은 가을·겨울이 섞임
+    assert parsed.extracted["months"] == [11, 12, 1]
+    assert any("'20대 커플'" in n for n in parsed.notes)
+    assert any("'1천만 원'" in n for n in parsed.notes)
+    # 띄어쓰기가 달라도 같은 말로 본다
+    spaced = build_request({"interest": "애월 감귤"}, AREAS, source_text="애월감귤 축제")
+    assert spaced.request.interest == "애월 감귤"
