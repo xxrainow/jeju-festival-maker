@@ -216,4 +216,9 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
   - 제철은 "제철: 11·12·1월"만 보여준다. 근거 문구(팀 내부 문서)는 check_timing evidence `material_season.basis`에만 있다
   - 같은 변경을 두 확인이 함께 제안하면 한 칸에 이유를 합친다
 - 확인 도구 문장에는 fail·pass 같은 영어나 evidence 같은 개발 용어를 쓰지 않는다. 표가 없을 때 명령어는 "관리자용" 경고에만
+- 작은 숫자는 실패 이유가 된 숫자를 먼저 보여준다 (예: 대정 12월은 "날씨 나쁜 주 4/4주"가 앞, 관광객 지표가 뒤)
+- 자료가 적은 지역 안내: 확인 결과 evidence의 `low_data`가 있으면 결과 위(마지막 회차 기준)와 그 변경 칸에 "이 지역은 자료가 적어 결과가 불안정할 수 있어요"
+  - check_timing: 외지인 지수에 쓴 와이파이 장소 5곳 미만(`MIN_WIFI_PLACES`), 날씨 지점까지 20km 초과(`FAR_STATION_KM`)
+  - check_target: 동네 와이파이 사용자가 동네 중앙값의 10% 미만(`MIN_USERS_SHARE`), 추천 월 대상 연령대 사용자 100명 미만(`MIN_TARGET_USERS`)
+  - 지금 기준에 걸리는 동네는 추자면뿐 (장소 4곳, 날씨 지점 53km, 사용자 중앙값의 3%). 다음으로 적은 동네는 정방동 5.5곳, 안덕면 17.2km, 도두동 29%
 - 테스트: `tests/test_app.py`가 AppTest로 한 문장부터 승인까지 누른다 (.env에 키가 있어도 AI 없이)
