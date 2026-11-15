@@ -37,6 +37,7 @@ from analytics.dong_mapping import (
 )
 from analytics.loaders import load_bus_usage, load_festivals, load_wifi_users
 from analytics.periods import COMPARISON_PERIOD, AnalysisPeriod, analysis_period
+from analytics.reference_data import load_wifi_usage_agg
 from analytics.report_area_link import table
 from analytics.tourist_spots import EXCLUDED as SPOT_EXCLUDED
 from analytics.tourist_spots import (
@@ -47,7 +48,6 @@ from analytics.tourist_spots import (
 )
 
 LODGING_PATH = Path("data/raw/jejuhub_lodging.csv")
-WIFI_USAGE_AGG_PATH = Path("data/processed/wifi_usage_by_place_month_type.parquet")
 OUTPUT_DIR = Path("data/processed")
 
 FESTIVAL_YEAR = 2026
@@ -161,7 +161,7 @@ def wifi_indicators(period: AnalysisPeriod, months: int, ap, stations, boundarie
     )
     linked_users = mark_exclusions(link_wifi_places(user_totals, ap, stations, boundaries))
 
-    usage = period.filter_months(pd.read_parquet(WIFI_USAGE_AGG_PATH))
+    usage = period.filter_months(load_wifi_usage_agg())  # analytics/reference/ 먼저
     usage = usage[usage["visit_type"].notna()]
     amount = usage.pivot_table(
         index="wifi_place_name", columns="visit_type", values="use_amount", aggfunc="sum"
