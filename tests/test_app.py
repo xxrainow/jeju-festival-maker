@@ -27,6 +27,13 @@ JARGON = ["리프트", "신설", "확실한 상승", "관찰 대상", "성숙·�
           "검증할 가설", "소규모 버전", "중간값", "문체부", "pending", "lift", "verdict"]  # fmt: skip
 
 
+PEOPLE_WORDS = ["관광객이에요", "%가 관광객", "명이 관광객", "사용 중", "사용자 중"]
+
+
+def test_jeju_tourist_share_matches_material_dictionary():
+    assert screen.jeju_tourist_share() == 47.2  # A의 소재 사전 "전체 장소 관광 사용량 비중"
+
+
 def card_texts(card) -> list[str]:
     texts = [t for line in screen.evidence_lines(card) for t in line]
     texts += [screen.reference_text(card), screen.timing_text(card), *screen.budget_lines(card)]
@@ -52,11 +59,22 @@ def test_card_texts_have_no_jargon():
     assert titles == {"요즘 늘고 있는 축제예요 📈", "조금씩 늘고 있는 축제예요",
                       "꾸준히 열리는 축제예요", "이미 많이 열리는 축제예요"}  # fmt: skip
     assert screen.evidence_lines(cards[-1])[1][0] == "제주에도 2개 있어요"
-    assert "62%가 관광객" in screen.evidence_lines(cards[-1])[2][1]
+    title, body, _ = screen.evidence_lines(cards[-1])[2]
+    assert title == "관광객이 많이 찾는 감귤이에요"  # 62% ≥ 제주 평균 47.2%
+    assert body == "감귤 관련 제주 장소의 와이파이 사용량 중 관광 목적이 62%예요 (제주 평균 47%)."
+    low = cards[-1].model_copy(update={"evidence": cards[-1].evidence.model_copy(update={
+        "visitor_interest": cards[-1].evidence.visitor_interest.model_copy(update={"value": 30.0})})})  # fmt: skip
+    assert screen.evidence_lines(low)[2][0] == "감귤은 주민이 더 많이 찾아요"
+    assert screen.evidence_lines(low, jeju_avg=25.0)[2][0] == "관광객이 많이 찾는 감귤이에요"
+    assert screen.evidence_lines(low, jeju_avg=None)[2][1].endswith(
+        "30%예요."
+    )  # 평균을 모르면 비교 안 함
     assert "더 낮아요" in screen.evidence_lines(cards[-1])[0][1]  # 0.6배
     for c in cards:
         for text in card_texts(c):
             for word in JARGON:
+                assert word not in text, (word, text)
+            for word in PEOPLE_WORDS:  # 와이파이는 사용량이라 사람 수처럼 말하지 않는다
                 assert word not in text, (word, text)
 
 

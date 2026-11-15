@@ -94,7 +94,30 @@ def plain_source(src: str | None) -> str:
     return out
 
 
-def evidence_lines(card: IdeaCard) -> list[tuple[str, str, str]]:
+_UNSET = object()
+
+
+def jeju_tourist_share() -> float | None:
+    """제주 전체 장소의 관광 목적 와이파이 사용량 비중(%) = A의 소재 사전 base_tourist_share_pct.
+
+    가공본 CSV에는 따로 없어서 재료별 tourist_share_pct ÷ tourist_vs_avg로 되살린다 (재료마다 같은 값).
+    """
+    import pandas as pd
+
+    from research.materials import PUBLISHED_MATERIALS_PATH
+
+    try:
+        d = pd.read_csv(PUBLISHED_MATERIALS_PATH)
+    except FileNotFoundError:
+        return None
+    x = d.dropna(subset=["tourist_share_pct", "tourist_vs_avg"])
+    x = x[x["tourist_vs_avg"] > 0]
+    if x.empty:
+        return None
+    return round(float((x["tourist_share_pct"] / x["tourist_vs_avg"]).median()), 1)
+
+
+def evidence_lines(card: IdeaCard, jeju_avg=_UNSET) -> list[tuple[str, str, str]]:
     """카드 근거 3칸을 쉬운 말로: (제목, 본문, 출처). 확인 중이면 "아직 확인 중이에요"."""
     ev = card.evidence
     t = ev.trend
@@ -125,12 +148,20 @@ def evidence_lines(card: IdeaCard) -> list[tuple[str, str, str]]:
     if vi.status == "pending" or vi.value is None:
         interest = ("관광객 관심은 아직 확인 중이에요", "")
     else:
-        interest = (
-            f"관광객이 찾는 {josa(card.material, '이에요', '예요')}"
-            if vi.value >= 50
-            else f"{josa(card.material, '은', '는')} 주민이 더 많이 찾아요",
-            f"{card.material} 관련 제주 장소의 와이파이 사용 중 {vi.value:.0f}%가 관광객이에요.",
+        # 와이파이는 사람 수가 아니라 데이터 사용량이다. 제주 전체 평균 관광 비중과 비교한다
+        avg = jeju_tourist_share() if jeju_avg is _UNSET else jeju_avg
+        body = (
+            f"{card.material} 관련 제주 장소의 와이파이 사용량 중 관광 목적이 {vi.value:.0f}%예요"
         )
+        if avg is None:
+            interest = ("관광객 관심", body + ".")
+        else:
+            title = (
+                f"관광객이 많이 찾는 {josa(card.material, '이에요', '예요')}"
+                if vi.value >= avg
+                else f"{josa(card.material, '은', '는')} 주민이 더 많이 찾아요"
+            )
+            interest = (title, body + f" (제주 평균 {avg:.0f}%).")
     return [
         (*trend, plain_source(t.source)),
         (*gap, plain_source(g.source)),
