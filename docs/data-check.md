@@ -423,6 +423,38 @@
 
 **형식 태그 오탐**: 축제명 정규식이라 "예술축제"가 맥주·주류("술축제"), "은빛"이 야간·빛·드론("빛")에 걸리는 등 확실한 오탐 9건, 검토 12건. A용 정리: `docs/tag-review-for-a.md`. A 파일은 고치지 않음
 
+### 3-11. 대상·장소·위험 확인 (check_target, check_venue, check_risk, 2026-11-15)
+
+- 코드: `analytics/check_target.py`, `analytics/check_venue.py`, `analytics/check_risk.py`, 4-11 찾기 `analytics/flow_source.py`. `analytics/real_checks.py`의 `REAL_TOOLS`에 5개 모두 들어 있음
+- 표 만들기: `uv run python -m analytics.real_checks --build` → `wifi_users_demographics.csv`, `venue_places.csv`, `bus_station_daily.csv`, `dong_neighbors.csv` (+ 시기 표). 버스 원자료가 624MB라 판정 때 읽지 않고 미리 만듦
+
+**Git에 올린 와이파이 가공본** (`analytics/reference/`, 코드는 reference를 먼저 읽음)
+- `wifi_usage_by_place_month_type.parquet` 2,963KB: `data/processed/`의 같은 파일을 그대로 복사
+- `area_link_wifi.csv` 361KB: **새로 만듦.** `data/processed/area_link_wifi.csv`(11-04 연결 보고서)는 AP 좌표로 행정동을 판정하기 전 방식이라 쓰지 않음. 후보지 비교표·check_timing과 같은 연결(동 지역 AP 좌표 판정, 길·애매함 제외) + 장소 좌표(AP 좌표 평균)
+- 장소 2,539곳 중 행정동·읍면 표 1,523, 위치 미연결 972(주로 사용자 현황에만 있는 정류소 와이파이), 집계 제외 31, 애매함 13
+- 바꾼 뒤 외지인 지수 516칸이 바꾸기 전과 같음을 확인
+
+**check_target**
+- 와이파이 사용자 현황 성·연령 2023-01~2025-09, 동네 43곳 모두 있음. 대상 문구 → 연령대 규칙은 `docs/b-guide.md` 9절
+- 배수 = 동네 대상 비중 ÷ 제주 평균. 1.0 이상 pass, 0.9 이상 conditional, 미만 fail. 성별 대상이면 성별도 확인
+- 예: "가족"(30·40대 + 10대 미만)으로 동네×월 516칸을 보면 pass 287, conditional 113, fail 116
+- 와이파이는 고령층이 적게 잡힐 수 있다는 경고, 사용자 수는 중복이 있어 비중으로만 본다는 경고를 항상 붙임
+- 4-11은 판정에 쓰지 않고 evidence `flow`로 같은 비중만 보여줌. 지금은 가짜 데이터(2025-05-12~25)라 결과 `is_synthetic=True`
+
+**check_venue**
+- 2025-01~2025-10 와이파이 관광 비중, 장소 385곳(사용량 하위 25% 96곳은 후보 제외), 후보 장소가 있는 동네 41곳
+- 버스 정류소 4,352곳(좌표 있음), 이용 자료 없는 곳 201곳. 이용 자료는 이름 단위라 양방향 정류소가 같은 값. 하루 이용 중앙값 9명(읍면 정류소가 많아 낮음)이 "이용 적음" 기준
+- 반경 500m(인자). 시간대 버스는 함수 자리만 있음
+
+**check_risk**
+- 축제 날짜표에 동네(admin_area)를 붙임: 83건 중 75건 (계획의 행정동 연결, 표준데이터는 좌표 판정)
+- 주거 밀집은 4-11 거주인구 19~23시 평균을 제주 동네 평균과 비교 (지금은 가짜 데이터). 인구 수 기준이라 면적이 큰 읍면이 높게 나올 수 있음
+- 정체는 교통량 데이터 대기 (pending)
+
+**대정읍 방어 카드 루프** (형식 시장·상권, 11·12월, 예산 1,000만 원, 대상 가족)
+- 1회차: 시기 fail(12월 바람) → 11월만, 장소 pass(산이물공원, 하모3리 정류소 363m, 하루 62명), 대상 conditional(0.93배), 위험 conditional(최남단 방어 축제, 야간 거주인구 1.13배·가짜), 규모 conditional(나전역 야시장 500만 원)
+- 2회차: 시기 conditional(방어 축제 날짜 미확인), 나머지 같음 → ready_for_approval
+
 ## 4. 분석 기본 기간
 
 `analytics/periods.py`에 정의. 기간은 `analysis_period(start_month, end_month)`로 바꿔 쓸 수 있음.
@@ -449,3 +481,4 @@
 9. ~~날씨 위험 표~~ (3-8)
 10. ~~check_timing 실제 버전~~ (3-9). 4-11 실데이터가 1년치 쌓이면 `--flow`로 외지인 지수 교체
 11. ~~check_budget 실제 버전~~ (3-10). 형식 태그 오탐 후보는 A에게 전달 (`docs/tag-review-for-a.md`)
+12. ~~check_target, check_venue, check_risk 실제 버전~~ (3-11). 시간대 버스·교통량 데이터가 오면 `event_hour_usage`, `night_return_usage`, `congestion_check` 구현

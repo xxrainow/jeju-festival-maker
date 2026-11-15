@@ -97,12 +97,12 @@ evidence, sources, warnings = timing_weather_evidence(request.region, card.timin
 ```python
 from agent.fake_checks import FAKE_TOOLS
 from agent.verify import verify_idea
-from analytics.real_checks import REAL_TOOLS  # check_timing, check_budget
+from analytics.real_checks import REAL_TOOLS  # 확인 도구 5개 모두
 
-run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 나머지 3개는 가짜 그대로
+run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 실제 버전
 ```
 
-- 먼저 표를 만든다: `uv run python -m analytics.weather` → `uv run python -m analytics.check_timing --build`. 표가 없으면 pending과 안내 문장을 돌려준다
+- 먼저 표를 만든다: `uv run python -m analytics.weather` → `uv run python -m analytics.real_checks --build` (확인 도구 5개 표를 한 번에, 5초쯤. `check_timing --build`만 해도 시기 표는 생김). 표가 없으면 pending과 안내 문장을 돌려준다
 - 입출력은 가짜 `check_timing`과 같다: `check_timing(card, request) -> CheckResult`. evidence에 가짜의 `months`, `low_months`, `outsider_visitors_index`(가짜는 None, 실제는 `{월: 지수}`)가 그대로 있다
 - 더 들어가는 evidence: `outsider_index_source`, 6절 날씨 칸, `weather_rule`, `bad_weather_months`, `recommended_weeks`(예: "5월 2주차 (5/14~5/20)"), `overlapping_festivals`(이름·시작·끝·날짜 확인 여부·출처·월), `month_checks`(월별 결과·좋은 주·나쁜 주와 이유)
 - 판정: fail(지수 < 0.8 또는 그 달 모든 주가 나쁨) > conditional(지수 0.8~1.0 "평소보다 약간 적은 달", 또는 같은 재료 제주 축제가 그 달에 있음) > pass(지수 1.0 이상). 지역이 없거나 그 동네 자료가 없으면 pending (suggestion 없음)
@@ -121,3 +121,53 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 나머지 3개
 - evidence: `input_krw`, `format_median_krw`, `format_q25_krw`, `scale`(확인 후 규모), `card_scale`, `small_examples`(name, budget_krw, visitors, region, year; 입력에 가까운 것부터), `basis`, `sample_count`, `visitors_estimate`(+ `_text`), `reduction_methods`
 - 카드의 `small_examples`는 A 코드가 예산이 작은 것부터 3개를 고르고, `check_budget`은 입력 예산에 가까운 것부터 3개를 고른다. 화면에서 둘을 함께 보여주면 다르게 보일 수 있다
 - 형식 태그 오탐 후보는 `docs/tag-review-for-a.md`
+
+## 9. 대상 확인 `check_target` (실제 버전)
+
+- 입력: `request.target`(대상 문구), `request.region`, `card.timing.recommended_months`
+- 자료: 와이파이 장소별 사용자 현황 성·연령 (2023-01~2025-09, `data/processed/wifi_users_demographics.csv`). 4-11이 있으면 evidence `flow`에 같은 비중을 보여주고, 가짜 데이터면 결과 `is_synthetic=True` (판정은 와이파이로만)
+- 배수 = 그 동네 추천 월의 대상 비중 ÷ 제주 평균(모든 동네 장소). 1.0 이상 pass, 0.9 이상 conditional, 그 미만 fail
+- 성별 대상이 있으면 성별 비중도 같은 기준으로 보고 나쁜 쪽을 쓴다
+- fail 제안: 같은 동네에서 대상 배수가 1.0 이상인 다른 달 중 가장 높은 달 (재료 제철 안에서). 대상(`request.target`)은 고칠 수 있는 칸이 아니라 비중이 높은 연령대는 evidence `strong_age_groups`와 경고로만 알린다
+- pending: 대상 없음, 연령대로 바꿀 수 없는 문구(예: "관광객"), 지역 없음, 그 동네 자료 없음
+- 항상 붙는 경고: "와이파이 사용자 기준이라 고령층(60대 이상)이 실제보다 적게 잡힐 수 있어요."
+
+대상 문구 → 연령대 규칙 (`analytics/check_target.py`의 `TARGET_RULES`, 여러 개가 걸리면 합침)
+
+| 문구 | 연령대 |
+|---|---|
+| 가족, 아이, 어린이, 키즈, 유아, 부모, 자녀 | 30대, 40대, 10대 미만 |
+| 청소년, 중학생, 고등학생, 10대 | 10대 |
+| 청년, 대학생, MZ, 젊은, 2030 | 20대, 30대 |
+| 중장년, 중년, 장년, 4050 | 40대, 50대 |
+| 어르신, 노인, 시니어, 고령, 노년, 실버 | 60대 이상 |
+| "20~30대"처럼 범위 | 범위 안 연령대 |
+| "40대"처럼 하나 | 그 연령대 (60대·70대는 60대 이상) |
+| 10대 미만, 영유아 | 10대 미만 |
+| 여성, 여자, 엄마, 주부 / 남성, 남자, 아빠 | 성별 확인 추가 |
+
+4-11 연령 코드(SKT)는 와이파이 연령대로 묶는다: 0009 → 10대 미만, 1014·1519 → 10대, … 6064·6569·7000 → 60대 이상 (`analytics/flow_source.py`).
+
+## 10. 장소 확인 `check_venue` (실제 버전)
+
+- 지역 안 와이파이 장소 중 관광 사용량 비중이 높은 곳 → 반경 `radius_m`(기본 500m, 인자로 바꿈) 안 버스 정류소 → 정류소 하루 평균 이용
+- 자료 기간 2025-01~2025-10 (아이디어 단계 2023~2024와 겹치지 않게). 장소 좌표는 AP 좌표 평균
+- 후보에서 빼는 장소: 정류소·충전소·올레 코스 와이파이, 공공시설 이름(A의 `EXCLUDED_PLACE`), 사용량이 제주 장소 하위 25% 미만
+- evidence `candidate_places`(최대 3곳): name, admin_area, latitude, longitude, tourism_share_pct, stop_name, stop_id, stop_distance_m, stop_daily_users, stops_within_radius, good_bus
+- pass: 반경 안에 하루 이용이 제주 정류소 중앙값(9명) 이상인 정류소가 있는 후보 있음 / conditional: 관광 장소는 있는데 그런 정류소가 없음 ("셔틀 필요") / fail: 지역 안 후보 없음 → `Suggestion(field="venue")`에 인접 동네 후보(`VenueCandidate` 형식) / pending: 지역 없음, 표 없음
+- pass·conditional이면 카드 `venue`를 바꾸지 않는다 (루프는 fail 제안만 적용). 후보는 evidence에 있으니 화면·기획안에서 쓰면 된다
+- 시간대 버스: `event_hour_usage(station_ids, hours)`, `night_return_usage(station_ids)` 자리만 있음. `data/processed/bus_station_hourly.csv`가 생기면 구현. 지금 evidence의 `event_hours`, `night_return`은 "대기"
+
+## 11. 위험 확인 `check_risk` (실제 버전)
+
+- `check_risk(card, request, venue_areas=None, timing_result=None)`. 후보 장소 동네는 `venue_areas` → 카드 `venue` → `check_venue` 후보 → `request.region` 순으로 정한다
+- 축제 충돌: check_timing의 `overlapping_festivals`(같은 재료·같은 달)를 그대로 써서 있으면 conditional. 같은 동네 다른 재료 축제가 check_timing 추천 주와 겹치면 경고 (날짜 미확인이면 같은 달일 때 경고)
+- 주거 밀집: 4-11 거주인구(resd_pop_cnt)의 19~23시 평균이 제주 동네 평균보다 많으면 conditional "소음 민원 주의". 4-11이 가짜면 `is_synthetic=True` + 경고
+- 정체: `congestion_check` 자리만 있음. evidence `congestion`은 pending
+- 결과: 걸린 것이 있으면 conditional, 없으면 pass (fail 없음)
+
+## 12. Git에 올린 와이파이 가공본 (`analytics/reference/`)
+
+- `wifi_usage_by_place_month_type.parquet` (2.9MB), `area_link_wifi.csv` (361KB, 장소 → 행정동·읍면 + AP 좌표)
+- 코드는 reference를 먼저 읽고, 없으면 `data/processed/`를 읽는다 (`analytics/reference_data.py`)
+- 다시 만들기: `uv run python -m analytics.reference_data`
