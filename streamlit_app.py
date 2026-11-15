@@ -129,6 +129,8 @@ st.success(
     f"소재 {request.interest or '미정'}, 계절 {request.season or '미정'}, 대상 {request.target or '미정'}, "
     f"예산 {screen.won(request.budget_max_krw)}"
 )
+if conflict := screen.season_conflict(request):
+    st.warning(f"⚠️ {conflict}")  # 막지 않고 안내만
 
 # ---------- 2. 아이디어 카드 ----------
 st.header("2. 아이디어 카드")
@@ -150,6 +152,12 @@ if st.button("아이디어 카드 받기"):
 if "proposal" not in ss:
     stop()
 proposal = IdeaProposal.model_validate(ss["proposal"])
+if proposal.is_demo:
+    diffs = screen.demo_differences(proposal, request)
+    st.warning(
+        f"### ⚠️ 예시 카드예요\n**{screen.DEMO_WARNING}**"
+        + ("\n\n입력과 다른 점: " + " / ".join(diffs) if diffs else "")
+    )
 for notice in proposal.notices:
     st.info(notice)
 
@@ -159,23 +167,19 @@ for col, card in zip(cols, proposal.ideas, strict=True):  # rank 순서, rank·s
         st.subheader(card.title)
         st.write(card.concept)
         st.caption(f"{card.format} × {card.material}")
-        for question, value, source in screen.evidence_lines(card):
-            st.markdown(f"**{question}** {value}")
+        for title, body, source in screen.evidence_lines(card):
+            st.markdown(f"**{title}**")
+            if body:
+                st.write(body)
             st.caption(f"출처: {source}")
-        ref = card.reference
-        names = ", ".join(f.name for f in ref.designated_festivals)
-        st.markdown(f"**사례** {ref.type}" + (f": {names}" if names else ""))
-        fest = card.timing.jeju_festivals_in_month
-        st.markdown(
-            f"**추천 시기** {screen.months_text(card.timing.recommended_months)}"
-            + (f" (그 달 제주 축제 {fest}개)" if fest is not None else "")
-        )
+        st.markdown(f"**{screen.reference_text(card)}**")
+        st.markdown(f"**{screen.timing_text(card)}**")
         st.markdown("**예산**")
         for line in screen.budget_lines(card):
             st.caption(line)
-        st.markdown("**검증할 가설**")
+        st.markdown("**고르면 확인할 것**")
         for h in card.hypotheses:
-            st.write(f"- {h}")
+            st.write(f"- {screen.check_phrase(h)}")
         if st.button("이 아이디어 고르기", key=f"pick_{card.idea_id}"):
             reset_after("selected")
             ss["selected"] = card.idea_id

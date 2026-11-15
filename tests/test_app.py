@@ -13,16 +13,103 @@ CARD = demo_proposal().ideas[0]
 
 def test_evidence_lines_show_waiting_and_sources():
     lines = screen.evidence_lines(CARD)
-    assert lines[0][0] == "요즘 뜨는 형식인가?"
-    assert lines[2][1] == screen.WAITING  # 데모 카드 관광객 관심은 pending
-    assert all(src for _, _, src in lines)
+    assert lines[0][0] == "요즘 늘고 있는 축제예요 📈"
+    assert lines[0][1] == (
+        "2023년 이후 새로 생겨 2026년에 열리는 시장·상권 축제가 전국 16개예요. "
+        "새로 생긴 축제 중 이 형식의 비율이 예전부터 열던 축제보다 3.6배 높아요."
+    )
+    assert lines[1][0] == "제주에는 아직 없어요"
+    assert lines[2][0] == "관광객 관심은 아직 확인 중이에요"  # 데모 카드 관광객 관심은 pending
+    assert lines[0][2] == "문화체육관광부 지역축제 개최계획 (2024~2026)"
 
 
-def test_won_and_budget_lines():
+JARGON = ["리프트", "신설", "확실한 상승", "관찰 대상", "성숙·감소", "정체", "선점 기회", "성공 사례",
+          "검증할 가설", "소규모 버전", "중간값", "문체부", "pending", "lift", "verdict"]  # fmt: skip
+
+
+def card_texts(card) -> list[str]:
+    texts = [t for line in screen.evidence_lines(card) for t in line]
+    texts += [screen.reference_text(card), screen.timing_text(card), *screen.budget_lines(card)]
+    return texts + [screen.check_phrase(h) for h in card.hypotheses]
+
+
+def test_card_texts_have_no_jargon():
+    cards = list(demo_proposal().ideas)
+    ev = CARD.evidence
+    for verdict, lift, count in [
+        ("관찰 대상(신설 적음)", 1.4, 3),
+        ("정체", 1.0, 5),
+        ("성숙·감소", 0.6, 2),
+    ]:
+        trend = ev.trend.model_copy(
+            update={"verdict": verdict, "new_lift": lift, "new_count": count}
+        )
+        jeju = ev.jeju_gap.model_copy(update={"jeju_count": 2})
+        interest = ev.visitor_interest.model_copy(update={"value": 62.0, "status": "ready"})
+        cards.append(CARD.model_copy(update={"evidence": ev.model_copy(
+            update={"trend": trend, "jeju_gap": jeju, "visitor_interest": interest})}))  # fmt: skip
+    titles = {screen.evidence_lines(c)[0][0] for c in cards}
+    assert titles == {"요즘 늘고 있는 축제예요 📈", "조금씩 늘고 있는 축제예요",
+                      "꾸준히 열리는 축제예요", "이미 많이 열리는 축제예요"}  # fmt: skip
+    assert screen.evidence_lines(cards[-1])[1][0] == "제주에도 2개 있어요"
+    assert "62%가 관광객" in screen.evidence_lines(cards[-1])[2][1]
+    assert "더 낮아요" in screen.evidence_lines(cards[-1])[0][1]  # 0.6배
+    for c in cards:
+        for text in card_texts(c):
+            for word in JARGON:
+                assert word not in text, (word, text)
+
+
+def test_card_other_fields_in_plain_words():
+    cards = demo_proposal().ideas
+    assert screen.reference_text(cards[0]) == "아직 전국에 대표 축제가 없어요. 먼저 시작할 기회예요"
+    assert screen.reference_text(cards[1]) == "비슷한 성공 축제: 강릉커피축제, 김천김밥축제"
+    assert screen.timing_text(cards[0]) == "추천 시기: 12월 · 이 달 제주 축제 1개"
+    assert screen.budget_lines(cards[0])[0] == (
+        "비슷한 축제는 보통 6,000만 원이 들어요. 입력한 1,000만 원으로는 작게 여는 걸 추천해요."
+    )
+    assert screen.budget_lines(cards[0])[-1] == "출처: 문화체육관광부 지역축제 개최계획 (2026)"
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        ("12월 애월읍 외지인 방문이 충분하다", "12월 애월읍 외지인 방문이 충분한지"),
+        ("후보 장소 근처에 버스 접근성이 있다", "후보 장소 근처에 버스 접근성이 있는지"),
+        ("관광객의 디저트·카페 소비가 많다", "관광객의 디저트·카페 소비가 많은지"),
+        ("12월 추위·바람이 야외 체류를 막지 않는다", "12월 추위·바람이 야외 체류를 막지 않는지"),
+        ("주민이 참여한다.", "주민이 참여하는지"),
+        ("관광객이 온다", "관광객이 오는지"),
+        ("값이 크다", "값이 큰지"),
+        ("확인했음", "확인했음"),  # 규칙 밖은 그대로
+    ],
+)
+def test_check_phrase(text, want):
+    assert screen.check_phrase(text) == want
+
+
+def test_season_conflict_and_demo_differences():
+    from agent.draft_contracts import UserRequest
+
+    seasons = {"감귤": [11, 12, 1]}
+    summer = UserRequest(region="서귀포시 대정읍", interest="감귤", season="여름")
+    assert screen.season_conflict(summer, seasons) == (
+        "감귤은 11·12·1월이 제철이라 여름과 맞지 않아요. 계절이나 재료를 바꿔보세요."
+    )
+    assert screen.season_conflict(summer.model_copy(update={"season": "겨울"}), seasons) is None
+    assert screen.season_conflict(summer.model_copy(update={"interest": "해녀"}), seasons) is None
+    diffs = screen.demo_differences(demo_proposal(), summer.model_copy(update={"interest": "방어"}))
+    assert diffs == [
+        "지역: 입력 서귀포시 대정읍 · 카드 제주시 애월읍",
+        "계절: 입력 여름 · 카드 12월",
+        "재료: 입력 방어 · 카드 감귤",
+    ]
+
+
+def test_won():
     assert screen.won(10_000_000) == "1,000만 원"
     assert screen.won(278_000_000) == "2.78억 원"
     assert screen.won(None) == "미정"
-    assert any("출처" in line for line in screen.budget_lines(CARD))
 
 
 def test_key_numbers_and_venue_table():
@@ -191,3 +278,27 @@ def test_reason_numbers_come_first_and_low_data_is_shown():
     assert ch["numbers"][1].startswith("12월 관광객 지표 0.9")
     assert ch["low_data"] == ["날씨 지점(제주)이 53km 떨어져 있어요"]
     assert screen.low_data_notes(first.results) == ["날씨 지점(제주)이 53km 떨어져 있어요"]
+
+
+def test_app_warns_summer_citrus_and_demo_cards(no_llm):
+    """여름 + 감귤 입력: 계절-제철 안내와 데모 카드 경고 두 개, 카드 문장에 분석 용어 없음."""
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.selectbox[0].select("서귀포시 대정읍")
+    at.selectbox[1].select("여름")
+    at.text_input[2].input("감귤")
+    at.button[1].click().run()
+    warnings = labels(at, "warning")
+    assert any("감귤은 11·12·1월이 제철이라 여름과 맞지 않아요" in w for w in warnings)
+    next(b for b in at.button if b.label == "아이디어 카드 받기").click().run()
+    warnings = labels(at, "warning")
+    assert any("감귤은 11·12·1월이 제철이라" in w for w in warnings)
+    demo = [w for w in warnings if screen.DEMO_WARNING in w]
+    assert (
+        demo
+        and "계절: 입력 여름 · 카드 12월" in demo[0]
+        and "지역: 입력 서귀포시 대정읍" in demo[0]
+    )
+    shown = " ".join([m.value for m in at.markdown] + [c.value for c in at.caption])
+    for word in ("리프트", "신설", "확실한 상승", "선점 기회", "검증할 가설", "문체부 지역축제"):
+        assert word not in shown, word
+    assert "고르면 확인할 것" in shown

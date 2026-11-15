@@ -1,5 +1,7 @@
 """화면에 보여줄 문장·표를 만드는 함수 (Streamlit 없이 테스트할 수 있게 분리)."""
 
+import re
+
 from agent.draft_contracts import CheckResult, IdeaCard
 
 CHECK_LABELS = {
@@ -43,45 +45,175 @@ def months_text(months: list[int]) -> str:
     return "·".join(str(m) for m in months) + "월"
 
 
+VERDICT_TITLES = {
+    "확실한 상승": "요즘 늘고 있는 축제예요 📈",
+    "관찰 대상": "조금씩 늘고 있는 축제예요",
+    "정체": "꾸준히 열리는 축제예요",
+    "성숙·감소": "이미 많이 열리는 축제예요",
+}
+NEW_FROM_YEAR = (
+    2023  # research.trends.tag_trends(new_from=2023): 2023년 이후 처음 연 축제가 "새로 생긴 축제"
+)
+
+
+def _has_final(word: str) -> bool:
+    """마지막 글자에 받침이 있는지 (조사 고르기)."""
+    ch = word.strip()[-1:]
+    return bool(ch) and "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 != 0
+
+
+def josa(word: str, with_final: str, without_final: str) -> str:
+    return word + (with_final if _has_final(word) else without_final)
+
+
+def plain_source(src: str | None) -> str:
+    """출처 줄임말을 기관 이름으로 풀어 쓴다. 예: "문체부 지역축제 2024-2026" → "문화체육관광부 지역축제 개최계획 (2024~2026)"."""
+    if not src:
+        return ""
+    if m := re.fullmatch(r"제주 축제 목록 \((.*)\)", src.strip()):
+        return f"{plain_source(m.group(1))} 중 제주 축제"
+    # 괄호 안에서는 괄호를 겹치지 않게 연도만 붙인다
+    out = re.sub(
+        r"(\([^)]*?)문체부 지역축제 (\d{4})\s*[-~]\s*(\d{4})",
+        r"\1문화체육관광부 지역축제 개최계획 \2~\3",
+        src,
+    )
+    out = re.sub(
+        r"(\([^)]*?)문체부 지역축제 (\d{4})", r"\1문화체육관광부 지역축제 개최계획 \2", out
+    )
+    out = re.sub(
+        r"문체부 지역축제 (\d{4})\s*[-~]\s*(\d{4})",
+        r"문화체육관광부 지역축제 개최계획 (\1~\2)",
+        out,
+    )
+    out = re.sub(r"문체부 지역축제 (\d{4})", r"문화체육관광부 지역축제 개최계획 (\1)", out)
+    out = out.replace("문체부", "문화체육관광부")
+    out = out.replace("와이파이 AP별 이용 현황", "제주데이터허브 와이파이 이용 현황")
+    if out.startswith("와이파이 장소별"):
+        out = "제주데이터허브 " + out
+    return out
+
+
 def evidence_lines(card: IdeaCard) -> list[tuple[str, str, str]]:
-    """카드 근거 3칸: (질문, 값 문장, 출처). pending이면 "데이터 대기"."""
+    """카드 근거 3칸을 쉬운 말로: (제목, 본문, 출처). 확인 중이면 "아직 확인 중이에요"."""
     ev = card.evidence
-    trend = (
-        WAITING
-        if ev.trend.status == "pending"
-        else f"신설 {ev.trend.new_count}개, 신설 리프트 {ev.trend.new_lift}"
-        + (f" ({ev.trend.verdict})" if ev.trend.verdict else "")
-    )
-    gap = (
-        WAITING
-        if ev.jeju_gap.status == "pending"
-        else f"제주 같은 형식 축제 {ev.jeju_gap.jeju_count}개"
-    )
+    t = ev.trend
+    if t.status == "pending" or t.new_count is None:
+        trend = ("요즘 뜨는 축제인지 아직 확인 중이에요", "")
+    else:
+        verdict = next(
+            (v for k, v in VERDICT_TITLES.items() if t.verdict and t.verdict.startswith(k)), None
+        )
+        # new_count: 2026년 계획에 있는 축제 중 2023년 이후 처음 연 축제 수 (research.trends.tag_trends)
+        body = f"{NEW_FROM_YEAR}년 이후 새로 생겨 2026년에 열리는 {card.format} 축제가 전국 {t.new_count}개예요."
+        if t.new_lift is not None:
+            lift = round(t.new_lift, 1)
+            body += (
+                f" 새로 생긴 축제 중 이 형식의 비율이 예전부터 열던 축제보다 {lift}배 높아요."
+                if lift >= 1
+                else f" 새로 생긴 축제 중 이 형식의 비율은 예전부터 열던 축제의 {lift}배로 더 낮아요."
+            )
+        trend = (verdict or "전국 축제 흐름", body)
+    g = ev.jeju_gap
+    if g.status == "pending" or g.jeju_count is None:
+        gap = ("제주에 같은 축제가 있는지 아직 확인 중이에요", "")
+    elif g.jeju_count == 0:
+        gap = ("제주에는 아직 없어요", f"제주에서 열리는 {card.format} 축제가 없어요.")
+    else:
+        gap = (f"제주에도 {g.jeju_count}개 있어요", f"제주에서 이미 열리는 {card.format} 축제예요.")
     vi = ev.visitor_interest
-    interest = (
-        WAITING
-        if vi.status == "pending" or vi.value is None
-        else f"{vi.value}" + (f" ({vi.metric})" if vi.metric else "")
-    )
+    if vi.status == "pending" or vi.value is None:
+        interest = ("관광객 관심은 아직 확인 중이에요", "")
+    else:
+        interest = (
+            f"관광객이 찾는 {josa(card.material, '이에요', '예요')}"
+            if vi.value >= 50
+            else f"{josa(card.material, '은', '는')} 주민이 더 많이 찾아요",
+            f"{card.material} 관련 제주 장소의 와이파이 사용 중 {vi.value:.0f}%가 관광객이에요.",
+        )
     return [
-        ("요즘 뜨는 형식인가?", trend, ev.trend.source),
-        ("제주에 없는 형식인가?", gap, ev.jeju_gap.source),
-        ("관광객이 좋아하는 재료인가?", interest, vi.source),
+        (*trend, plain_source(t.source)),
+        (*gap, plain_source(g.source)),
+        (*interest, plain_source(vi.source)),
     ]
+
+
+def reference_text(card: IdeaCard) -> str:
+    ref = card.reference
+    if ref.type == "선점 기회" or not ref.designated_festivals:
+        return "아직 전국에 대표 축제가 없어요. 먼저 시작할 기회예요"
+    return "비슷한 성공 축제: " + ", ".join(f.name for f in ref.designated_festivals)
+
+
+def timing_text(card: IdeaCard) -> str:
+    months = card.timing.recommended_months
+    text = f"추천 시기: {months_text(months)}"
+    fest = card.timing.jeju_festivals_in_month
+    if fest is not None:
+        text += f" · {'이 달' if len(months) == 1 else '이 시기'} 제주 축제 {fest}개"
+    return text
 
 
 def budget_lines(card: IdeaCard) -> list[str]:
+    """예산을 쉬운 말로. 마지막 줄은 출처."""
     b = card.budget
-    lines = [
-        f"입력 예산 {won(b.input_krw)}, 같은 형식 중간값 {won(b.format_median_krw)} → {b.scale}",
-    ]
+    median, given = b.format_median_krw, b.input_krw
+    if median is None:
+        lines = ["비슷한 축제 예산은 아직 확인 중이에요."]
+    elif given is None:
+        lines = [
+            f"비슷한 축제는 보통 {josa(won(median), '이', '가')} 들어요. 예산을 정하면 규모를 맞춰 드릴게요."
+        ]
+    elif b.scale == "소규모 버전":
+        lines = [
+            (
+                f"비슷한 축제는 보통 {josa(won(median), '이', '가')} 들어요. "
+                f"입력한 {josa(won(given), '으로는', '로는')} 작게 여는 걸 추천해요."
+            )
+        ]
+    else:
+        lines = [
+            f"입력한 {josa(won(given), '이면', '면')} 비슷한 축제(보통 {won(median)})만큼 열 수 있어요."
+        ]
     if b.small_examples:
         lines.append(
-            "작은 예산 사례: "
+            "작은 예산으로 연 축제: "
             + ", ".join(f"{e.name}({won(e.budget_krw)})" for e in b.small_examples)
         )
-    lines.append(f"출처: {b.source}")
+    lines.append(f"출처: {plain_source(b.source)}")
     return lines
+
+
+def _jamo(ch: str) -> tuple[int, int, int]:
+    code = ord(ch) - 0xAC00
+    return code // 588, (code % 588) // 28, code % 28
+
+
+def _syllable(cho: int, jung: int, jong: int) -> str:
+    return chr(0xAC00 + cho * 588 + jung * 28 + jong)
+
+
+def check_phrase(hypothesis: str) -> str:
+    """가설 문장 끝 "~다"를 "~인지"로. 예: "관광객이 충분하다" → "관광객이 충분한지".
+
+    규칙에 맞지 않으면 원문 그대로 둔다 (LLM 문장은 모양이 다양하다).
+    """
+    h = hypothesis.strip().rstrip(".")
+    if not h.endswith("다") or len(h) < 2:
+        return hypothesis.strip()
+    stem, last = h[:-1], h[-2]
+    if not ("가" <= last <= "힣"):
+        return hypothesis.strip()
+    if stem.endswith(("있", "없")):
+        return stem + "는지"
+    if stem.endswith("는"):  # 않는다, 막는다 → 않는지, 막는지
+        return stem[:-1] + "는지"
+    cho, jung, jong = _jamo(last)
+    if jong == 4:  # 간다, 온다, 참여한다 → 가는지, 오는지, 참여하는지
+        return stem[:-1] + _syllable(cho, jung, 0) + "는지"
+    if jong == 0:  # 충분하다 → 충분한지, 크다 → 큰지
+        return stem[:-1] + _syllable(cho, jung, 4) + "지"
+    return stem + "은지"  # 많다 → 많은지
 
 
 def _fmt_index(index: dict | None) -> str | None:
@@ -388,3 +520,63 @@ def friendly_changes(run) -> list[dict]:
                 }
             )
     return out
+
+
+# ---------- 입력·데모 카드 안내 ----------
+
+DEMO_WARNING = (
+    "AI 연결 전이라 입력과 상관없는 예시 카드예요. 입력한 지역·계절·재료가 반영되지 않았어요."
+)
+
+
+def material_seasons() -> dict[str, list[int]]:
+    """A의 소재 사전 가공본(research/reference/jeju_materials.csv)의 제철(months). 연중 재료는 빠진다."""
+    import pandas as pd
+
+    from research.materials import PUBLISHED_MATERIALS_PATH
+
+    d = pd.read_csv(PUBLISHED_MATERIALS_PATH, dtype=str, keep_default_na=False)
+    return {r.material: [int(m) for m in r.months.split("|")] for r in d.itertuples() if r.months}
+
+
+def _material_in(text: str | None, seasons: dict) -> str | None:
+    if not text:
+        return None
+    if text in seasons:
+        return text
+    return next((m for m in sorted(seasons, key=len, reverse=True) if m in text), None)
+
+
+def season_conflict(request, seasons: dict | None = None) -> str | None:
+    """입력 계절과 재료 제철이 겹치지 않으면 안내 문장 (막지는 않는다)."""
+    from agent.idea_gen import SEASON_MONTHS
+
+    if not request.season:
+        return None
+    seasons = material_seasons() if seasons is None else seasons
+    material = _material_in(request.interest, seasons)
+    if material is None or set(seasons[material]) & set(SEASON_MONTHS[request.season]):
+        return None
+    return (
+        f"{josa(material, '은', '는')} {months_text(seasons[material])}이 제철이라 "
+        f"{josa(request.season, '과', '와')} 맞지 않아요. 계절이나 재료를 바꿔보세요."
+    )
+
+
+def demo_differences(proposal, request) -> list[str]:
+    """데모 카드가 입력과 다른 점: 지역·계절·재료."""
+    from agent.idea_gen import SEASON_MONTHS
+
+    diffs = []
+    demo_region = proposal.input.region
+    if (request.region or None) != demo_region:
+        diffs.append(
+            f"지역: 입력 {request.region or '제주 전역'} · 카드 {demo_region or '제주 전역'}"
+        )
+    months = sorted({m for c in proposal.ideas for m in c.timing.recommended_months})
+    if request.season and not set(months) & set(SEASON_MONTHS[request.season]):
+        diffs.append(f"계절: 입력 {request.season} · 카드 {months_text(months)}")
+    materials = sorted({c.material for c in proposal.ideas})
+    if request.interest and request.interest not in materials:
+        diffs.append(f"재료: 입력 {request.interest} · 카드 {', '.join(materials)}")
+    return diffs
