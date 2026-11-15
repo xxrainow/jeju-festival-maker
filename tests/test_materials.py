@@ -156,3 +156,49 @@ def test_existing_festivals_prefer_candidate_months(trend_data):
     mats = (Material("감귤", "농산물", (11, 12, 1), strength=0.8, existing_festivals=fests),)
     cand = build_candidates(UserRequest(interest="감귤"), trend_data, mats).candidates[0]
     assert cand.existing_festivals == [("겨울 축제", 12), ("봄 축제", 4), ("여름 축제", 7)]
+
+
+def test_place_details_carry_admin_area():
+    areas = {"녹산로 유채꽃길": "서귀포시 표선면"}
+    d, _ = build_dictionary(panel(), None, wifi_place_shares(usage()), KEYWORDS, place_areas=areas)
+    d = d.set_index("material")
+    import json
+
+    assert json.loads(d.loc["유채꽃", "place_details"]) == [
+        {"name": "녹산로 유채꽃길", "area": "서귀포시 표선면", "tourist_pct": 80.0}
+    ]
+    assert json.loads(d.loc["해녀", "place_details"])[0]["area"] is None  # 연결표에 없음
+    assert json.loads(d.loc["방어", "place_details"]) == []
+
+
+def test_region_bonus_and_related_places(trend_data):
+    from agent.idea_gen import REGION_BONUS, Material
+
+    sea = Material(
+        "해변", "자연", None, strength=0.8,
+        places=(("한담해변", "제주시 애월읍", 59.8), ("협재해변", "제주시 한림읍", 89.9),
+                ("곽지해변", "제주시 애월읍", 71.0), ("이름만", None, 50.0)),
+    )  # fmt: skip
+    oreum = Material(
+        "오름", "자연", None, strength=0.8, places=(("성산 오름", "서귀포시 성산읍", 40.0),)
+    )
+    mats = (sea, oreum)
+    plain = build_candidates(UserRequest(), trend_data, mats)
+    local = build_candidates(UserRequest(region="제주시 애월읍"), trend_data, mats)
+    score = {(c.format, c.material): c.score for c in plain.candidates}
+    for c in local.candidates:
+        base = score[(c.format, c.material)]
+        if c.material == "해변":
+            assert c.region_places == [("곽지해변", 71.0), ("한담해변", 59.8)]  # 관광 비중 순
+            assert abs(c.score - (base + REGION_BONUS)) < 1e-3
+        else:
+            assert c.region_places == [] and c.score == base
+    assert any("제주시 애월읍 안에 관련 장소" in n for n in local.notices)
+    req = UserRequest(region="제주시 애월읍")
+    top = next(c for c in local.candidates if c.material == "해변")
+    card = build_card(top, 1, req, trend_data, title="t", concept="c", hypotheses=["h"])
+    assert [(p.name, p.admin_area) for p in card.related_places] == [
+        ("곽지해변", "제주시 애월읍"),
+        ("한담해변", "제주시 애월읍"),
+    ]
+    assert "71.0%" in card.related_places[0].reason

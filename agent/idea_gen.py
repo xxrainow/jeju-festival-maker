@@ -34,6 +34,7 @@ from agent.draft_contracts import (
     MaterialCategory,
     TrendEvidence,
     UserRequest,
+    VenueCandidate,
     VisitorInterestEvidence,
 )
 
@@ -66,6 +67,11 @@ PURPOSE_BOOST: dict[str, tuple[str, ...]] = {
     "지역 상권 활성화": ("시장·상권", "푸드·디저트", "도심·거리·골목"),
 }
 PURPOSE_BONUS = 0.1
+# 희망 지역 안에 재료 관련 와이파이 장소가 있으면 더하는 점수 (기획서 9-1 "재료·장소를 그 지역으로 좁힘").
+# 가중치 재조정 전 임시값. 지역 밖 재료를 빼지는 않는다 (장소 연결이 없는 재료도 축제는 열 수 있어서)
+REGION_BONUS = 0.1
+MAX_REGION_PLACES = 3
+REGION_NOTICE = "{region} 안에 관련 장소가 있는 재료를 우선했어요 (와이파이 장소의 행정동 기준)."
 TRIANGLE_FACTOR = 0.5
 NEUTRAL_INTEREST = 0.5
 TOP_N = 10  # LLM에 넘기는 후보 수
@@ -94,6 +100,8 @@ class Material:
     existing_festivals: tuple[
         tuple[str, int | None], ...
     ] = ()  # 같은 재료의 기존 제주 축제 (이름, 월)
+    # (사전) 관련 와이파이 장소 (이름, 행정동 또는 None, 관광 목적 사용량 비중 %), 사용량 큰 순
+    places: tuple[tuple[str, str | None, float], ...] = ()
 
 
 # 제주 소재 사전(기획서 6절, D 단계)이 나오기 전 임시 목록. 제철 월은 팀 검수 전 가정이다
@@ -186,6 +194,7 @@ class Candidate(BaseModel):
         tuple[str, int | None]
     ] = []  # 같은 재료 기존 제주 축제, 가능한 월 우선
     interest_source: str | None = None
+    region_places: list[tuple[str, float]] = []  # 희망 지역 안 관련 장소 (이름, 관광 비중 %)
 
 
 @dataclass
@@ -275,6 +284,9 @@ def build_candidates(
                 score *= TRIANGLE_FACTOR
             if fmt in boosted:
                 score += PURPOSE_BONUS
+            local = _region_places(m, request.region)
+            if local:
+                score += REGION_BONUS
             out.append(Candidate(
                 candidate_id="", format=fmt, material=m.name, material_category=m.category,
                 pairing=mark, months=months, score=round(score, 4),
@@ -284,7 +296,10 @@ def build_candidates(
                 tourist_share_pct=m.tourist_share_pct,
                 existing_festivals=_pick_existing(m.existing_festivals, months),
                 interest_source=DICTIONARY_SOURCE if m.tourist_share_pct is not None else None,
+                region_places=local,
             ))  # fmt: skip
+    if request.region and any(c.region_places for c in out):
+        notices.append(REGION_NOTICE.format(region=request.region))
     if from_dictionary and any(c.tourist_share_pct is None for c in out):
         notices.append(PENDING_INTEREST_NOTICE)
     skipped = sorted(off_season - {c.material for c in out})
@@ -346,6 +361,14 @@ def _recommended_months(months: list[int], data: TrendData) -> list[int]:
     return sorted(ranked[:3])
 
 
+def _region_places(material: Material, region: str | None) -> list[tuple[str, float]]:
+    """희망 지역(행정동) 안의 관련 장소, 관광 비중 높은 순으로 최대 MAX_REGION_PLACES개."""
+    if not region:
+        return []
+    local = [(name, pct) for name, area, pct in material.places if area == region]
+    return sorted(local, key=lambda p: -p[1])[:MAX_REGION_PLACES]
+
+
 def _pick_existing(
     festivals: tuple[tuple[str, int | None], ...], months: list[int]
 ) -> list[tuple[str, int | None]]:
@@ -377,9 +400,17 @@ def materials_from_dictionary(d: pd.DataFrame) -> tuple[Material, ...]:
         raw = getattr(r, "existing_festivals", "[]")
         items = json.loads(raw) if isinstance(raw, str) and raw.startswith("[") else []
         fests = tuple((f["name"], f.get("month")) for f in items)
+        raw_places = getattr(r, "place_details", "[]")
+        place_items = (
+            json.loads(raw_places)
+            if isinstance(raw_places, str) and raw_places.startswith("[")
+            else []
+        )
+        places = tuple((p["name"], p.get("area"), float(p["tourist_pct"])) for p in place_items)
         out.append(Material(
             name=r.material, category=r.category, months=months,
             strength=float(r.strength), tourist_share_pct=share, existing_festivals=fests,
+            places=places,
         ))  # fmt: skip
     return tuple(out)
 
@@ -462,5 +493,13 @@ def build_card(
         hypotheses=hypotheses,
         existing_jeju_festivals=[
             ExistingFestival(name=n, month=m) for n, m in candidate.existing_festivals
+        ],
+        related_places=[
+            VenueCandidate(
+                name=name,
+                admin_area=request.region,
+                reason=f"{candidate.material} 관련 와이파이 장소, 관광 목적 사용량 비중 {pct}%",
+            )
+            for name, pct in candidate.region_places
         ],
     )

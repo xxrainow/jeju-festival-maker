@@ -49,6 +49,8 @@ for card in proposal.ideas:                         # 정확히 3장, rank 순�
     st.write(card.reference.type, [f.name for f in card.reference.designated_festivals])
     st.write("추천 시기:", card.timing.recommended_months)
     st.write("검증할 가설:", card.hypotheses)
+    if card.related_places:                         # 희망 지역 안 관련 장소 (지역을 입력했을 때만)
+        st.write("지역 안 관련 장소:", [p.name for p in card.related_places])
 ```
 
 - `rank`, `score`는 화면에 보여주지 않는다 (순서에만 쓴다)

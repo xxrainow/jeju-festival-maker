@@ -41,6 +41,7 @@ STANDARD_FESTIVALS_PATH = Path("data/raw/전국문화축제표준데이터-20261
 
 INTEREST_PERIOD = ("202301", "202412")
 NEUTRAL_INTEREST = 0.5
+MAX_PLACE_DETAILS = 40  # 재료마다 저장하는 관련 장소 수 (사용량 큰 순)
 INTEREST_SOURCE = "와이파이 장소별 방문자별 사용량 2023-01~2024-12"
 FESTIVAL_SOURCE = "제주 축제 (문체부 지역축제 2024-2026, 전국문화축제표준데이터)"
 RARITY_SOURCE = "문체부 지역축제 2026 (제주 제외 전국)"
@@ -136,8 +137,14 @@ def build_dictionary(
     standard: pd.DataFrame | None,
     places: pd.DataFrame | None,
     keywords: pd.DataFrame | None = None,
+    place_areas: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(사전, 검수 목록). places는 wifi_place_shares 결과 (없으면 관심 지표를 비워 둔다)."""
+    """(사전, 검수 목록). places는 wifi_place_shares 결과 (없으면 관심 지표를 비워 둔다).
+
+    place_areas: 와이파이 장소 이름 → 행정동 (B의 analytics.reference_data.admin_places).
+    있으면 재료마다 관련 장소의 행정동·관광 비중을 place_details 칸(JSON)에 담는다 (희망 지역 반영용).
+    """
+    place_areas = place_areas or {}
     kw = load_keywords() if keywords is None else keywords
     fests = jeju_festivals(panel, standard)
     nation = panel[(panel["연도"] == panel["연도"].max()) & (panel["시도"] != "제주")]
@@ -164,6 +171,7 @@ def build_dictionary(
             "national_share_pct": round(national_pct, 2),
             "place_count": 0,
             "places": "",
+            "place_details": "[]",
             "tourist_share_pct": None,
             "tourist_vs_avg": None,
         }
@@ -173,6 +181,17 @@ def build_dictionary(
             row["place_count"] = len(matched)
             top = matched.sort_values("total", ascending=False).index[:10]
             row["places"] = "; ".join(top)
+            details = [
+                {
+                    "name": name,
+                    "area": place_areas.get(name),
+                    "tourist_pct": round(float(v["tourist"] / v["total"] * 100), 1),
+                }
+                for name, v in matched.sort_values("total", ascending=False)
+                .head(MAX_PLACE_DETAILS)
+                .iterrows()
+            ]
+            row["place_details"] = json.dumps(details, ensure_ascii=False)
             if len(matched):
                 share = matched["tourist"].sum() / matched["total"].sum()
                 row["tourist_share_pct"] = round(share * 100, 2)
@@ -198,13 +217,17 @@ def build_dictionary(
 
 
 def main(argv: list[str] | None = None) -> None:
-    from analytics.loaders import load_festivals, load_wifi_usage
+    from analytics.loaders import WIFI_USAGE_PATH, load_festivals, load_wifi_usage
+    from analytics.reference_data import admin_places, load_wifi_usage_agg
 
     argv = sys.argv[1:] if argv is None else argv
     panel = load_panel()
     standard = load_festivals(STANDARD_FESTIVALS_PATH) if STANDARD_FESTIVALS_PATH.exists() else None
-    places = wifi_place_shares(load_wifi_usage())
-    d, review = build_dictionary(panel, standard, places)
+    # 와이파이 원본이 없으면 B가 올린 장소·월·방문유형별 집계 가공본을 쓴다 (같은 칸 구성)
+    usage = load_wifi_usage() if WIFI_USAGE_PATH.exists() else load_wifi_usage_agg()
+    places = wifi_place_shares(usage)
+    areas = admin_places().set_index("wifi_place_name")["admin_area"].to_dict()
+    d, review = build_dictionary(panel, standard, places, place_areas=areas)
     pairs = [(MATERIALS_PATH, REVIEW_PATH)]
     if "--publish" in argv:
         pairs.append((PUBLISHED_MATERIALS_PATH, PUBLISHED_REVIEW_PATH))

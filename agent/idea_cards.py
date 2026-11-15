@@ -94,6 +94,7 @@ def build_user_prompt(request: UserRequest, cset: CandidateSet, data: TrendData)
                 f"{name}({month}월)" if month else name for name, month in c.existing_festivals
             ],
             "전국 지정 축제 사례": [name for name, _ in stats.designated[:3]],
+            "희망 지역 안 관련 장소": [name for name, _ in c.region_places],
             "트렌드 해석": stats.interpretation[0],
             "전략": stats.interpretation[1],
         })  # fmt: skip
