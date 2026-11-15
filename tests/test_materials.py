@@ -193,7 +193,7 @@ def test_region_bonus_and_related_places(trend_data):
             assert abs(c.score - (base + REGION_BONUS)) < 1e-3
         else:
             assert c.region_places == [] and c.score == base
-    assert any("제주시 애월읍 안에 관련 장소" in n for n in local.notices)
+    assert any("제주시 애월읍 안에 관련 장소가 있거나" in n for n in local.notices)
     req = UserRequest(region="제주시 애월읍")
     top = next(c for c in local.candidates if c.material == "해변")
     card = build_card(top, 1, req, trend_data, title="t", concept="c", hypotheses=["h"])
@@ -202,3 +202,44 @@ def test_region_bonus_and_related_places(trend_data):
         ("한담해변", "제주시 애월읍"),
     ]
     assert "71.0%" in card.related_places[0].reason
+
+
+def test_festival_area_fallback_for_materials_without_places():
+    """재료 이름이 든 와이파이 장소가 없으면, 같은 재료 기존 축제가 열리는 동네의 관광 비중을 쓴다."""
+    import json
+
+    areas = {"녹산로 유채꽃길": "서귀포시 표선면", "일반 공원": "서귀포시 대정읍"}
+    fest = {"최남단 방어 축제": "서귀포시 대정읍", "제40회 서귀포유채꽃축제": "서귀포시 표선면"}
+    d, review = build_dictionary(
+        panel(), None, wifi_place_shares(usage()), KEYWORDS, place_areas=areas, festival_areas=fest
+    )
+    d = d.set_index("material")
+    # 방어: 장소 이름 연결 없음 → 대정읍(일반 공원: 관광 10 / 전체 100) = 10%
+    assert d.loc["방어", "interest_basis"] == "축제 동네"
+    assert json.loads(d.loc["방어", "festival_areas"]) == ["서귀포시 대정읍"]
+    assert d.loc["방어", "tourist_share_pct"] == 10.0
+    assert d.loc["방어", "interest_status"] == "ready"
+    # 유채꽃: 장소 이름으로 연결되면 그 값을 그대로 쓴다
+    assert d.loc["유채꽃", "interest_basis"] == "장소 이름"
+    assert d.loc["유채꽃", "tourist_share_pct"] == 80.0
+    # 감귤: 축제 동네를 모르면 그대로 비어 있다
+    assert pd.isna(d.loc["감귤", "interest_basis"])
+    assert ("방어", "축제 동네", "서귀포시 대정읍") in set(map(tuple, review.values.tolist()))
+
+
+def test_region_festival_bonus_and_metric_label(trend_data):
+    from agent.idea_gen import REGION_BONUS, Material
+
+    fish = Material(
+        "방어", "수산물", None, strength=0.8, tourist_share_pct=46.4,
+        interest_basis="축제 동네", festival_areas=("서귀포시 대정읍",),
+    )  # fmt: skip
+    plain = build_candidates(UserRequest(), trend_data, (fish,)).candidates[0]
+    req = UserRequest(region="서귀포시 대정읍")
+    local = next(c for c in build_candidates(req, trend_data, (fish,)).candidates
+                 if c.format == plain.format)  # fmt: skip
+    assert local.region_festival and not local.region_places
+    assert abs(local.score - (plain.score + REGION_BONUS)) < 1e-3
+    card = build_card(local, 1, req, trend_data, title="t", concept="c", hypotheses=["h"])
+    assert "축제가 열리는 동네" in card.evidence.visitor_interest.metric
+    assert card.related_places == []

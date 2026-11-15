@@ -178,7 +178,7 @@ def build_evidence(request: UserRequest, card: IdeaCard) -> list[PlanEvidence]:
                                  value=f"{ev.jeju_gap.jeju_count}개", source=ev.jeju_gap.source))  # fmt: skip
     if ev.visitor_interest.status == "ready" and ev.visitor_interest.value is not None:
         rows.append(PlanEvidence(
-            label=f"{card.material} 관련 장소 관광 목적 사용량 비중 (사람 수 아님)",
+            label=f"{card.material}: {ev.visitor_interest.metric or '관광 목적 사용량 비중'} (사람 수 아님)",
             value=f"{ev.visitor_interest.value}%", source=ev.visitor_interest.source,
         ))  # fmt: skip
     b = card.budget
@@ -220,6 +220,10 @@ def build_limitations(card: IdeaCard, checks: list[CheckResult]) -> list[str]:
     ]
     if card.evidence.visitor_interest.status == "pending":
         out.append(f"{card.material}은(는) 관련 와이파이 장소가 없어 관광객 관심 지표가 없다")
+    elif "축제가 열리는 동네" in (card.evidence.visitor_interest.metric or ""):
+        out.append(
+            f"{card.material} 관광 비중은 재료 자체가 아니라 같은 재료 기존 축제가 열리는 동네 기준이다"
+        )
     for c in checks:
         for w in c.warnings:
             if w not in out:
@@ -265,6 +269,7 @@ def plan_payload(run: VerificationRun, request: UserRequest) -> dict:
             f"{f.name}({f.month}월)" if f.month else f.name for f in card.existing_jeju_festivals
         ],
         "관광 목적 사용량 비중(%)": ev.visitor_interest.value,
+        "관광 비중 기준": ev.visitor_interest.metric,
         "예산 비교": {
             "같은 형식 예산 중간값": krw_text(card.budget.format_median_krw),
             "규모": card.budget.scale,

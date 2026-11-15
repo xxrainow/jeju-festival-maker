@@ -38,6 +38,10 @@ PUBLISHED_DIR = Path(__file__).parent / "reference"
 PUBLISHED_MATERIALS_PATH = PUBLISHED_DIR / "jeju_materials.csv"
 PUBLISHED_REVIEW_PATH = PUBLISHED_DIR / "jeju_material_review.csv"
 STANDARD_FESTIVALS_PATH = Path("data/raw/전국문화축제표준데이터-20261103.xls")
+# B가 올린 제주 축제 날짜·행정동 표 (읽기만 함)
+FESTIVAL_DATES_PATH = (
+    Path(__file__).parent.parent / "analytics" / "reference" / "jeju_festival_dates.csv"
+)
 
 INTEREST_PERIOD = ("202301", "202412")
 NEUTRAL_INTEREST = 0.5
@@ -51,6 +55,24 @@ EXCLUDED_PLACE = re.compile(
     r"^(?:버스정류소|전기차충전소)|어린이 ?공원|어린이|보건소|주민센터|도서관|복지|학교|병원|청사"
     r"|사무소|마을회관|경로당|문화의집|노인|요양"
 )
+
+
+BASIS_PLACE = "장소 이름"  # 재료 이름이 들어간 와이파이 장소 (예: 한담해변 → 해변)
+BASIS_FESTIVAL_AREA = "축제 동네"  # 같은 재료 기존 축제가 열리는 행정동의 와이파이 장소 전체
+
+
+def _area_shares(
+    places: pd.DataFrame, place_areas: dict[str, str]
+) -> dict[str, tuple[float, float]]:
+    """행정동별 (관광 사용량, 방문유형이 있는 전체 사용량). 행정동에 연결된 장소만 더한다."""
+    areas = places.index.to_series().map(place_areas)
+    grouped = (
+        places.assign(area=areas)
+        .dropna(subset=["area"])
+        .groupby("area")[["tourist", "total"]]
+        .sum()
+    )
+    return {a: (float(v["tourist"]), float(v["total"])) for a, v in grouped.iterrows()}
 
 
 def materials_path() -> Path:
@@ -138,6 +160,7 @@ def build_dictionary(
     places: pd.DataFrame | None,
     keywords: pd.DataFrame | None = None,
     place_areas: dict[str, str] | None = None,
+    festival_areas: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(사전, 검수 목록). places는 wifi_place_shares 결과 (없으면 관심 지표를 비워 둔다).
 
@@ -145,6 +168,11 @@ def build_dictionary(
     있으면 재료마다 관련 장소의 행정동·관광 비중을 place_details 칸(JSON)에 담는다 (희망 지역 반영용).
     """
     place_areas = place_areas or {}
+    # 축제 정규명 → 개최 행정동 (B의 analytics/reference/jeju_festival_dates.csv)
+    festival_areas = {
+        norm_name(k): v for k, v in (festival_areas or {}).items() if isinstance(v, str) and v
+    }
+    area_shares = _area_shares(places, place_areas) if places is not None else {}
     kw = load_keywords() if keywords is None else keywords
     fests = jeju_festivals(panel, standard)
     nation = panel[(panel["연도"] == panel["연도"].max()) & (panel["시도"] != "제주")]
@@ -174,6 +202,8 @@ def build_dictionary(
             "place_details": "[]",
             "tourist_share_pct": None,
             "tourist_vs_avg": None,
+            "interest_basis": None,  # "장소 이름" | "축제 동네" | None
+            "festival_areas": "[]",
         }
         review += [{"material": r["material"], "kind": "축제", "name": n} for n in hit["축제명"]]
         if places is not None and r.get("match_places", True):
@@ -200,6 +230,24 @@ def build_dictionary(
                 {"material": r["material"], "kind": "와이파이 장소", "name": n}
                 for n in matched.index
             ]
+            if len(matched):
+                row["interest_basis"] = BASIS_PLACE
+        # 기존 축제가 열리는 행정동 (재료 이름이 들어간 와이파이 장소가 없을 때 관심 지표 대체용)
+        fest_areas = sorted(
+            {festival_areas[k] for k in hit["축제명"].map(norm_name) if k in festival_areas}
+        )
+        row["festival_areas"] = json.dumps(fest_areas, ensure_ascii=False)
+        if row["interest_basis"] is None and fest_areas and area_shares:
+            tour = sum(area_shares[a][0] for a in fest_areas if a in area_shares)
+            total = sum(area_shares[a][1] for a in fest_areas if a in area_shares)
+            if total > 0:
+                share = tour / total
+                row["tourist_share_pct"] = round(share * 100, 2)
+                row["tourist_vs_avg"] = round(share / base_share, 3) if base_share else None
+                row["interest_basis"] = BASIS_FESTIVAL_AREA
+                review += [
+                    {"material": r["material"], "kind": "축제 동네", "name": a} for a in fest_areas
+                ]
         rows.append(row)
 
     d = pd.DataFrame(rows)
@@ -227,7 +275,11 @@ def main(argv: list[str] | None = None) -> None:
     usage = load_wifi_usage() if WIFI_USAGE_PATH.exists() else load_wifi_usage_agg()
     places = wifi_place_shares(usage)
     areas = admin_places().set_index("wifi_place_name")["admin_area"].to_dict()
-    d, review = build_dictionary(panel, standard, places, place_areas=areas)
+    fest = pd.read_csv(FESTIVAL_DATES_PATH, encoding="utf-8-sig")
+    fest_areas = dict(zip(fest["name"], fest["admin_area"], strict=True))
+    d, review = build_dictionary(
+        panel, standard, places, place_areas=areas, festival_areas=fest_areas
+    )
     pairs = [(MATERIALS_PATH, REVIEW_PATH)]
     if "--publish" in argv:
         pairs.append((PUBLISHED_MATERIALS_PATH, PUBLISHED_REVIEW_PATH))

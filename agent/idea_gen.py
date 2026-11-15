@@ -71,7 +71,7 @@ PURPOSE_BONUS = 0.1
 # 가중치 재조정 전 임시값. 지역 밖 재료를 빼지는 않는다 (장소 연결이 없는 재료도 축제는 열 수 있어서)
 REGION_BONUS = 0.1
 MAX_REGION_PLACES = 3
-REGION_NOTICE = "{region} 안에 관련 장소가 있는 재료를 우선했어요 (와이파이 장소의 행정동 기준)."
+REGION_NOTICE = "{region} 안에 관련 장소가 있거나 같은 재료 축제가 열리는 재료를 우선했어요."
 TRIANGLE_FACTOR = 0.5
 NEUTRAL_INTEREST = 0.5
 TOP_N = 10  # LLM에 넘기는 후보 수
@@ -87,6 +87,12 @@ PENDING_INTEREST_NOTICE = (
     "계산했어요."
 )
 DICTIONARY_SOURCE = "제주 소재 사전 (와이파이 장소별 방문자별 사용량 2023-01~2024-12)"
+# 관심 지표의 근거에 따라 카드에 붙이는 이름 (둘 다 사람 수가 아니라 관광 목적 데이터 사용량 비중)
+INTEREST_METRICS = {
+    "장소 이름": "관련 장소 관광 목적 사용량 비중(%)",
+    "축제 동네": "같은 재료 기존 축제가 열리는 동네의 관광 목적 사용량 비중(%)",
+    None: "관련 장소 관광 목적 사용량 비중(%)",
+}
 
 
 @dataclass(frozen=True)
@@ -102,6 +108,8 @@ class Material:
     ] = ()  # 같은 재료의 기존 제주 축제 (이름, 월)
     # (사전) 관련 와이파이 장소 (이름, 행정동 또는 None, 관광 목적 사용량 비중 %), 사용량 큰 순
     places: tuple[tuple[str, str | None, float], ...] = ()
+    interest_basis: str | None = None  # (사전) "장소 이름" | "축제 동네" | None
+    festival_areas: tuple[str, ...] = ()  # (사전) 같은 재료 기존 축제가 열리는 행정동
 
 
 # 제주 소재 사전(기획서 6절, D 단계)이 나오기 전 임시 목록. 제철 월은 팀 검수 전 가정이다
@@ -195,6 +203,8 @@ class Candidate(BaseModel):
     ] = []  # 같은 재료 기존 제주 축제, 가능한 월 우선
     interest_source: str | None = None
     region_places: list[tuple[str, float]] = []  # 희망 지역 안 관련 장소 (이름, 관광 비중 %)
+    region_festival: bool = False  # 희망 지역에서 같은 재료 기존 축제가 열림
+    interest_metric: str | None = None  # 카드 관심 지표 이름 (근거에 따라 다름)
 
 
 @dataclass
@@ -285,7 +295,8 @@ def build_candidates(
             if fmt in boosted:
                 score += PURPOSE_BONUS
             local = _region_places(m, request.region)
-            if local:
+            fest_local = bool(request.region) and request.region in m.festival_areas
+            if local or fest_local:
                 score += REGION_BONUS
             out.append(Candidate(
                 candidate_id="", format=fmt, material=m.name, material_category=m.category,
@@ -297,8 +308,10 @@ def build_candidates(
                 existing_festivals=_pick_existing(m.existing_festivals, months),
                 interest_source=DICTIONARY_SOURCE if m.tourist_share_pct is not None else None,
                 region_places=local,
+                region_festival=fest_local,
+                interest_metric=INTEREST_METRICS.get(m.interest_basis, INTEREST_METRICS[None]),
             ))  # fmt: skip
-    if request.region and any(c.region_places for c in out):
+    if request.region and any(c.region_places or c.region_festival for c in out):
         notices.append(REGION_NOTICE.format(region=request.region))
     if from_dictionary and any(c.tourist_share_pct is None for c in out):
         notices.append(PENDING_INTEREST_NOTICE)
@@ -382,9 +395,17 @@ def _visitor_evidence(candidate: Candidate) -> VisitorInterestEvidence:
         return VisitorInterestEvidence(source="와이파이 장소별 방문자별 사용량", status="pending")
     return VisitorInterestEvidence(
         value=candidate.tourist_share_pct,
-        metric="관련 장소 관광 사용량 비중(%)",
+        metric=candidate.interest_metric or INTEREST_METRICS[None],
         source=candidate.interest_source or DICTIONARY_SOURCE,
     )
+
+
+def _text(value) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _json_list(raw) -> list:
+    return json.loads(raw) if isinstance(raw, str) and raw.startswith("[") else []
 
 
 def materials_from_dictionary(d: pd.DataFrame) -> tuple[Material, ...]:
@@ -411,6 +432,8 @@ def materials_from_dictionary(d: pd.DataFrame) -> tuple[Material, ...]:
             name=r.material, category=r.category, months=months,
             strength=float(r.strength), tourist_share_pct=share, existing_festivals=fests,
             places=places,
+            interest_basis=_text(getattr(r, "interest_basis", None)),
+            festival_areas=tuple(_json_list(getattr(r, "festival_areas", "[]"))),
         ))  # fmt: skip
     return tuple(out)
 
