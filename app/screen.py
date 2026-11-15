@@ -159,7 +159,8 @@ def evidence_lines(card: IdeaCard, jeju_avg=_UNSET) -> list[tuple[str, str, str]
             title = (
                 f"관광객이 많이 찾는 {josa(card.material, '이에요', '예요')}"
                 if vi.value >= avg
-                else f"{josa(card.material, '은', '는')} 주민이 더 많이 찾아요"
+                # 관광 외 사용량에는 거주뿐 아니라 업무·기타도 섞여 있어 "주민"이라고 하지 않는다
+                else f"{card.material} 관련 장소는 관광보다 생활·업무 이용이 많아요"
             )
             interest = (title, body + f" (제주 평균 {avg:.0f}%).")
     return [

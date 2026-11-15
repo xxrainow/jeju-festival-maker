@@ -27,7 +27,7 @@ JARGON = ["리프트", "신설", "확실한 상승", "관찰 대상", "성숙·�
           "검증할 가설", "소규모 버전", "중간값", "문체부", "pending", "lift", "verdict"]  # fmt: skip
 
 
-PEOPLE_WORDS = ["관광객이에요", "%가 관광객", "명이 관광객", "사용 중", "사용자 중"]
+PEOPLE_WORDS = ["관광객이에요", "%가 관광객", "명이 관광객", "사용 중", "사용자 중", "주민이"]
 
 
 def test_jeju_tourist_share_matches_material_dictionary():
@@ -64,7 +64,7 @@ def test_card_texts_have_no_jargon():
     assert body == "감귤 관련 제주 장소의 와이파이 사용량 중 관광 목적이 62%예요 (제주 평균 47%)."
     low = cards[-1].model_copy(update={"evidence": cards[-1].evidence.model_copy(update={
         "visitor_interest": cards[-1].evidence.visitor_interest.model_copy(update={"value": 30.0})})})  # fmt: skip
-    assert screen.evidence_lines(low)[2][0] == "감귤은 주민이 더 많이 찾아요"
+    assert screen.evidence_lines(low)[2][0] == "감귤 관련 장소는 관광보다 생활·업무 이용이 많아요"
     assert screen.evidence_lines(low, jeju_avg=25.0)[2][0] == "관광객이 많이 찾는 감귤이에요"
     assert screen.evidence_lines(low, jeju_avg=None)[2][1].endswith(
         "30%예요."
