@@ -156,3 +156,90 @@ def test_existing_festivals_prefer_candidate_months(trend_data):
     mats = (Material("감귤", "농산물", (11, 12, 1), strength=0.8, existing_festivals=fests),)
     cand = build_candidates(UserRequest(interest="감귤"), trend_data, mats).candidates[0]
     assert cand.existing_festivals == [("겨울 축제", 12), ("봄 축제", 4), ("여름 축제", 7)]
+
+
+def test_place_details_carry_admin_area():
+    areas = {"녹산로 유채꽃길": "서귀포시 표선면"}
+    d, _ = build_dictionary(panel(), None, wifi_place_shares(usage()), KEYWORDS, place_areas=areas)
+    d = d.set_index("material")
+    import json
+
+    assert json.loads(d.loc["유채꽃", "place_details"]) == [
+        {"name": "녹산로 유채꽃길", "area": "서귀포시 표선면", "tourist_pct": 80.0}
+    ]
+    assert json.loads(d.loc["해녀", "place_details"])[0]["area"] is None  # 연결표에 없음
+    assert json.loads(d.loc["방어", "place_details"]) == []
+
+
+def test_region_bonus_and_related_places(trend_data):
+    from agent.idea_gen import REGION_BONUS, Material
+
+    sea = Material(
+        "해변", "자연", None, strength=0.8,
+        places=(("한담해변", "제주시 애월읍", 59.8), ("협재해변", "제주시 한림읍", 89.9),
+                ("곽지해변", "제주시 애월읍", 71.0), ("이름만", None, 50.0)),
+    )  # fmt: skip
+    oreum = Material(
+        "오름", "자연", None, strength=0.8, places=(("성산 오름", "서귀포시 성산읍", 40.0),)
+    )
+    mats = (sea, oreum)
+    plain = build_candidates(UserRequest(), trend_data, mats)
+    local = build_candidates(UserRequest(region="제주시 애월읍"), trend_data, mats)
+    score = {(c.format, c.material): c.score for c in plain.candidates}
+    for c in local.candidates:
+        base = score[(c.format, c.material)]
+        if c.material == "해변":
+            assert c.region_places == [("곽지해변", 71.0), ("한담해변", 59.8)]  # 관광 비중 순
+            assert abs(c.score - (base + REGION_BONUS)) < 1e-3
+        else:
+            assert c.region_places == [] and c.score == base
+    assert any("제주시 애월읍 안에 관련 장소가 있거나" in n for n in local.notices)
+    req = UserRequest(region="제주시 애월읍")
+    top = next(c for c in local.candidates if c.material == "해변")
+    card = build_card(top, 1, req, trend_data, title="t", concept="c", hypotheses=["h"])
+    assert [(p.name, p.admin_area) for p in card.related_places] == [
+        ("곽지해변", "제주시 애월읍"),
+        ("한담해변", "제주시 애월읍"),
+    ]
+    assert "71.0%" in card.related_places[0].reason
+
+
+def test_festival_area_fallback_for_materials_without_places():
+    """재료 이름이 든 와이파이 장소가 없으면, 같은 재료 기존 축제가 열리는 동네의 관광 비중을 쓴다."""
+    import json
+
+    areas = {"녹산로 유채꽃길": "서귀포시 표선면", "일반 공원": "서귀포시 대정읍"}
+    fest = {"최남단 방어 축제": "서귀포시 대정읍", "제40회 서귀포유채꽃축제": "서귀포시 표선면"}
+    d, review = build_dictionary(
+        panel(), None, wifi_place_shares(usage()), KEYWORDS, place_areas=areas, festival_areas=fest
+    )
+    d = d.set_index("material")
+    # 방어: 장소 이름 연결 없음 → 대정읍(일반 공원: 관광 10 / 전체 100) = 10%
+    assert d.loc["방어", "interest_basis"] == "축제 동네"
+    assert json.loads(d.loc["방어", "festival_areas"]) == ["서귀포시 대정읍"]
+    assert d.loc["방어", "tourist_share_pct"] == 10.0
+    assert d.loc["방어", "interest_status"] == "ready"
+    # 유채꽃: 장소 이름으로 연결되면 그 값을 그대로 쓴다
+    assert d.loc["유채꽃", "interest_basis"] == "장소 이름"
+    assert d.loc["유채꽃", "tourist_share_pct"] == 80.0
+    # 감귤: 축제 동네를 모르면 그대로 비어 있다
+    assert pd.isna(d.loc["감귤", "interest_basis"])
+    assert ("방어", "축제 동네", "서귀포시 대정읍") in set(map(tuple, review.values.tolist()))
+
+
+def test_region_festival_bonus_and_metric_label(trend_data):
+    from agent.idea_gen import REGION_BONUS, Material
+
+    fish = Material(
+        "방어", "수산물", None, strength=0.8, tourist_share_pct=46.4,
+        interest_basis="축제 동네", festival_areas=("서귀포시 대정읍",),
+    )  # fmt: skip
+    plain = build_candidates(UserRequest(), trend_data, (fish,)).candidates[0]
+    req = UserRequest(region="서귀포시 대정읍")
+    local = next(c for c in build_candidates(req, trend_data, (fish,)).candidates
+                 if c.format == plain.format)  # fmt: skip
+    assert local.region_festival and not local.region_places
+    assert abs(local.score - (plain.score + REGION_BONUS)) < 1e-3
+    card = build_card(local, 1, req, trend_data, title="t", concept="c", hypotheses=["h"])
+    assert "축제가 열리는 동네" in card.evidence.visitor_interest.metric
+    assert card.related_places == []

@@ -1,3 +1,5 @@
+import pytest
+
 from agent.draft_contracts import UserRequest
 from agent.idea_gen import (
     INTEREST_NOTICE,
@@ -6,6 +8,7 @@ from agent.idea_gen import (
     build_candidates,
     build_card,
     pick_diverse,
+    purpose_category,
     resolve_interest,
 )
 
@@ -103,3 +106,33 @@ def test_year_round_candidate_gets_quiet_months(trend_data):
     assert card.timing.recommended_months == [1, 2, 4]  # 제주 축제 0개인 달 중 앞의 3개
     assert card.purpose_match is None
     assert card.budget.scale == "기본" and card.budget.small_examples == []
+
+
+@pytest.mark.parametrize(
+    ("text", "category"),
+    [
+        ("지역 상권 활성화", "지역 상권 활성화"),
+        ("상권 살리는", "지역 상권 활성화"),
+        ("가게 매출 올리기", "지역 상권 활성화"),
+        ("관광객 좀 끌고", "관광객 유치"),
+        ("주민 화합", "주민 참여"),
+        ("관광객 끌어서 상권 살리기", "관광객 유치"),  # 먼저 나온 말
+        ("마을 홍보", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_purpose_category(text, category):
+    assert purpose_category(text) == category
+
+
+def test_free_text_purpose_gets_boost_and_match(trend_data):
+    free = UserRequest(interest="감귤", season="겨울", purpose="상권 살리는")
+    cset = build_candidates(free, trend_data)
+    assert cset.rules.purpose_boosted == ["시장·상권", "푸드·디저트", "도심·거리·골목"]
+    market = next(c for c in cset.candidates if c.format == "시장·상권")
+    assert market.purpose_boosted
+    card = build_card(market, 1, free, trend_data, title="t", concept="c", hypotheses=["h"])
+    assert card.purpose_match == "일치"
+    none = UserRequest(interest="감귤", purpose="마을 홍보")
+    assert build_candidates(none, trend_data).rules.purpose_boosted == []

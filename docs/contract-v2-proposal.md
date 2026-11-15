@@ -41,6 +41,8 @@
 9. `TrendEvidence`에 `verdict`, `interpretation`, `strategy` 추가: 기획서 3절 판정과 4절 해석 틀(공급 신호 × 지정 사례)을 카드에 싣는다. 최신 정의는 `agent/draft_contracts.py` 기준.
 10. `IdeaCard.existing_jeju_festivals` 추가: 같은 재료의 기존 제주 축제(이름, 월, 최대 3개). 겹침 판정은 ④ `check_risk`가 하고 카드에는 참고로 보여준다.
 11. `FestivalPlan`(기획안) 추가: 설계 기획서 9-4 항목과 9-5 성공 기준표를 그대로 담는다. 항목별 JSON 칸과 채우는 곳(코드·LLM)은 설계 기획서 9-6절.
+12. `IdeaCard.related_places` 추가: 희망 지역(행정동) 안의 재료 관련 와이파이 장소 최대 3개 (B의 `analytics/reference/area_link_wifi.csv` 행정동 연결 기준). 장소 확인의 출발점.
+13. `visitor_interest.metric`이 근거에 따라 둘로 나뉨: "관련 장소 관광 목적 사용량 비중"(재료 이름이 든 와이파이 장소) / "같은 재료 기존 축제가 열리는 동네의 관광 목적 사용량 비중"(장소가 없는 수산물·농산물 등). 화면은 이 문장을 그대로 보여준다.
 
 ## 1. 모델 정의 (제안 코드)
 

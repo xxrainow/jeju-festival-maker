@@ -156,6 +156,8 @@ class IdeaCard(BaseModel):
     budget: IdeaBudget
     hypotheses: list[str] = Field(min_length=1)  # ④ 검증으로 넘김
     existing_jeju_festivals: list[ExistingFestival] = Field(default_factory=list)  # 코드, 최대 3개
+    # 희망 지역 안 재료 관련 장소 (코드, 와이파이 장소의 행정동 기준, 최대 3개). 장소 확인의 출발점
+    related_places: list[VenueCandidate] = Field(default_factory=list)
     # 아래 둘은 아이디어 단계에서는 비어 있고 ④ 검증·수정에서 채운다
     venue: list[VenueCandidate] = Field(default_factory=list)
     programs: list[str] = Field(default_factory=list)
@@ -362,6 +364,7 @@ class FestivalPlan(BaseModel):
     version: int = Field(default=1, ge=1)
     status: PlanStatus = "draft"
     created_at: datetime
+    approved_at: datetime | None = None  # 사용자가 최종 승인한 시각 (status="approved"일 때만)
     title: str
     idea_id: str
     request: UserRequest
@@ -386,4 +389,6 @@ class FestivalPlan(BaseModel):
             raise ValueError("sections는 PLAN_TEXT_SECTIONS 순서대로 6개여야 한다")
         if self.idea_id != self.idea.idea_id:
             raise ValueError("idea_id가 카드와 다르다")
+        if (self.status == "approved") != (self.approved_at is not None):
+            raise ValueError("approved 상태와 approved_at이 맞지 않는다")
         return self
