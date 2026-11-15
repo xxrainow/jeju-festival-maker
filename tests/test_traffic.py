@@ -50,3 +50,31 @@ def test_congestion_check_compares_event_hours_with_usual():
     assert congestion_check([], data) is None
     far = congestion_check([{"name": "먼 곳", "lat": 33.2, "lon": 126.2}], data)
     assert far["links_checked"] == 0 and far["status"] == "pass"
+
+
+def test_demo_station_hourly_follows_spec_and_hub_shares():
+    from analytics import make_demo_bus_hourly as mb
+    from analytics.bus_hourly import band_shares
+
+    hub = pd.DataFrame(
+        [("20250512", "월", band, "일반", n)
+         for band, n in [("01시-06시", 6), ("07시-09시", 30), ("10시-12시", 15), ("13시-15시", 15),
+                         ("16시-18시", 15), ("19시-21시", 15), ("22시-24시", 4)]]
+        + [("20250517", "토", "13시-15시", "일반", 100), ("20250517", "토", "22시-24시", "경로", 0)],
+        columns=["base_date", "day_of_week", "base_hour", "user_type", "user_count"],
+    )  # fmt: skip
+    stations = pd.DataFrame(
+        {"stationId": ["406000001", "406000002", "406000003"], "stationName": ["가", "가", "나"],
+         "station_key": ["가", "가", "나"], "daily_users": [2000.0, 2000.0, None]}
+    )  # fmt: skip
+    out = mb.make_station_hourly(stations, band_shares(hub), np.random.default_rng(1))
+    assert list(out.columns) == mb.COLUMNS
+    assert set(out["bus_station_id"]) == {"406000001", "406000002"}  # 이용 자료 없는 정류소 제외
+    assert out["bus_station_id"].str.len().eq(9).all()  # 허브 ID 9자리
+    assert set(out["get_on_off_type"]) == {"승차", "하차", "환승"}
+    assert (out["user_count"] > 0).all() and out["base_date"].nunique() == demo.DAYS
+    weekday = out[out["day_of_week"] == "월"]
+    by_hour = weekday.groupby(weekday["base_hour"].astype(int))["user_count"].sum()
+    assert by_hour[8] > by_hour[2]  # 출근 묶음이 새벽 묶음보다 많음
+    per_day = out.groupby("base_date")["user_count"].sum().mean()
+    assert 0.7 * 2000 < per_day < 1.3 * 2000  # 같은 이름 2곳이 1,000명씩

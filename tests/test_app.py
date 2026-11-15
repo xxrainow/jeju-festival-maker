@@ -42,6 +42,9 @@ def test_key_numbers_and_venue_table():
     )  # fmt: skip
     assert screen.venue_table(venue)[0]["가까운 정류소"] == "하모3리"
     assert "반경 500m" in screen.key_numbers(venue)[0]
+    venue.evidence["night_return"] = {"hours": "21~23시", "is_synthetic": True, "data_label": "가상 데이터",
+                                      "stops": [{"stop_name": "하모3리", "daily_boarding": 1.7}]}  # fmt: skip
+    assert "야간 귀가(21~23시) 하루 승차: 하모3리 1.7명 [가상 데이터]" in screen.key_numbers(venue)
     timing = CheckResult(
         check="check_timing", status="pass", reason="r",
         evidence={"outsider_visitors_index": {11: 1.04}, "recommended_weeks": ["11월 2주차"]},

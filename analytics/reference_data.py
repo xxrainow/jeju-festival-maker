@@ -35,6 +35,7 @@ TOOL_TABLES = [
     "weather_weekly_risk.csv",
     "weather_monthly_risk.csv",
     "weather_station_by_dong.csv",
+    "bus_hourly_share.csv",  # check_venue 야간 귀가 참고 경고 (허브 시간대 승차 요약)
 ]
 
 

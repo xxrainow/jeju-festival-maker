@@ -113,6 +113,16 @@ def key_numbers(r: CheckResult) -> list[str]:
             out.append(
                 f"정류소 이용 적음 기준: 하루 {e['low_usage_daily']:,.0f}명 미만, 반경 {e.get('radius_m')}m"
             )
+        for key, label in (("event_hours", "행사 시간대"), ("night_return", "야간 귀가")):
+            h = e.get(key) or {}
+            if h.get("status") == "pending":
+                out.append(f"{label} 버스: {WAITING}")
+            elif h.get("stops"):
+                tag = f" [{h['data_label']}]" if h.get("is_synthetic") else ""
+                stops = ", ".join(
+                    f"{x['stop_name']} {x['daily_boarding']:,.1f}명" for x in h["stops"]
+                )
+                out.append(f"{label}({h['hours']}) 하루 승차: {stops}{tag}")
     elif r.check == "check_target":
         if a := e.get("age_share"):
             out.append(

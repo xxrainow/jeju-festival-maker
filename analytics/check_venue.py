@@ -12,8 +12,10 @@
 - fail: 지역 안 후보 장소가 없음 → suggestion(field="venue")으로 인접 동네 후보
 - pending: 지역 없음, 표 없음
 
-행사 시간대 이용·야간 귀가 버스는 시간대 버스 데이터가 들어오면 event_hour_usage, night_return_usage에 붙인다.
-지금은 일별 이용으로만 판정하고 evidence에 "대기"로 남긴다.
+행사 시간대 이용·야간 귀가 버스: 3-04 정류소별 시간대 이용(실데이터가 없으면 가상 데이터)으로 후보 정류소의
+승차 인원을 evidence(event_hours, night_return)에 보여준다. 판정은 일별 이용(실데이터)으로만 해서 결과는
+is_synthetic=False이고, 가상 데이터 부분은 evidence의 data_label로 표시한다.
+야간 귀가 참고 경고는 허브 일별 시간대별 승차(실데이터)의 제주 전체 22~24시 비중을 쓴다.
 
 자료 기간: RECENT_PERIOD(2025-01~2025-10). 아이디어 단계(2023~2024)와 같은 숫자로 고르고 검증하지 않게 한다.
 """
@@ -25,13 +27,15 @@ from pathlib import Path
 import pandas as pd
 
 from agent.draft_contracts import CheckResult, IdeaCard, Suggestion, UserRequest
+from analytics.bus_hourly import NIGHT_HOURS
 from analytics.periods import RECENT_PERIOD
 
 PROCESSED = Path("data/processed")
 PLACES_PATH = PROCESSED / "venue_places.csv"
 STATIONS_PATH = PROCESSED / "bus_station_daily.csv"
 NEIGHBORS_PATH = PROCESSED / "dong_neighbors.csv"
-HOURLY_BUS_PATH = PROCESSED / "bus_station_hourly.csv"  # 시간대 버스 데이터가 오면 여기에
+EVENT_HOURS = tuple(range(11, 20))  # 행사 시간대 11~19시 (check_risk 정체와 같음)
+NIGHT_FEW = 1.0  # 야간 귀가(21~23시) 하루 승차가 이보다 적으면 경고
 
 RADIUS_M = 500
 MAX_CANDIDATES = 3
@@ -95,18 +99,59 @@ def build_neighbors(boundaries) -> pd.DataFrame:
 # ---------- 시간대 버스 (데이터 대기) ----------
 
 
-def event_hour_usage(station_ids: list[str], hours: list[int]) -> dict | None:
-    """행사 시간대(hours) 정류소 이용. 시간대 버스 데이터(HOURLY_BUS_PATH)가 오면 채운다."""
-    if not HOURLY_BUS_PATH.exists():
-        return None
-    raise NotImplementedError("시간대 버스 데이터 형식이 정해지면 구현")
+def event_hour_usage(station_ids: list[str], hours=EVENT_HOURS, data=...) -> dict | None:
+    """행사 시간대(hours) 정류소 하루 평균 승차 (3-04). 자료가 없으면 None."""
+    from analytics.bus_hourly import boarding_by_hours
+
+    return boarding_by_hours(station_ids, hours, data)
 
 
-def night_return_usage(
-    station_ids: list[str], hours: tuple[int, ...] = (21, 22, 23)
-) -> dict | None:
-    """야간 귀가 시간대 버스 이용. 시간대 버스 데이터가 오면 채운다."""
-    return event_hour_usage(station_ids, list(hours))
+def night_return_usage(station_ids: list[str], hours=NIGHT_HOURS, data=...) -> dict | None:
+    """야간 귀가(21~23시) 정류소 하루 평균 승차 (3-04). 자료가 없으면 None."""
+    from analytics.bus_hourly import boarding_by_hours
+
+    return boarding_by_hours(station_ids, hours, data)
+
+
+def hourly_evidence(top: list[dict], hourly=...) -> tuple[dict, dict, list[str]]:
+    """후보 정류소별 행사 시간대·야간 귀가 승차. (event_hours, night_return, 경고)."""
+    from analytics.bus_hourly import night_share_warning
+
+    warnings = []
+    if night := night_share_warning():
+        warnings.append(night)
+    rows_e, rows_n, label = [], [], None
+    for c in top:
+        if not c.get("stop_id"):
+            continue
+        e = event_hour_usage([c["stop_id"]], data=hourly)
+        n = night_return_usage([c["stop_id"]], data=hourly)
+        if e is None or n is None:
+            break
+        label = e
+        rows_e.append({"name": c["name"], "stop_name": c["stop_name"],
+                       "daily_boarding": e["daily_boarding"], "share_pct": e["share_pct"]})  # fmt: skip
+        rows_n.append({"name": c["name"], "stop_name": c["stop_name"],
+                       "daily_boarding": n["daily_boarding"], "share_pct": n["share_pct"]})  # fmt: skip
+    if label is None:
+        waiting = {"status": "pending", "reason": "시간대 버스 데이터 없음"}
+        return waiting, dict(waiting), warnings
+    meta = {"source": label["source"], "is_synthetic": label["is_synthetic"],
+            "data_label": label["data_label"]}  # fmt: skip
+    event = {"hours": f"{EVENT_HOURS[0]}~{EVENT_HOURS[-1]}시", "stops": rows_e, **meta}
+    night = {"hours": f"{NIGHT_HOURS[0]}~{NIGHT_HOURS[-1]}시", "stops": rows_n, **meta}
+    tag = f" [{label['data_label']}]" if label["is_synthetic"] else ""
+    few = [r for r in rows_n if r["daily_boarding"] < NIGHT_FEW]
+    if few:
+        names = ", ".join(f"{r['name']}({r['stop_name']})" for r in few)
+        warnings.append(
+            f"야간 귀가({night['hours']}) 하루 승차가 {NIGHT_FEW:.0f}명 미만인 후보 정류소: {names}{tag}. 귀가 셔틀을 검토해 주세요."
+        )
+    if label["is_synthetic"]:
+        warnings.append(
+            "행사 시간대·야간 귀가 정류소 승차는 3-04 가상 데이터예요. 판정은 일별 이용(실데이터)으로만 했어요."
+        )
+    return event, night, warnings
 
 
 # ---------- 판정 ----------
@@ -177,6 +222,7 @@ def check_venue(
     request: UserRequest,
     tables=None,
     radius_m: int = RADIUS_M,
+    hourly=...,
 ) -> CheckResult:
     places, stations, neighbors = load_venue_tables() if tables is None else tables
     region = request.region
@@ -200,19 +246,19 @@ def check_venue(
             "candidate_places": top,
             "low_usage_daily": round(low_usage, 1),
             "night_bus_stops": None,
-            "event_hours": {"status": "pending", "reason": "시간대 버스 데이터 대기"},
-            "night_return": {"status": "pending", "reason": "시간대 버스 데이터 대기"},
         }
     )
+    event, night, hour_warnings = hourly_evidence(top, hourly)
+    evidence["event_hours"], evidence["night_return"] = event, night
     sources = [places["source"].iloc[0], stations["source"].iloc[0], STATION_SOURCE]
     warnings = [
-        (
-            f"버스는 {RECENT_PERIOD.label()} 하루 평균 이용이에요. 행사 시간대·야간 귀가 버스는 "
-            "시간대 데이터가 들어오면 확인해요."
-        ),
+        f"판정은 버스 {RECENT_PERIOD.label()} 하루 평균 이용으로 했어요.",
         "정류소 이용 인원은 이름 단위라 같은 이름의 양방향 정류소가 합쳐져 있어요.",
         "와이파이 관광 비중은 데이터 사용량 기준이고, 장소 좌표는 AP 설치 위치 평균이에요.",
+        *hour_warnings,
     ]
+    if event.get("source"):
+        sources.append(event["source"])
     suggestion = None
     names = ", ".join(c["name"] for c in top)
     if any(c["good_bus"] for c in top):

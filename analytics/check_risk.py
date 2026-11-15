@@ -10,7 +10,8 @@
 3. 정체: 후보 장소 반경 1km 안 도로 구간의 주말 11~19시 평균 속도가 평소의 80% 미만이면 conditional ("정체 주의").
    3-10·3-07·3-08 실데이터가 없으면 가상 데이터(data/demo/)로 계산하고 is_synthetic=True
 
-후보 장소 동네: venue_areas 인자 → 카드 venue의 admin_area → check_venue가 고른 후보 → request.region 순.
+후보 장소 동네: venue_areas 인자 → 카드 venue의 admin_area → check_venue가 고른 후보(venue_result 인자, 없으면 직접 돌림)
+→ request.region 순.
 결과: 하나라도 conditional이면 conditional, 아니면 pass. 계산한 항목이 하나도 없으면 pending.
 """
 
@@ -144,14 +145,15 @@ def check_risk(
     timing_data=None,
     flow=...,
     traffic=...,
+    venue_result: CheckResult | None = None,
 ) -> CheckResult:
+    """venue_result: check_venue 결과를 넘기면 그 후보 장소(동네·좌표)를 쓴다. 없으면 직접 돌린다."""
     from analytics.flow_source import load_flow
 
     data = timing_data or load_timing_data()
     timing = timing_result or check_timing(card, request, data)
-    venue_result = None
     if venue_areas is None:
-        if not card.venue and request.region:
+        if venue_result is None and not card.venue and request.region:
             from analytics.check_venue import check_venue
 
             venue_result = check_venue(card, request)

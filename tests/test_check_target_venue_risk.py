@@ -8,6 +8,7 @@ from agent.draft_contracts import CheckResult
 from agent.fake_checks import FAKE_TOOLS
 from agent.verify import run_checks
 from analytics import reference_data
+from analytics.bus_hourly import StationHourly
 from analytics.check_risk import check_risk, night_residents
 from analytics.check_target import ELDERLY_WARNING, check_target, parse_target
 from analytics.check_timing import TimingData, week_month
@@ -168,7 +169,7 @@ def venue_tables(near_stop=True, busy=True, region_places=True):
 
 
 def test_venue_pass_with_candidates():
-    r = check_venue(card(), request(), venue_tables())
+    r = check_venue(card(), request(), venue_tables(), hourly=None)
     assert r.status == "pass" and r.check == "check_venue"
     top = r.evidence["candidate_places"][0]
     assert top["name"] == "애월해안공원" and top["stop_name"] == "애월항"
@@ -194,11 +195,51 @@ def test_venue_fail_suggests_neighbor():
     assert r.suggestion.value[0]["admin_area"] == OTHER
 
 
-def test_venue_pending_and_hour_placeholders():
+def test_venue_pending_and_no_hourly_data():
     assert check_venue(card(), request(region=None), venue_tables()).status == "pending"
     assert check_venue(card(), request(), (None, None, None)).status == "pending"
-    assert event_hour_usage(["1"], [18, 19]) is None
-    assert night_return_usage(["1"]) is None
+    assert event_hour_usage(["1"], [18, 19], data=None) is None
+    assert night_return_usage(["1"], data=None) is None
+
+
+def station_hourly(night=0) -> StationHourly:
+    """정류소 1(애월항) 하루: 낮 12시 승차 30명, 밤 22시 승차 night명, 하차는 셈에서 뺌."""
+    rows = []
+    for day in ("20250512", "20250513"):
+        rows += [(day, "1", "승차", 12, 30), (day, "1", "하차", 12, 99)]
+        if night:
+            rows.append((day, "1", "승차", 22, night))
+    df = pd.DataFrame(
+        rows, columns=["base_date", "bus_station_id", "get_on_off_type", "hour", "user_count"]
+    )
+    return StationHourly(df, True, Path("demo.csv"))
+
+
+def test_venue_hourly_evidence_is_labeled_but_not_judged():
+    r = check_venue(card(), request(), venue_tables(), hourly=station_hourly(night=0))
+    ev, night = r.evidence["event_hours"], r.evidence["night_return"]
+    assert ev["stops"][0]["daily_boarding"] == 30.0 and ev["data_label"] == "가상 데이터"
+    assert night["stops"][0]["daily_boarding"] == 0
+    assert any("야간 귀가" in w and "셔틀" in w for w in r.warnings)
+    assert r.status == "pass" and not r.is_synthetic  # 판정은 일별 이용(실데이터)
+    r = check_venue(card(), request(), venue_tables(), hourly=station_hourly(night=5))
+    assert r.evidence["night_return"]["stops"][0]["daily_boarding"] == 5.0
+    assert not any("셔틀을 검토" in w for w in r.warnings)
+
+
+def test_night_share_warning_from_hub():
+    from analytics.bus_hourly import band_shares, night_share_warning
+
+    hub = pd.DataFrame(
+        {
+            "base_date": ["20250512"] * 2,
+            "day_of_week": ["월"] * 2,
+            "base_hour": ["13시-15시", "22시-24시"],
+            "user_type": ["일반"] * 2,
+            "user_count": [95, 5],
+        }
+    )
+    assert "하루의 5.0%" in night_share_warning(band_shares(hub))
 
 
 # ---------- check_risk ----------
@@ -282,6 +323,30 @@ def test_risk_uses_venue_from_card():
     r = check_risk(c, request(), timing_result=timing_result(), timing_data=timing_data(festivals()),
                    flow=fake_flow(False))  # fmt: skip
     assert r.evidence["venue_areas"] == [OTHER] and r.status == "pass"
+
+
+def test_risk_reports_congestion_when_roads_are_much_slower():
+    """정체 기준 80%는 그대로, 행사 시간대에 평소보다 많이 느린 구간이 있으면 "정체 주의"."""
+    from analytics.traffic_source import TrafficData
+
+    links = pd.DataFrame(
+        {"link_id": ["L1"], "road_name": ["애월해안로"], "mid_lat": [33.46], "mid_lon": [126.31]}
+    )
+    hourly = pd.DataFrame(
+        [("L1", weekend, h, 20.0 if weekend and 11 <= h <= 19 else 50.0)
+         for weekend in (False, True) for h in range(24)],
+        columns=["link_id", "weekend", "hour", "average_speed"],
+    )  # fmt: skip
+    c = card(venue=[])
+    venue = CheckResult(check="check_venue", status="pass", reason="r", evidence={
+        "candidate_places": [{"name": "애월해안공원", "admin_area": REGION, "latitude": 33.46, "longitude": 126.31}]})  # fmt: skip
+    from analytics import check_risk as cr
+
+    r = cr.check_risk(c, request(), timing_result=timing_result(), timing_data=timing_data(festivals()),
+                      flow=None, traffic=TrafficData(links, hourly, True), venue_result=venue)  # fmt: skip
+    assert r.status == "conditional" and "정체 주의" in r.reason
+    assert r.evidence["congestion"]["slow_links"][0]["road_name"] == "애월해안로"
+    assert r.is_synthetic
 
 
 def test_night_residents_averages_evening_hours():

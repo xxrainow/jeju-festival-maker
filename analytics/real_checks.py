@@ -50,6 +50,14 @@ def build() -> None:
     cv.build_neighbors(load_jeju_boundaries()).to_csv(
         cv.NEIGHBORS_PATH, index=False, encoding="utf-8-sig"
     )
+    from analytics.bus_hourly import SHARE_PATH, band_shares, load_hub_hourly
+
+    try:
+        shares = band_shares(load_hub_hourly())
+    except FileNotFoundError:
+        print("허브 시간대 버스 파일이 없어 야간 귀가 참고 비중은 건너뛰었어요.")
+    else:
+        shares.to_csv(SHARE_PATH, index=False, encoding="utf-8-sig")
     print(
         f"## 장소 {len(venue):,}곳 (사용량 하위 25% {venue['small'].sum():,}곳 제외 대상), "
         f"정류소 {len(stations):,}곳 (이용 자료 없음 {stations['daily_users'].isna().sum():,}곳), "
