@@ -34,7 +34,13 @@ import pandas as pd
 
 from agent.draft_contracts import CheckResult, IdeaCard, Suggestion, UserRequest
 from analytics import outsider_index as oi
-from analytics.weather import RELATIVE_LABELS, YEARS, timing_weather_evidence, week_label
+from analytics.weather import (
+    FAR_STATION_KM,
+    RELATIVE_LABELS,
+    YEARS,
+    timing_weather_evidence,
+    week_label,
+)
 
 PROCESSED = Path("data/processed")
 WEEKLY_PATH = PROCESSED / "weather_weekly_risk.csv"
@@ -54,6 +60,8 @@ WIFI_WARNING = (
     "4-11 유동인구 실데이터가 1년치 쌓이면 그것으로 바꿔요."
 )
 STATUS_ORDER = {"pass": 0, "conditional": 1, "fail": 2}
+LOW_DATA_NOTICE = "이 지역은 자료가 적어 결과가 불안정할 수 있어요"
+MIN_WIFI_PLACES = 5  # 외지인 지수에 쓴 장소가 이보다 적으면 (추자면 4곳)
 ADMIN_BUILD_NOTE = "관리자용: uv run python -m analytics.real_checks --build 로 표를 만들어요."
 # 외지인 지수 세 단계: PASS_INDEX 이상 pass, LOW_INDEX~PASS_INDEX conditional, LOW_INDEX 미만 fail
 PASS_INDEX = 1.0
@@ -394,6 +402,18 @@ def check_timing(
         warnings.append(WIFI_WARNING)
     if note := oi.place_count_warning(rows):
         warnings.append(note)
+    low_data = []
+    places = pd.to_numeric(rows["places"], errors="coerce").min()
+    if source.startswith(oi.WIFI_SOURCE) and pd.notna(places) and places < MIN_WIFI_PLACES:
+        low_data.append(f"관광객 지표에 쓴 와이파이 장소가 {places:.0f}곳뿐이에요")
+    distance = weather.get("station_distance_km")
+    if distance is not None and distance > FAR_STATION_KM:
+        low_data.append(f"날씨 지점({weather['weather_station']})이 {distance:.0f}km 떨어져 있어요")
+    evidence["low_data"] = low_data
+    if low_data:
+        # 날씨 지점 거리 경고는 자료 부족 안내 한 문장으로 합친다
+        warnings = [w for w in warnings if not w.startswith("날씨 지점(")]
+        warnings.append(f"{LOW_DATA_NOTICE}: {', '.join(low_data)}.")
     evidence["outsider_visitors_index"] = {m: round(float(index[m]), 2) for m in months}
     evidence["outsider_index_source"] = source
     season = data.material_season.get(card.material)

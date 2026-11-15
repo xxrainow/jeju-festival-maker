@@ -153,7 +153,41 @@ def test_friendly_changes_use_plain_words():
     assert ch["reason"] == "1월은 관광객이 평소보다 적고 바람이 강한 주가 많아요."
     assert ch["note"] == "12월은 평소보다 관광객이 약간 적지만, 제철 안에서 가장 나은 달이에요."
     assert ch["season"] == "제철: 11·12·1월"
+    assert ch["numbers"][0].startswith("1월 관광객 지표")  # 관광객이 실패 이유라 앞에
+    assert ch["numbers"][1].startswith("1월 날씨 나쁜 주")
     shown = " ".join([ch["title"], ch["reason"], ch["note"], ch["season"], *ch["numbers"]])
     assert "기획서" not in shown and "timing." not in shown
     for word in ("fail", "pass", "conditional"):
         assert word not in shown
+
+
+def test_reason_numbers_come_first_and_low_data_is_shown():
+    """대정 12월처럼 날씨만 이유면 날씨 숫자가 앞, 관광객 지표는 뒤. 자료가 적으면 안내."""
+    from agent.draft_contracts import IdeaChange, Suggestion
+
+    why = "12월은 모든 주가 … 그 달을 빼요."
+    sug = Suggestion(field="timing.recommended_months", value=[11], why=why)
+    first = _round(1, "fail", {
+        "low_months": [], "low_data": ["날씨 지점(제주)이 53km 떨어져 있어요"],
+        "month_checks": [
+            {"month": 11, "status": "pass", "outsider_visitors_index": 1.04, "good_weeks": [46], "bad_weeks": []},
+            {"month": 12, "status": "fail", "outsider_visitors_index": 0.9, "good_weeks": [],
+             "bad_weeks": [{"week": "12월 1주차", "why": ["바람 1.8배, 9년 중 9년"]}]},
+        ],
+    }, sug, [IdeaChange(field="timing.recommended_months", before=[11, 12], after=[11], why=why)])  # fmt: skip
+    second = _round(2, "pass", {"month_checks": [{"month": 11, "status": "pass"}]})
+    card = CARD.model_copy(
+        update={"timing": CARD.timing.model_copy(update={"recommended_months": [11, 12]})}
+    )
+    final = card.model_copy(
+        update={"timing": card.timing.model_copy(update={"recommended_months": [11]})}
+    )
+    run = VerificationRun(
+        original=card, final=final, rounds=[first, second], outcome="ready_for_approval"
+    )
+    [ch] = screen.friendly_changes(run)
+    assert ch["reason"] == "12월은 바람이 강한 주가 많아요."
+    assert ch["numbers"][0].startswith("12월 날씨 나쁜 주 1/1주 (바람 1.8배")
+    assert ch["numbers"][1].startswith("12월 관광객 지표 0.9")
+    assert ch["low_data"] == ["날씨 지점(제주)이 53km 떨어져 있어요"]
+    assert screen.low_data_notes(first.results) == ["날씨 지점(제주)이 53km 떨어져 있어요"]

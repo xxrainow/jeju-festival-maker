@@ -43,6 +43,7 @@ COLUMNS = {
 }
 RISKS = ["rainy", "heavy_rain", "strong_wind", "heat"]
 # 같은 지점 평균보다 나쁜 때를 말할 때 쓰는 이름
+FAR_STATION_KM = 20  # 동네 중심에서 날씨 지점까지 이보다 멀면 경고 (추자면 53km)
 RELATIVE_LABELS = {"rainy": "비", "heavy_rain": "폭우", "strong_wind": "바람", "heat": "더위"}
 RISK_LABELS = {
     "rainy": "비 오는 날",
@@ -279,6 +280,10 @@ def timing_weather_evidence(
             [f"{region}은(는) 행정동 43개에 없는 이름이라 날씨 지점을 정하지 못했어요."],
         )
     station = match.iloc[0]
+    distance = None
+    if "distance_km" in station_by_dong:
+        d = station_by_dong.loc[station_by_dong["admin_area"] == region, "distance_km"].iloc[0]
+        distance = None if pd.isna(d) else round(float(d), 1)
     rows = monthly[(monthly["station"] == station) & monthly["month"].isin(months)]
     by_month = [
         {
@@ -303,10 +308,15 @@ def timing_weather_evidence(
         "relative_to_station": relative,
         **{f"{k}_days": round(rows[f"{k}_days"].sum(), 1) for k in RISKS},
         "weather_by_month": by_month,
+        "station_distance_km": distance,
     }
     warnings = [
         f"날씨는 {station} 지점 {FIRST_YEAR}~{LAST_YEAR} {YEARS}년 평균이에요. 동네 안 날씨와 다를 수 있어요."
     ]
+    if distance is not None and distance > FAR_STATION_KM:
+        warnings.append(
+            f"날씨 지점({station})이 이 동네에서 {distance:.0f}km 떨어져 있어 실제 날씨와 많이 다를 수 있어요."
+        )
     if evidence["strong_wind_days"]:
         warnings.append(
             f"참고: 추천 월에 최대풍속 14m/s 이상 강풍일이 연평균 {evidence['strong_wind_days']}일 있었어요."

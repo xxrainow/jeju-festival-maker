@@ -104,6 +104,18 @@ def test_target_checks_sex_too():
     assert r.evidence["sex_share"] is not None and r.evidence["sex"] == "여성"
 
 
+def test_target_low_data_notice():
+    small = demographics(0.4)
+    small = pd.concat([small, small.assign(admin_area="제주시 연동", users=small["users"] * 100),
+                       small.assign(admin_area="제주시 노형동", users=small["users"] * 100)])  # fmt: skip
+    small.loc[small["admin_area"] == REGION, "users"] //= 100  # 애월읍만 아주 적게
+    r = check_target(card(), request(), small, season=(), use_flow=False)
+    assert any("동네 중앙값" in n for n in r.evidence["low_data"])
+    assert any("대상 연령대 사용자가" in n for n in r.evidence["low_data"])
+    assert any("자료가 적어 결과가 불안정" in w for w in r.warnings)
+    assert target(0.4).evidence["low_data"] == []
+
+
 def test_target_pending_cases():
     assert target(0.4, req=request(target=None)).status == "pending"
     assert target(0.4, req=request(target="관광객")).status == "pending"

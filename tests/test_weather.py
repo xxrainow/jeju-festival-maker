@@ -213,3 +213,16 @@ def test_station_coords_from_meta_uses_current_rows(tmp_path):
 
 def test_week_label_dates_are_calendar_based():
     assert date(2001, 8, 6).timetuple().tm_yday == (32 - 1) * 7 + 1
+
+
+def test_far_station_warning(tmp_path):
+    monthly = windy_january_rainy_august(tmp_path)
+    far = pd.DataFrame(
+        {"admin_area": ["제주시 추자면"], "station": ["제주"], "distance_km": [53.0]}
+    )
+    evidence, _, warnings = timing_weather_evidence("제주시 추자면", [8], monthly, far)
+    assert evidence["station_distance_km"] == 53.0
+    assert any("53km 떨어져" in w for w in warnings)
+    near = far.assign(distance_km=5.0)
+    _, _, warnings = timing_weather_evidence("제주시 추자면", [8], monthly, near)
+    assert not any("떨어져" in w for w in warnings)

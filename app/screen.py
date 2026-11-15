@@ -244,7 +244,7 @@ def _weather_words(month_check) -> str | None:
 def _timing_reason(r, change) -> tuple[str, list[str]]:
     """시기 실패 이유를 쉬운 말로. (문장, 작은 숫자들)."""
     e = r.evidence or {}
-    sentences, numbers = [], []
+    sentences, reason_numbers, other_numbers = [], [], []  # 실패 이유가 된 숫자를 앞에
     failed = [m for m in change.before if (mc := _month_check(r, m)) and mc["status"] == "fail"]
     for m in failed:
         mc = _month_check(r, m)
@@ -258,14 +258,18 @@ def _timing_reason(r, change) -> tuple[str, list[str]]:
         elif weather:
             sentences.append(f"{m}월은 {weather}.")
         if index is not None:
-            numbers.append(f"{m}월 관광객 지표 {index} (1이 연평균, 와이파이 관광 사용량 기준)")
+            text = f"{m}월 관광객 지표 {index} (1이 연평균, 와이파이 관광 사용량 기준)"
+            (reason_numbers if low else other_numbers).append(text)
         if weather:  # 날씨가 실패 이유일 때만
             total = len(mc["bad_weeks"]) + len(mc.get("good_weeks", []))
             ratios = [w for b in mc["bad_weeks"] for w in b["why"]]
-            numbers.append(
+            reason_numbers.append(
                 f"{m}월 날씨 나쁜 주 {len(mc['bad_weeks'])}/{total}주 ({'; '.join(ratios[:2])})"
             )
-    return " ".join(sentences) or "추천 시기에 맞지 않는 달이 있어요.", numbers
+    return (
+        " ".join(sentences) or "추천 시기에 맞지 않는 달이 있어요.",
+        reason_numbers + other_numbers,
+    )
 
 
 def _target_reason(r, change) -> tuple[str, list[str]]:
@@ -329,6 +333,19 @@ def _after_note(next_results, change) -> str | None:
     return " ".join(notes) or None
 
 
+LOW_DATA_NOTICE = "이 지역은 자료가 적어 결과가 불안정할 수 있어요"
+
+
+def low_data_notes(results) -> list[str]:
+    """확인 결과 evidence의 low_data(자료가 적은 이유)를 모은다."""
+    notes = []
+    for r in results:
+        for note in (r.evidence or {}).get("low_data") or []:
+            if note not in notes:
+                notes.append(note)
+    return notes
+
+
 def friendly_changes(run) -> list[dict]:
     """화면용 바뀐 점: title, reason, numbers(작게), note(조건부일 때), season."""
     out = []
@@ -354,6 +371,10 @@ def friendly_changes(run) -> list[dict]:
             if out and out[-1]["title"] == title and out[-1]["round"] == rd.round:
                 out[-1]["reason"] += " " + reason  # 같은 변경을 두 확인이 제안하면 한 칸에
                 out[-1]["numbers"] += numbers
+                if r is not None:
+                    out[-1]["low_data"] += [
+                        n for n in low_data_notes([r]) if n not in out[-1]["low_data"]
+                    ]
                 continue
             out.append(
                 {
@@ -363,6 +384,7 @@ def friendly_changes(run) -> list[dict]:
                     "numbers": numbers,
                     "note": _after_note(nxt, change),
                     "season": season,
+                    "low_data": low_data_notes([r]) if r is not None else [],
                 }
             )
     return out

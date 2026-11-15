@@ -326,3 +326,20 @@ def test_flow_index_needs_twelve_months_and_takes_priority():
         REGION: "4-11",
         "제주시 한림읍": WIFI_SOURCE[:4],
     }
+
+
+def test_low_data_region_gets_notice():
+    """와이파이 장소가 적고(4곳) 날씨 지점이 먼(53km) 동네는 자료가 적다는 안내."""
+    few = outsider_table().assign(places=4)
+    d = data(outsider=few)
+    d.station_by_dong = d.station_by_dong.assign(distance_km=53.0)
+    r = check_timing(card([5]), request(), d)
+    assert r.evidence["low_data"] == [
+        "관광객 지표에 쓴 와이파이 장소가 4곳뿐이에요",
+        "날씨 지점(제주)이 53km 떨어져 있어요",
+    ]
+    notices = [w for w in r.warnings if "자료가 적어 결과가 불안정" in w]
+    assert len(notices) == 1 and "53km" in notices[0]
+    assert sum("53km" in w for w in r.warnings) == 1  # 거리 경고는 한 번만
+    assert r.evidence["station_distance_km"] == 53.0
+    assert check_timing(card([5]), request(), data()).evidence["low_data"] == []

@@ -203,6 +203,9 @@ run = VerificationRun.model_validate(ss["run"])
 from agent.verify import summarize
 
 last = run.rounds[-1]
+low_notes = screen.low_data_notes(run.rounds[-1].results)  # 지금(마지막 회차) 결과 기준
+if low_notes:
+    st.warning(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(low_notes) + ".")
 st.caption(f"확인 {len(run.rounds)}회 (처음 1회 + 고친 뒤 {len(run.rounds) - 1}회). 마지막 결과:")
 for r in last.results:
     with st.container(border=True):
@@ -230,6 +233,8 @@ for ch in changes:
         st.write(ch["reason"])
         if ch["note"]:
             st.write(f"⚠️ {ch['note']}")
+        if ch["low_data"]:
+            st.write(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + ".")
         for n in ch["numbers"]:
             st.caption(n)
         if ch["season"]:

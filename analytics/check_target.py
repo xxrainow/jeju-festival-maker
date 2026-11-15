@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 from agent.draft_contracts import CheckResult, IdeaCard, Suggestion, UserRequest
-from analytics.check_timing import ADMIN_BUILD_NOTE
+from analytics.check_timing import ADMIN_BUILD_NOTE, LOW_DATA_NOTICE
 from analytics.periods import CANDIDATE_PERIOD
 
 DEMOGRAPHICS_PATH = Path("data/processed/wifi_users_demographics.csv")
@@ -30,6 +30,8 @@ WIFI_SOURCE = "와이파이 장소별 사용자 현황 (성·연령)"
 AGE_BANDS = ["10대 미만", "10대", "20대", "30대", "40대", "50대", "60대 이상"]
 PASS_RATIO = 1.0
 CONDITIONAL_RATIO = 0.9
+MIN_USERS_SHARE = 0.1  # 동네 사용자 수가 동네 중앙값의 10% 미만이면 자료 적음 (추자면 3%)
+MIN_TARGET_USERS = 100
 STRONG_RATIO = 1.1  # 이 동네에서 비중이 높은 연령대로 알려줄 기준
 ELDERLY_WARNING = "와이파이 사용자 기준이라 고령층(60대 이상)이 실제보다 적게 잡힐 수 있어요."
 COUNT_WARNING = (
@@ -197,6 +199,21 @@ def check_target(
 
     sources = [demo["source"].iloc[0]]
     warnings = [ELDERLY_WARNING, COUNT_WARNING]
+    # 자료가 적은 동네: 사용자 수가 동네 중앙값의 MIN_USERS_SHARE 미만, 대상 사용자가 MIN_TARGET_USERS명 미만
+    totals = demo.groupby("admin_area")["users"].sum()
+    low_data = []
+    if totals[request.region] < totals.median() * MIN_USERS_SHARE:
+        low_data.append(
+            f"와이파이 사용자가 동네 중앙값의 {totals[request.region] / totals.median():.0%}뿐이에요"
+        )
+    if ages:
+        dong = demo[(demo["admin_area"] == request.region) & demo["month"].isin(months)]
+        target_users = int(dong.loc[dong["age_range"].isin(ages), "users"].sum())
+        if target_users < MIN_TARGET_USERS:
+            low_data.append(f"추천 월 대상 연령대 사용자가 {target_users}명뿐이에요")
+    evidence["low_data"] = low_data
+    if low_data:
+        warnings.append(f"{LOW_DATA_NOTICE}: {', '.join(low_data)}.")
     parts = {}
     if ages:
         parts["age"] = _compare(demo, request.region, months, ages, None)
