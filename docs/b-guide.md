@@ -156,7 +156,10 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
 - evidence `candidate_places`(최대 3곳): name, admin_area, latitude, longitude, tourism_share_pct, stop_name, stop_id, stop_distance_m, stop_daily_users, stops_within_radius, good_bus
 - pass: 반경 안에 하루 이용이 제주 정류소 중앙값(9명) 이상인 정류소가 있는 후보 있음 / conditional: 관광 장소는 있는데 그런 정류소가 없음 ("셔틀 필요") / fail: 지역 안 후보 없음 → `Suggestion(field="venue")`에 인접 동네 후보(`VenueCandidate` 형식) / pending: 지역 없음, 표 없음
 - pass·conditional이면 카드 `venue`를 바꾸지 않는다 (루프는 fail 제안만 적용). 후보는 evidence에 있으니 화면·기획안에서 쓰면 된다
-- 시간대 버스: `event_hour_usage(station_ids, hours)`, `night_return_usage(station_ids)` 자리만 있음. `data/processed/bus_station_hourly.csv`가 생기면 구현. 지금 evidence의 `event_hours`, `night_return`은 "대기"
+- 시간대 버스 (`analytics/bus_hourly.py`): `event_hour_usage(station_ids, hours=11~19시)`, `night_return_usage(station_ids, hours=21~23시)`가 3-04 정류소별 시간대 이용에서 후보 정류소의 하루 평균 승차를 낸다. 3-04 실데이터(`data/raw/`에 "3-04" 또는 "정류소별 이용")가 없으면 가상 데이터. evidence `event_hours`, `night_return`에 정류소별 `daily_boarding`, `share_pct`, `data_label`
+- 판정은 일별 이용(실데이터)으로만 해서 결과 `is_synthetic=False`. 야간 귀가 하루 승차가 1명 미만인 후보 정류소는 "귀가 셔틀 검토" 경고
+- 야간 귀가 참고 경고(실데이터): "제주 전체에서 22~24시 버스 승차는 하루의 2.2%" (허브 일별 시간대별 승차, `bus_hourly_share.csv`)
+- `check_risk(..., venue_result=check_venue 결과)`로 넘기면 그 후보 장소를 정체·주거 밀집 확인에 그대로 쓴다
 
 ## 11. 위험 확인 `check_risk` (실제 버전)
 
@@ -170,7 +173,7 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
 
 - 와이파이: `wifi_usage_by_place_month_type.parquet` (2,963KB), `area_link_wifi.csv` (361KB, 장소 → 행정동·읍면 + AP 좌표)
 - 허브 와이파이 AP 정보: `jejuhub_wifi_ap.csv` (738KB, `data/raw/` 사본. AP 주소·좌표. macAddress는 허브가 해시로 준 값). `analytics.area_link.load_wifi_ap()`가 먼저 읽음
-- 확인 도구 표: `wifi_users_demographics.csv` 694KB, `venue_places.csv` 67KB, `bus_station_daily.csv` 675KB, `dong_neighbors.csv` 8KB, `outsider_index.csv` 78KB, `jeju_festival_dates.csv` 9KB, `weather_weekly_risk.csv` 80KB, `weather_monthly_risk.csv` 12KB, `weather_station_by_dong.csv` 4KB
+- 확인 도구 표: `bus_hourly_share.csv` 5KB (허브 시간대 승차 요약), `wifi_users_demographics.csv` 694KB, `venue_places.csv` 67KB, `bus_station_daily.csv` 675KB, `dong_neighbors.csv` 8KB, `outsider_index.csv` 78KB, `jeju_festival_dates.csv` 9KB, `weather_weekly_risk.csv` 80KB, `weather_monthly_risk.csv` 12KB, `weather_station_by_dong.csv` 4KB
 - `data/`가 없는 PC에서도 확인 도구 5개가 돈다 (4-11·교통 가상 데이터는 `data/demo/`에 있어 없으면 그 부분만 확인하지 않고 경고)
 - 코드는 reference를 먼저 읽고, 없으면 `data/processed/`를 읽는다 (`analytics/reference_data.py`)
 - 다시 만들기: `uv run python -m analytics.weather` → `uv run python -m analytics.real_checks --build` → `uv run python -m analytics.reference_data`
@@ -183,7 +186,13 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
   - 3-10 시간대별 교통량 `traffic_hourly_demo_20250512_20250525.csv.gz` (71.6만 행, 3.6MB): 제한속도 × 시간대 계수(평일 7~9·17~19시 느림, 주말 11~17시 0.85) × 잡음
 - 실제 도로망·교통량이 아니다. 주말 정체를 평소의 85% 정도로만 넣어서 0.8 기준의 "정체 주의"는 거의 나오지 않는다
 - 3-05, 3-06은 개인 단위라 쓰지 않는다
-- 3-04(정류소별 시간대 이용) 가상 데이터와 `event_hour_usage`·`night_return_usage` 연결은 허브 시간대 파일(`일별시간대별버스승차인원수현황.csv`)을 받은 뒤 만든다. 3-04 정류소 ID는 명세서의 7자리 대신 허브 정류소 ID(9자리)를 쓴다
+- 3-04 버스 정류소별 이용 현황 `bus_station_hourly_demo_20250512_20250525.csv.gz` (`uv run python -m analytics.make_demo_bus_hourly`, 70.4만 행, 5.2MB): 명세서 컬럼 그대로
+  - 정류소: 허브 정류소 ID(9자리, 명세서 예시는 7자리)·이름. 이용 자료가 있는 4,019곳
+  - 규모: 정류소별 일별 이용(2025-01~10 하루 평균, 이름 단위)을 같은 이름 정류소 수로 나눔
+  - 평일·주말 규모와 시간대 비중: 허브 일별 시간대별 승차. 7개 묶음 비중을 묶음 안 시간에 똑같이 나눔 (22시-24시의 24시는 0시)
+  - 이용자구분 비중: 허브 시간대 파일의 이용자 유형 비중
+  - 승하차유형 비중 승차 49%·하차 45%·환승 6%는 가정 (승차 49%만 허브 승차 ÷ 정류소 승하차 근거, 하차·환승 나눔은 근거 없음)
+  - 하루 승하차 평균 59,749명
 
 ## 14. 화면 (`streamlit_app.py`)
 
