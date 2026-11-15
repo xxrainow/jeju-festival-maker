@@ -18,6 +18,18 @@ STATUS_ICONS = {
     "pending": "⏳ 데이터 대기",
 }
 WAITING = "데이터 대기"
+
+
+def md(text):
+    """화면 출력용: Streamlit 마크다운에서 "~"가 두 번 나오면 취소선이 되므로 "\\~"로 바꾼다.
+
+    이미 "\\~"인 곳은 그대로 둔다. 문자열이 아니면 그대로 돌려준다 (표 값 등은 쓰지 않는다).
+    """
+    if not isinstance(text, str):
+        return text
+    return re.sub(r"(?<!\\)~", r"\\~", text)
+
+
 SEASONS = ["봄", "여름", "가을", "겨울"]
 PURPOSES = ["지역 상권 활성화", "관광객 유치", "주민 참여"]
 

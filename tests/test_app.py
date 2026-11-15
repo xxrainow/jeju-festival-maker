@@ -124,6 +124,16 @@ def test_season_conflict_and_demo_differences():
     ]
 
 
+def test_md_escapes_tildes_for_markdown():
+    """ "~"가 두 번 나오면 Streamlit 마크다운이 취소선으로 바꾸므로 화면 출력 전에 이스케이프한다."""
+    text = "추천 주: 1월 1주차 (1/1~1/7), 6월 1주차 (6/4~6/10)"
+    escaped = screen.md(text)
+    assert escaped == r"추천 주: 1월 1주차 (1/1\~1/7), 6월 1주차 (6/4\~6/10)"
+    assert screen.md(escaped) == escaped  # 두 번 불러도 겹쳐 바꾸지 않음
+    assert screen.md(None) is None and screen.md(3) == 3
+    assert screen.md("물결 없음") == "물결 없음"
+
+
 def test_won():
     assert screen.won(10_000_000) == "1,000만 원"
     assert screen.won(278_000_000) == "2.78억 원"
@@ -204,6 +214,16 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert any(v.startswith("**추천 시기: 12월 → 11월") for v in shown)  # 필드 이름 대신 쉬운 말
     assert not any("timing.recommended_months" in v for v in shown)
     assert any("timing.recommended_months" in c.value for c in at.code)  # 개발자용 원문은 접기 안에
+
+    # 화면 문장에는 이스케이프 안 된 "~"가 없다 (추천 주, 출처 기간 등). 표 값은 그대로
+    import re
+
+    texts = [m.value for m in at.markdown] + [c.value for c in at.caption]
+    texts += labels(at, "warning") + labels(at, "info") + labels(at, "success")
+    assert any(r"\~" in t for t in texts)
+    assert not [t for t in texts if re.search(r"(?<!\\)~", t)]
+    table = at.dataframe[0].value
+    assert not table.astype(str).apply(lambda col: col.str.contains("\\", regex=False)).any().any()
 
     next(b for b in at.button if b.label == "이대로 진행").click().run()
     assert any("기획서 기능 준비 중" in i for i in labels(at, "info"))

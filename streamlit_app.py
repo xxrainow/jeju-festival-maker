@@ -12,6 +12,21 @@ from analytics.flow_spec import EMD_CODES
 from app import screen
 from app.settings import Settings
 
+
+class _EscapedText:
+    """st.markdown/write/caption/info/warning/error/success에 넘기는 문장의 "~"를 이스케이프한다 (취소선 방지)."""
+
+    def __getattr__(self, name):
+        fn = getattr(st, name)
+
+        def call(*args, **kwargs):
+            return fn(*(screen.md(a) for a in args), **kwargs)
+
+        return call
+
+
+ui = _EscapedText()
+
 st.set_page_config(page_title="제주 축제랩", page_icon="🍊", layout="wide")
 settings = Settings()
 has_llm = bool(settings.llm_api_key.get_secret_value())
@@ -21,9 +36,9 @@ ss = st.session_state
 
 def footer() -> None:
     st.divider()
-    st.caption("데이터 출처")
+    ui.caption("데이터 출처")
     for s in screen.DATA_SOURCES:
-        st.caption(f"- {s}")
+        ui.caption(f"- {s}")
 
 
 def stop() -> None:
@@ -40,18 +55,18 @@ def reset_after(step: str) -> None:
 
 
 st.title("🍊 제주 축제랩")
-st.write(
+ui.write(
     "전국 축제 트렌드와 제주 데이터로 우리 동네 축제 아이디어를 만들고, 제주 데이터로 확인해요."
 )
 
 with st.sidebar:
     st.header("설정")
-    st.write("AI(LLM) 설정:", "있음" if has_llm else "없음")
+    ui.write("AI(LLM) 설정:", "있음" if has_llm else "없음")
     if not has_llm:
-        st.caption(
+        ui.caption(
             "AI 설정이 없으면 한 문장 입력·새 카드·기획서는 안내 문구로 대신해요. 데모 카드로 흐름을 볼 수 있어요."
         )
-    st.caption("API Key는 화면에 표시하지 않아요.")
+    ui.caption("API Key는 화면에 표시하지 않아요.")
 
 # ---------- 1. 조건 입력 ----------
 st.header("1. 어떤 축제를 열고 싶나요?")
@@ -65,15 +80,15 @@ if st.button("조건 채우기"):
     try:
         parsed = parse_request(sentence)
     except RequestParseError as e:
-        st.warning(str(e))
-        st.caption("아래 칸에 직접 입력해 주세요.")
+        ui.warning(str(e))
+        ui.caption("아래 칸에 직접 입력해 주세요.")
     except Exception as e:  # noqa: BLE001 - 예상 못 한 오류도 문장 그대로 보여준다
-        st.error(str(e))
+        ui.error(str(e))
     else:
         ss["draft"] = parsed.request.model_dump(mode="json")
         ss["notes"] = parsed.notes
 for note in ss.get("notes", []):
-    st.info(note)
+    ui.info(note)
 
 draft = ss.get("draft", {})
 with st.form("request_form"):
@@ -116,7 +131,7 @@ if confirmed:
             target=target.strip() or None,
         )
     except Exception as e:  # noqa: BLE001 - 계약 검사 오류를 그대로 보여준다
-        st.error(str(e))
+        ui.error(str(e))
     else:
         reset_after("request")
         ss["request"] = request.model_dump(mode="json")
@@ -124,13 +139,13 @@ if confirmed:
 if "request" not in ss:
     stop()
 request = UserRequest.model_validate(ss["request"])
-st.success(
+ui.success(
     f"확정한 조건: 지역 {request.region or '제주 전역'}, 목적 {request.purpose or '미정'}, "
     f"소재 {request.interest or '미정'}, 계절 {request.season or '미정'}, 대상 {request.target or '미정'}, "
     f"예산 {screen.won(request.budget_max_krw)}"
 )
 if conflict := screen.season_conflict(request):
-    st.warning(f"⚠️ {conflict}")  # 막지 않고 안내만
+    ui.warning(f"⚠️ {conflict}")  # 막지 않고 안내만
 
 # ---------- 2. 아이디어 카드 ----------
 st.header("2. 아이디어 카드")
@@ -142,9 +157,9 @@ if st.button("아이디어 카드 받기"):
     try:
         proposal = propose_idea_cards(request, demo=use_demo)
     except CardGenerationError as e:
-        st.warning(str(e))
+        ui.warning(str(e))
     except Exception as e:  # noqa: BLE001
-        st.error(str(e))
+        ui.error(str(e))
     else:
         reset_after("proposal")
         ss["proposal"] = proposal.model_dump(mode="json")
@@ -154,32 +169,32 @@ if "proposal" not in ss:
 proposal = IdeaProposal.model_validate(ss["proposal"])
 if proposal.is_demo:
     diffs = screen.demo_differences(proposal, request)
-    st.warning(
+    ui.warning(
         f"### ⚠️ 예시 카드예요\n**{screen.DEMO_WARNING}**"
         + ("\n\n입력과 다른 점: " + " / ".join(diffs) if diffs else "")
     )
 for notice in proposal.notices:
-    st.info(notice)
+    ui.info(notice)
 
 cols = st.columns(3)
 for col, card in zip(cols, proposal.ideas, strict=True):  # rank 순서, rank·score는 보여주지 않음
     with col, st.container(border=True):
         st.subheader(card.title)
-        st.write(card.concept)
-        st.caption(f"{card.format} × {card.material}")
+        ui.write(card.concept)
+        ui.caption(f"{card.format} × {card.material}")
         for title, body, source in screen.evidence_lines(card):
-            st.markdown(f"**{title}**")
+            ui.markdown(f"**{title}**")
             if body:
-                st.write(body)
-            st.caption(f"출처: {source}")
-        st.markdown(f"**{screen.reference_text(card)}**")
-        st.markdown(f"**{screen.timing_text(card)}**")
-        st.markdown("**예산**")
+                ui.write(body)
+            ui.caption(f"출처: {source}")
+        ui.markdown(f"**{screen.reference_text(card)}**")
+        ui.markdown(f"**{screen.timing_text(card)}**")
+        ui.markdown("**예산**")
         for line in screen.budget_lines(card):
-            st.caption(line)
-        st.markdown("**고르면 확인할 것**")
+            ui.caption(line)
+        ui.markdown("**고르면 확인할 것**")
         for h in card.hypotheses:
-            st.write(f"- {screen.check_phrase(h)}")
+            ui.write(f"- {screen.check_phrase(h)}")
         if st.button("이 아이디어 고르기", key=f"pick_{card.idea_id}"):
             reset_after("selected")
             ss["selected"] = card.idea_id
@@ -199,7 +214,7 @@ if "run" not in ss:
         try:
             run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})
         except Exception as e:  # noqa: BLE001
-            st.error(str(e))
+            ui.error(str(e))
             stop()
     ss["run"] = run.model_dump(mode="json")
 run = VerificationRun.model_validate(ss["run"])
@@ -209,55 +224,55 @@ from agent.verify import summarize
 last = run.rounds[-1]
 low_notes = screen.low_data_notes(run.rounds[-1].results)  # 지금(마지막 회차) 결과 기준
 if low_notes:
-    st.warning(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(low_notes) + ".")
-st.caption(f"확인 {len(run.rounds)}회 (처음 1회 + 고친 뒤 {len(run.rounds) - 1}회). 마지막 결과:")
+    ui.warning(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(low_notes) + ".")
+ui.caption(f"확인 {len(run.rounds)}회 (처음 1회 + 고친 뒤 {len(run.rounds) - 1}회). 마지막 결과:")
 for r in last.results:
     with st.container(border=True):
         badge = " · 🧪 가상 데이터 포함" if r.is_synthetic else ""
-        st.markdown(f"**{screen.CHECK_LABELS[r.check]}** {screen.STATUS_ICONS[r.status]}{badge}")
-        st.write(r.reason)
+        ui.markdown(f"**{screen.CHECK_LABELS[r.check]}** {screen.STATUS_ICONS[r.status]}{badge}")
+        ui.write(r.reason)
         for line in screen.key_numbers(r):
-            st.caption(line)
+            ui.caption(line)
         if r.check == "check_venue" and (rows := screen.venue_table(r)):
             st.dataframe(pd.DataFrame(rows), hide_index=True)
         if r.sources:
-            st.caption("출처: " + " / ".join(r.sources))
+            ui.caption("출처: " + " / ".join(r.sources))
         if r.warnings:
             with st.expander("주의할 점"):
                 for w in r.warnings:
-                    st.write(f"- {w}")
+                    ui.write(f"- {w}")
 
 st.subheader("바뀐 점")
 changes = screen.friendly_changes(run)
 if not changes:
-    st.write("바뀐 점이 없어요.")
+    ui.write("바뀐 점이 없어요.")
 for ch in changes:
     with st.container(border=True):
-        st.markdown(f"**{ch['title']}**")
-        st.write(ch["reason"])
+        ui.markdown(f"**{ch['title']}**")
+        ui.write(ch["reason"])
         if ch["note"]:
-            st.write(f"⚠️ {ch['note']}")
+            ui.write(f"⚠️ {ch['note']}")
         if ch["low_data"]:
-            st.write(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + ".")
+            ui.write(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + ".")
         for n in ch["numbers"]:
-            st.caption(n)
+            ui.caption(n)
         if ch["season"]:
-            st.caption(ch["season"])
+            ui.caption(ch["season"])
 with st.expander("확인 기록 (회차별)"):
     for rd in run.rounds:
-        st.markdown(
+        ui.markdown(
             f"**{rd.round}회차**: "
             + ", ".join(
                 f"{screen.CHECK_LABELS[x.check]} {screen.STATUS_ICONS[x.status]}"
                 for x in rd.results
             )
         )
-    st.caption("개발자용 원문 (summarize)")
+    ui.caption("개발자용 원문 (summarize)")
     for line in summarize(run):
         st.code(line, language=None)
 
 if run.outcome != "ready_for_approval":
-    st.warning("고쳐도 통과하지 못한 확인이 있어요. 다른 아이디어를 골라보세요.")
+    ui.warning("고쳐도 통과하지 못한 확인이 있어요. 다른 아이디어를 골라보세요.")
     stop()
 
 # ---------- 4. 기획서 ----------
@@ -268,7 +283,7 @@ if ss.get("approved"):
     try:
         from agent.plan import PlanGenerationError, generate_plan, plan_to_markdown, save_plan
     except ImportError:
-        st.info(
+        ui.info(
             "기획서 기능 준비 중이에요. A의 기획서 생성(agent/plan.py)이 main에 합쳐지면 바로 연결돼요."
         )
     else:
@@ -276,14 +291,14 @@ if ss.get("approved"):
         try:
             plan = generate_plan(run, request, approved=True)
         except PlanGenerationError as e:
-            st.warning(str(e))
+            ui.warning(str(e))
         except Exception as e:  # noqa: BLE001
-            st.error(str(e))
+            ui.error(str(e))
         else:
-            st.markdown(plan_to_markdown(plan))
+            ui.markdown(plan_to_markdown(plan))
             md_path, _ = save_plan(plan)
-            st.caption(f"저장: {md_path}")
+            ui.caption(f"저장: {md_path}")
             if plan.is_synthetic:
-                st.warning("가짜·합성 데이터 결과가 섞여 있어요.")
+                ui.warning("가짜·합성 데이터 결과가 섞여 있어요.")
 
 footer()
