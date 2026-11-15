@@ -195,7 +195,6 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     at.text_input[1].input("지역 상권 활성화")
     at.text_input[2].input("방어")
     at.text_input[3].input("가족")
-    at.checkbox[0].check()
     at.number_input[0].set_value(10_000_000)
     at.button[1].click().run()
     assert any("서귀포시 대정읍" in s for s in labels(at, "success"))
@@ -213,7 +212,9 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     shown = [m.value for m in at.markdown]
     assert any(v.startswith("**추천 시기: 12월 → 11월") for v in shown)  # 필드 이름 대신 쉬운 말
     assert not any("timing.recommended_months" in v for v in shown)
-    assert any("timing.recommended_months" in c.value for c in at.code)  # 개발자용 원문은 접기 안에
+    assert not at.code  # 개발자용 원문은 화면에 없음
+    assert any("처음 확인에서 시기가 맞지 않아 12월 → 11월로 바꾼 뒤 다시 확인했어요." in c.value
+               for c in at.caption)  # fmt: skip
 
     # 화면 문장에는 이스케이프 안 된 "~"가 없다 (추천 주, 출처 기간 등). 표 값은 그대로
     import re
@@ -226,7 +227,9 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert not table.astype(str).apply(lambda col: col.str.contains("\\", regex=False)).any().any()
 
     next(b for b in at.button if b.label == "이대로 진행").click().run()
-    assert any("기획서 기능 준비 중" in i for i in labels(at, "info"))
+    assert any(
+        "AI 설정이 없어요" in w for w in labels(at, "warning")
+    )  # 기획서는 AI가 있어야 만든다
     assert not at.exception
 
 
@@ -340,3 +343,147 @@ def test_app_warns_summer_citrus_and_demo_cards(no_llm):
     for word in ("리프트", "신설", "확실한 상승", "선점 기회", "검증할 가설", "문체부 지역축제"):
         assert word not in shown, word
     assert "고르면 확인할 것" in shown
+
+
+# ---------- 예산 입력, 직접 고쳐서 다시 확인 ----------
+
+
+def confirm(region="서귀포시 대정읍", budget=None) -> AppTest:
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.selectbox[0].select(region)
+    if budget is not None:
+        at.number_input[0].set_value(budget)
+    next(b for b in at.button if b.label == "이 조건으로 확정").click().run()
+    return at
+
+
+def test_budget_blank_is_undecided_and_number_is_used(no_llm):
+    from agent.draft_contracts import UserRequest
+
+    at = confirm()
+    assert at.number_input[0].value is None  # 처음엔 빈칸
+    assert UserRequest.model_validate(at.session_state["request"]).budget_max_krw is None
+    assert any("예산 미정" in s for s in labels(at, "success"))
+    at = confirm(budget=10_000_000)
+    assert UserRequest.model_validate(at.session_state["request"]).budget_max_krw == 10_000_000
+
+
+def to_results(region="서귀포시 대정읍") -> AppTest:
+    at = confirm(region)
+    next(b for b in at.button if b.label == "아이디어 카드 받기").click().run()
+    next(b for b in at.button if b.label == "이 아이디어 고르기").click().run()
+    return at
+
+
+def recheck(at, months, place=None, scale=None) -> AppTest:
+    at.multiselect[0].set_value(months)
+    if place:
+        next(s for s in at.selectbox if s.label.startswith("장소")).select(place)
+    if scale:
+        at.radio[0].set_value(scale)
+    next(b for b in at.button if b.label == "이 조건으로 다시 확인").click().run()
+    return at
+
+
+def test_manual_months_are_checked_as_is_without_auto_fix(no_llm):
+    at = to_results()
+    agent = VerificationRun.model_validate(at.session_state["run"])
+    assert agent.final.timing.recommended_months == [11]  # 에이전트는 12월 → 11월로 고침
+    assert at.multiselect[0].value == [11]  # 처음 값은 지금 카드 값
+    at = recheck(at, [12])
+    manual = VerificationRun.model_validate(at.session_state["manual_run"])
+    assert len(manual.rounds) == 1 and not manual.rounds[0].changes  # 자동 수정 없음
+    assert manual.final.timing.recommended_months == [12]
+    assert manual.rounds[0].results[0].status == "fail"
+    assert [t.label for t in at.tabs] == ["에이전트 추천안", "내가 고친 안"]
+    assert not at.exception
+
+
+def test_failing_manual_plan_blocks_progress(no_llm):
+    at = recheck(to_results(), [12])
+    next(r for r in at.radio if r.label.startswith("어느 안")).set_value("내가 고친 안").run()
+    button = next(b for b in at.button if b.label == "이대로 진행")
+    assert button.disabled
+    blocked = [w for w in at.warning if "항목이 남아 있어 기획서를 만들 수 없어요" in w.value]
+    assert blocked and blocked[0].icon == "❌"  # Streamlit은 앞의 이모지를 아이콘으로 보여준다
+
+
+class FakePlanLLM:
+    def complete_json(self, system, user):
+        import json
+
+        return json.dumps(
+            {
+                "background": "대정읍 상권에 손님을 모으는 작은 마켓을 제안한다.",
+                "concept": "지역 가게와 농가가 함께 여는 주말 마켓이다.",
+                "programs": [
+                    {"name": "직거래 장터", "description": "농가가 직접 파는 장터"},
+                    {"name": "가족 체험 부스", "description": "아이와 함께하는 만들기 체험"},
+                ],
+                "promotion": "마을 게시판과 SNS를 함께 쓴다.",
+                "operation": "장소와 인력은 미확인이다.",
+                "risk": "같은 재료 축제와 날짜를 겹치지 않게 잡는다.",
+                "expected": "지역 가게에 손님이 늘 것으로 보인다.",
+                "assumptions": ["참여할 가게를 모을 수 있다"],
+            },
+            ensure_ascii=False,
+        )
+
+
+def test_passing_manual_plan_makes_plan_from_it(no_llm, monkeypatch, tmp_path):
+    import agent.plan
+    import agent.proposals
+    from agent.draft_contracts import FestivalPlan
+
+    monkeypatch.setattr(agent.proposals, "default_llm", lambda: FakePlanLLM())
+    monkeypatch.setattr(
+        agent.plan, "save_plan", lambda plan: (tmp_path / "p.md", tmp_path / "p.json")
+    )
+    at = recheck(to_results(), [11], place="산이물공원", scale="작게")
+    manual = VerificationRun.model_validate(at.session_state["manual_run"])
+    assert manual.outcome == "ready_for_approval"
+    assert manual.final.venue[0].name == "산이물공원" and manual.final.budget.scale == "소규모 버전"
+    next(r for r in at.radio if r.label.startswith("어느 안")).set_value("내가 고친 안").run()
+    button = next(b for b in at.button if b.label == "이대로 진행")
+    assert not button.disabled
+    button.click().run()
+    assert not at.exception
+    plan = FestivalPlan.model_validate(at.session_state["plan"])
+    assert plan.idea.venue[0].name == "산이물공원"
+    assert plan.idea.timing.recommended_months == [11]
+    assert any("내가 고친 안으로 기획서를 만들었어요" in s for s in labels(at, "success"))
+
+
+def test_old_plan_is_cleared_when_choice_or_recheck_changes(no_llm, monkeypatch, tmp_path):
+    import agent.plan
+    import agent.proposals
+
+    monkeypatch.setattr(agent.proposals, "default_llm", lambda: FakePlanLLM())
+    monkeypatch.setattr(
+        agent.plan, "save_plan", lambda plan: (tmp_path / "p.md", tmp_path / "p.json")
+    )
+    at = recheck(to_results(), [11])
+    choose = next(r for r in at.radio if r.label.startswith("어느 안"))
+    assert choose.value == "에이전트 추천안"
+    next(b for b in at.button if b.label == "이대로 진행").click().run()
+    assert "plan" in at.session_state
+    # 진행할 안을 바꾸면 예전 기획서가 사라진다
+    next(r for r in at.radio if r.label.startswith("어느 안")).set_value("내가 고친 안").run()
+    assert "plan" not in at.session_state and "approved" not in at.session_state
+    assert not any("기획서를 만들었어요" in s for s in labels(at, "success"))
+    # 고친 안으로 만든 뒤 다시 확인해도 사라진다
+    next(b for b in at.button if b.label == "이대로 진행").click().run()
+    assert "plan" in at.session_state
+    at = recheck(at, [11, 12])
+    assert "plan" not in at.session_state and "approved" not in at.session_state
+
+
+def test_check_history_is_plain_words(no_llm):
+    import re
+
+    at = to_results()
+    history = next(e for e in at.expander if e.label == "확인 과정 자세히 보기")
+    texts = [m.value for m in history.markdown]
+    assert texts and texts[0].startswith("**처음 확인**: 시기 ❌ 실패")
+    for t in texts:
+        assert not re.search(r"[A-Za-z_]{3,}", t), t  # 영어·필드 이름 없음

@@ -49,7 +49,16 @@ def stop() -> None:
 
 def reset_after(step: str) -> None:
     """앞 단계가 바뀌면 뒤 단계 결과를 지운다."""
-    order = ["request", "proposal", "selected", "run", "approved"]
+    order = [
+        "request",
+        "proposal",
+        "selected",
+        "run",
+        "manual_run",
+        "approved",
+        "plan",
+        "plan_path",
+    ]
     for key in order[order.index(step) :]:
         ss.pop(key, None)
 
@@ -112,12 +121,12 @@ with st.form("request_form"):
     target = c5.text_input(
         "대상", value=draft.get("target") or "", placeholder="가족, 청년, 어르신 …"
     )
-    budget_known = c6.checkbox("예산 상한이 있어요", value=draft.get("budget_max_krw") is not None)
     budget = c6.number_input(
         "예산 상한 (원)",
         min_value=1,
-        value=int(draft.get("budget_max_krw") or 10_000_000),
+        value=draft.get("budget_max_krw"),  # 한 문장에서 뽑힌 예산이 있으면 미리 채움, 없으면 빈칸
         step=1_000_000,
+        placeholder="예: 10000000, 모르면 비워두세요",
     )
     confirmed = st.form_submit_button("이 조건으로 확정")
 if confirmed:
@@ -126,7 +135,7 @@ if confirmed:
             region=None if region == "(제주 전역)" else region,
             purpose=purpose.strip() or None,
             interest=interest.strip() or None,
-            budget_max_krw=int(budget) if budget_known else None,
+            budget_max_krw=int(budget) if budget else None,  # 비어 있으면 미정
             season=None if season == "(미정)" else season,
             target=target.strip() or None,
         )
@@ -205,99 +214,203 @@ card = next(c for c in proposal.ideas if c.idea_id == ss["selected"])
 
 # ---------- 3. 제주 데이터로 확인 ----------
 st.header(f"3. 제주 데이터로 확인: {card.title}")
-if "run" not in ss:
+TOOLS_NOTE = "확인 도구 5개를 돌리는 중이에요…"
+
+
+def tools():
     from agent.fake_checks import FAKE_TOOLS
-    from agent.verify import verify_idea
     from analytics.real_checks import REAL_TOOLS
 
-    with st.spinner("확인 도구 5개를 돌리는 중이에요…"):
+    return {**FAKE_TOOLS, **REAL_TOOLS}
+
+
+if "run" not in ss:
+    from agent.verify import verify_idea
+
+    with st.spinner(TOOLS_NOTE):
         try:
-            run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})
+            run = verify_idea(card, request, tools())
         except Exception as e:  # noqa: BLE001
             ui.error(str(e))
             stop()
     ss["run"] = run.model_dump(mode="json")
 run = VerificationRun.model_validate(ss["run"])
+manual = VerificationRun.model_validate(ss["manual_run"]) if "manual_run" in ss else None
 
-from agent.verify import summarize
 
-last = run.rounds[-1]
-low_notes = screen.low_data_notes(run.rounds[-1].results)  # 지금(마지막 회차) 결과 기준
-if low_notes:
-    ui.warning(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(low_notes) + ".")
-ui.caption(f"확인 {len(run.rounds)}회 (처음 1회 + 고친 뒤 {len(run.rounds) - 1}회). 마지막 결과:")
-for r in last.results:
-    with st.container(border=True):
-        badge = " · 🧪 가상 데이터 포함" if r.is_synthetic else ""
-        ui.markdown(f"**{screen.CHECK_LABELS[r.check]}** {screen.STATUS_ICONS[r.status]}{badge}")
-        ui.write(r.reason)
-        for line in screen.key_numbers(r):
-            ui.caption(line)
-        if r.check == "check_venue" and (rows := screen.venue_table(r)):
-            st.dataframe(pd.DataFrame(rows), hide_index=True)
-        if r.sources:
-            ui.caption("출처: " + " / ".join(r.sources))
-        if r.warnings:
-            with st.expander("주의할 점"):
-                for w in r.warnings:
-                    ui.write(f"- {w}")
-
-st.subheader("바뀐 점")
-changes = screen.friendly_changes(run)
-if not changes:
-    ui.write("바뀐 점이 없어요.")
-for ch in changes:
-    with st.container(border=True):
-        ui.markdown(f"**{ch['title']}**")
-        ui.write(ch["reason"])
-        if ch["note"]:
-            ui.write(f"⚠️ {ch['note']}")
-        if ch["low_data"]:
-            ui.write(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + ".")
-        for n in ch["numbers"]:
-            ui.caption(n)
-        if ch["season"]:
-            ui.caption(ch["season"])
-with st.expander("확인 기록 (회차별)"):
-    for rd in run.rounds:
-        ui.markdown(
-            f"**{rd.round}회차**: "
-            + ", ".join(
-                f"{screen.CHECK_LABELS[x.check]} {screen.STATUS_ICONS[x.status]}"
-                for x in rd.results
+def show_run(run: VerificationRun, with_changes: bool) -> None:
+    """확인 결과 5개, 확인 과정 요약, (에이전트 추천안이면) 바뀐 점."""
+    low_notes = screen.low_data_notes(run.rounds[-1].results)  # 지금(마지막 회차) 결과 기준
+    if low_notes:
+        ui.warning(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(low_notes) + ".")
+    for line in screen.round_summary(run):
+        ui.caption(line)
+    for r in run.rounds[-1].results:
+        with st.container(border=True):
+            badge = " · 🧪 가상 데이터 포함" if r.is_synthetic else ""
+            ui.markdown(
+                f"**{screen.CHECK_LABELS[r.check]}** {screen.STATUS_ICONS[r.status]}{badge}"
             )
-        )
-    ui.caption("개발자용 원문 (summarize)")
-    for line in summarize(run):
-        st.code(line, language=None)
+            ui.write(r.reason)
+            for line in screen.key_numbers(r):
+                ui.caption(line)
+            if r.check == "check_venue" and (rows := screen.venue_table(r)):
+                st.dataframe(pd.DataFrame(rows), hide_index=True)
+            if r.sources:
+                ui.caption("출처: " + " / ".join(r.sources))
+            if r.warnings:
+                with st.expander("주의할 점"):
+                    for w in r.warnings:
+                        ui.write(f"- {w}")
+    if not with_changes:
+        return
+    st.subheader("바뀐 점")
+    changes = screen.friendly_changes(run)
+    if not changes:
+        ui.write("바뀐 점이 없어요.")
+    for ch in changes:
+        with st.container(border=True):
+            ui.markdown(f"**{ch['title']}**")
+            ui.write(ch["reason"])
+            if ch["note"]:
+                ui.write(f"⚠️ {ch['note']}")
+            if ch["low_data"]:
+                ui.write(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + ".")
+            for n in ch["numbers"]:
+                ui.caption(n)
+            if ch["season"]:
+                ui.caption(ch["season"])
+    with st.expander("확인 과정 자세히 보기"):
+        for rd in run.rounds:
+            ui.markdown(
+                f"**{screen.ORDINALS.get(rd.round, rd.round)} 확인**: "
+                + ", ".join(
+                    f"{screen.CHECK_LABELS[x.check]} {screen.STATUS_ICONS[x.status]}"
+                    for x in rd.results
+                )
+            )
 
-if run.outcome != "ready_for_approval":
-    ui.warning("고쳐도 통과하지 못한 확인이 있어요. 다른 아이디어를 골라보세요.")
-    stop()
 
-# ---------- 4. 기획서 ----------
-st.header("4. 기획서")
-if st.button("이대로 진행"):
-    ss["approved"] = True
-if ss.get("approved"):
-    try:
-        from agent.plan import PlanGenerationError, generate_plan, plan_to_markdown, save_plan
-    except ImportError:
-        ui.info(
-            "기획서 기능 준비 중이에요. A의 기획서 생성(agent/plan.py)이 main에 합쳐지면 바로 연결돼요."
-        )
+def card_summary(c) -> str:
+    venue = ", ".join(v.name for v in c.venue) or screen.NO_VENUE
+    scale = screen.SCALE_LABELS.get(c.budget.scale, c.budget.scale)
+    return (
+        f"개최 월 {screen.months_text(c.timing.recommended_months)} · 장소 {venue} · 규모 {scale}"
+    )
+
+
+if manual is None:
+    ui.caption("에이전트 추천안: " + card_summary(run.final))
+    show_run(run, with_changes=True)
+else:
+    agent_tab, manual_tab = st.tabs(["에이전트 추천안", "내가 고친 안"])
+    with agent_tab:
+        ui.caption(card_summary(run.final))
+        show_run(run, with_changes=True)
+    with manual_tab:
+        ui.caption(card_summary(manual.final))
+        show_run(manual, with_changes=False)
+
+# ---------- 직접 고쳐서 다시 확인 ----------
+st.subheader("직접 고쳐서 다시 확인")
+ui.caption("개최 월·장소·규모를 바꿔서 확인만 다시 해요. 자동으로 고치지는 않아요.")
+base = (manual or run).final  # 처음 값은 지금 카드(가장 최근 안)의 값
+places = screen.venue_choices(run)
+place_names = [screen.NO_VENUE, *[p["name"] for p in places]]
+current_place = base.venue[0].name if base.venue else screen.NO_VENUE
+scale_names = list(screen.SCALE_LABELS.values())
+with st.form("manual_form"):
+    m1, m2, m3 = st.columns(3)
+    months = m1.multiselect(
+        "개최 월",
+        list(range(1, 13)),
+        default=base.timing.recommended_months,
+        format_func=lambda m: f"{m}월",
+    )
+    place = m2.selectbox(
+        "장소 (장소 후보 표에서)",
+        place_names,
+        index=place_names.index(current_place) if current_place in place_names else 0,
+    )
+    scale = m3.radio(
+        "규모",
+        scale_names,
+        index=scale_names.index(screen.SCALE_LABELS.get(base.budget.scale, "기본")),
+        horizontal=True,
+    )
+    recheck = st.form_submit_button("이 조건으로 다시 확인")
+if recheck:
+    if not months:
+        ui.warning("개최 월을 하나 이상 골라주세요.")
     else:
-        # 장소 후보를 기획서에 넘기는 방식은 A와 정할 예정. 지금은 확인 결과(run) 그대로 넘긴다
+        from agent.verify import verify_idea
+
+        scale_value = next(k for k, v in screen.SCALE_LABELS.items() if v == scale)
+        venue = next((p for p in places if p["name"] == place), None)
         try:
-            plan = generate_plan(run, request, approved=True)
-        except PlanGenerationError as e:
-            ui.warning(str(e))
+            edited = screen.edited_card(run.final, months, venue, scale_value)
+            with st.spinner(TOOLS_NOTE):
+                manual = verify_idea(
+                    edited, request, tools(), max_fixes=0
+                )  # 확인만, 자동 수정 없음
         except Exception as e:  # noqa: BLE001
             ui.error(str(e))
         else:
+            reset_after("manual_run")
+            ss["manual_run"] = manual.model_dump(mode="json")
+            st.rerun()
+
+# ---------- 4. 기획서 ----------
+st.header("4. 기획서")
+options = {"에이전트 추천안": run}
+if manual is not None:
+    options["내가 고친 안"] = manual
+chosen_name = st.radio("어느 안으로 진행할까요?", list(options), horizontal=True)
+chosen = options[chosen_name]
+if ss.get("approved") and ss["approved"] != chosen_name:
+    # 진행할 안을 바꾸면 예전 안으로 만든 기획서를 지운다 (다시 확인할 때는 reset_after("manual_run")이 지움)
+    for key in ("approved", "plan", "plan_path"):
+        ss.pop(key, None)
+ready = chosen.outcome == "ready_for_approval"
+if not ready:
+    if chosen_name == "내가 고친 안":
+        ui.warning(
+            "❌ 항목이 남아 있어 기획서를 만들 수 없어요. 다른 값을 바꿔서 다시 확인해보세요."
+        )
+    else:
+        ui.warning(
+            "고쳐도 통과하지 못한 확인이 있어요. 직접 고쳐서 다시 확인하거나 다른 아이디어를 골라보세요."
+        )
+if st.button("이대로 진행", disabled=not ready):
+    ss.pop("plan", None)
+    ss["approved"] = chosen_name
+if ss.get("approved") and ss["approved"] in options:
+    approved_run = options[ss["approved"]]
+    try:
+        from agent.plan import PlanGenerationError, generate_plan, plan_to_markdown, save_plan
+    except ImportError:
+        ui.info("기획서 기능 준비 중이에요.")
+    else:
+        from agent.draft_contracts import FestivalPlan
+
+        if "plan" not in ss:
+            # 장소 후보를 기획서에 넘기는 방식은 A와 정할 예정. 지금은 고른 안의 확인 결과 그대로 넘긴다
+            try:
+                with st.spinner("기획서를 쓰는 중이에요…"):
+                    plan = generate_plan(approved_run, request, approved=True)
+            except PlanGenerationError as e:
+                ui.warning(str(e))
+            except Exception as e:  # noqa: BLE001
+                ui.error(str(e))
+            else:
+                md_path, _ = save_plan(plan)
+                ss["plan"] = plan.model_dump(mode="json")
+                ss["plan_path"] = str(md_path)
+        if "plan" in ss:
+            plan = FestivalPlan.model_validate(ss["plan"])
+            ui.success(f"{ss['approved']}으로 기획서를 만들었어요.")
             ui.markdown(plan_to_markdown(plan))
-            md_path, _ = save_plan(plan)
-            ui.caption(f"저장: {md_path}")
+            ui.caption(f"저장: {ss.get('plan_path', '')}")
             if plan.is_synthetic:
                 ui.warning("가짜·합성 데이터 결과가 섞여 있어요.")
 
