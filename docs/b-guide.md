@@ -125,7 +125,7 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
 ## 9. 대상 확인 `check_target` (실제 버전)
 
 - 입력: `request.target`(대상 문구), `request.region`, `card.timing.recommended_months`
-- 자료: 와이파이 장소별 사용자 현황 성·연령 (2023-01~2025-09, `data/processed/wifi_users_demographics.csv`). 4-11이 있으면 evidence `flow`에 같은 비중을 보여주고, 가짜 데이터면 결과 `is_synthetic=True` (판정은 와이파이로만)
+- 자료: 와이파이 장소별 사용자 현황 성·연령 (2023-01~2025-09, `data/processed/wifi_users_demographics.csv`). 4-11이 있으면 evidence `flow`에 같은 비중을 보여주고 가짜면 `flow.data_label`이 "가상 데이터". 판정은 와이파이 실데이터라 결과 `is_synthetic=False`
 - 배수 = 그 동네 추천 월의 대상 비중 ÷ 제주 평균(모든 동네 장소). 1.0 이상 pass, 0.9 이상 conditional, 그 미만 fail
 - 성별 대상이 있으면 성별 비중도 같은 기준으로 보고 나쁜 쪽을 쓴다
 - fail 제안: 같은 동네에서 대상 배수가 1.0 이상인 다른 달 중 가장 높은 달 (재료 제철 안에서). 대상(`request.target`)은 고칠 수 있는 칸이 아니라 비중이 높은 연령대는 evidence `strong_age_groups`와 경고로만 알린다
@@ -163,11 +163,41 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
 - `check_risk(card, request, venue_areas=None, timing_result=None)`. 후보 장소 동네는 `venue_areas` → 카드 `venue` → `check_venue` 후보 → `request.region` 순으로 정한다
 - 축제 충돌: check_timing의 `overlapping_festivals`(같은 재료·같은 달)를 그대로 써서 있으면 conditional. 같은 동네 다른 재료 축제가 check_timing 추천 주와 겹치면 경고 (날짜 미확인이면 같은 달일 때 경고)
 - 주거 밀집: 4-11 거주인구(resd_pop_cnt)의 19~23시 평균이 제주 동네 평균보다 많으면 conditional "소음 민원 주의". 4-11이 가짜면 `is_synthetic=True` + 경고
-- 정체: `congestion_check` 자리만 있음. evidence `congestion`은 pending
+- 정체: `congestion_check(points)`. 후보 장소(check_venue 후보 좌표, 없으면 카드 venue 이름으로 장소 표에서 찾음) 반경 1km 안 도로 구간의 주말 11~19시 평균 속도 ÷ 그 구간 평소 평균이 0.8 미만이면 conditional "정체 주의". 3-10·3-07·3-08 실데이터(`data/raw/`)가 없으면 가상 데이터(`data/demo/`)로 계산하고 `is_synthetic=True`. 교통 자료나 좌표가 없으면 evidence `congestion`은 pending
 - 결과: 걸린 것이 있으면 conditional, 없으면 pass (fail 없음)
 
-## 12. Git에 올린 와이파이 가공본 (`analytics/reference/`)
+## 12. Git에 올린 가공본 (`analytics/reference/`, 합계 5.6MB)
 
-- `wifi_usage_by_place_month_type.parquet` (2.9MB), `area_link_wifi.csv` (361KB, 장소 → 행정동·읍면 + AP 좌표)
+- 와이파이: `wifi_usage_by_place_month_type.parquet` (2,963KB), `area_link_wifi.csv` (361KB, 장소 → 행정동·읍면 + AP 좌표)
+- 허브 와이파이 AP 정보: `jejuhub_wifi_ap.csv` (738KB, `data/raw/` 사본. AP 주소·좌표. macAddress는 허브가 해시로 준 값). `analytics.area_link.load_wifi_ap()`가 먼저 읽음
+- 확인 도구 표: `wifi_users_demographics.csv` 694KB, `venue_places.csv` 67KB, `bus_station_daily.csv` 675KB, `dong_neighbors.csv` 8KB, `outsider_index.csv` 78KB, `jeju_festival_dates.csv` 9KB, `weather_weekly_risk.csv` 80KB, `weather_monthly_risk.csv` 12KB, `weather_station_by_dong.csv` 4KB
+- `data/`가 없는 PC에서도 확인 도구 5개가 돈다 (4-11·교통 가상 데이터는 `data/demo/`에 있어 없으면 그 부분만 확인하지 않고 경고)
 - 코드는 reference를 먼저 읽고, 없으면 `data/processed/`를 읽는다 (`analytics/reference_data.py`)
-- 다시 만들기: `uv run python -m analytics.reference_data`
+- 다시 만들기: `uv run python -m analytics.weather` → `uv run python -m analytics.real_checks --build` → `uv run python -m analytics.reference_data`
+
+## 13. 교통 가상 데이터 (`data/demo/`)
+
+- `uv run python -m analytics.make_demo_traffic`. 명세서 컬럼 그대로, 기간은 4-11 가상과 같은 2025-05-12~25
+  - 3-08 도로 노드 `road_nodes_demo.csv` (850개): 허브 버스 정류소 좌표를 약 1km 격자로 솎아 놓음. 교차로명칭 자리에 정류소 이름
+  - 3-07 도로 구간 `road_links_demo.csv` (2,132개): 가까운 노드 2곳씩 양방향. 링크·노드 아이디 10자리
+  - 3-10 시간대별 교통량 `traffic_hourly_demo_20250512_20250525.csv.gz` (71.6만 행, 3.6MB): 제한속도 × 시간대 계수(평일 7~9·17~19시 느림, 주말 11~17시 0.85) × 잡음
+- 실제 도로망·교통량이 아니다. 주말 정체를 평소의 85% 정도로만 넣어서 0.8 기준의 "정체 주의"는 거의 나오지 않는다
+- 3-05, 3-06은 개인 단위라 쓰지 않는다
+- 3-04(정류소별 시간대 이용) 가상 데이터와 `event_hour_usage`·`night_return_usage` 연결은 허브 시간대 파일(`일별시간대별버스승차인원수현황.csv`)을 받은 뒤 만든다. 3-04 정류소 ID는 명세서의 7자리 대신 허브 정류소 ID(9자리)를 쓴다
+
+## 14. 화면 (`streamlit_app.py`)
+
+- 실행: `uv run streamlit run streamlit_app.py` (127.0.0.1)
+- 순서는 `docs/a-guide.md`와 같다
+  1. 한 문장 → `parse_request` → 입력 칸 채움(`notes`는 안내) → 사용자가 고친 뒤 "이 조건으로 확정"
+  2. 카드 3장 (`propose_idea_cards`)
+  3. 카드 선택 → `verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})` → 5개 결과, 장소 후보 표, 바뀐 점
+  4. "이대로 진행" → 기획서
+- 화면 문장·표를 만드는 함수는 `app/screen.py` (Streamlit 없이 테스트)
+- session_state에는 `model_dump(mode="json")`로 저장하고 `model_validate`로 읽는다. 앞 단계가 바뀌면 뒤 단계 결과를 지운다
+- AI(LLM) 설정이 없을 때
+  - 한 문장 입력: `RequestParseError` 문장("AI 설정이 없어요…")을 그대로 보여 주고 칸에 직접 입력
+  - 카드: "데모 카드로 보기"가 기본으로 켜짐. 데모 카드는 입력과 상관없이 같은 애월 감귤 카드 3장이다 (확인 도구는 입력한 지역으로 돈다)
+  - 기획서: `agent.plan`이 아직 main에 없어 "기획서 기능 준비 중" 안내. 합쳐지면 `generate_plan(run, request, approved=True)`를 부른다 (jiwoo 브랜치에서 형식 확인). 장소 후보는 지금은 확인 결과(`run`) 그대로 넘긴다
+- 결과마다 `is_synthetic`이면 "🧪 가상 데이터 포함" 표시. 하단에 데이터 출처와 행정동 경계 출처(vuski/admdongkor, CC BY 4.0)
+- 테스트: `tests/test_app.py`가 AppTest로 한 문장부터 승인까지 누른다 (.env에 키가 있어도 AI 없이)
