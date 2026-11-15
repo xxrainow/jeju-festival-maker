@@ -196,3 +196,173 @@ def venue_table(r: CheckResult) -> list[dict]:
             }
         )
     return rows
+
+
+# ---------- 바뀐 점 (도민용 쉬운 말) ----------
+
+FIELD_LABELS = {
+    "timing.recommended_months": "추천 시기",
+    "venue": "장소",
+    "budget.scale": "규모",
+    "programs": "프로그램",
+}
+WEATHER_WORDS = {"바람": "바람이 강한", "폭우": "큰비가 오는"}
+
+
+def value_text(field: str, value) -> str:
+    if field == "timing.recommended_months":
+        return months_text(value) if value else "없음"
+    if field == "venue":
+        names = [
+            v["name"] if isinstance(v, dict) else getattr(v, "name", str(v)) for v in value or []
+        ]
+        return ", ".join(names) or "미정"
+    if field == "programs":
+        return ", ".join(value) or "미정"
+    return str(value)
+
+
+def _source_check(results, change):
+    """이 변경을 제안한 확인 결과."""
+    same = [r for r in results if r.suggestion and r.suggestion.field == change.field
+            and r.suggestion.value == change.after]  # fmt: skip
+    return next((r for r in same if r.suggestion.why == change.why), same[0] if same else None)
+
+
+def _month_check(result, month):
+    return next(
+        (m for m in (result.evidence or {}).get("month_checks", []) if m["month"] == month), None
+    )
+
+
+def _weather_words(month_check) -> str | None:
+    kinds = {why.split()[0] for b in month_check.get("bad_weeks", []) for why in b["why"]}
+    words = [WEATHER_WORDS[k] for k in ("바람", "폭우") if k in kinds]
+    return " 주나 ".join(words) + " 주가 많아요" if words else None
+
+
+def _timing_reason(r, change) -> tuple[str, list[str]]:
+    """시기 실패 이유를 쉬운 말로. (문장, 작은 숫자들)."""
+    e = r.evidence or {}
+    sentences, numbers = [], []
+    failed = [m for m in change.before if (mc := _month_check(r, m)) and mc["status"] == "fail"]
+    for m in failed:
+        mc = _month_check(r, m)
+        index = mc.get("outsider_visitors_index")
+        low = index is not None and m in e.get("low_months", [])
+        weather = _weather_words(mc) if not mc.get("good_weeks") else None
+        if low and weather:
+            sentences.append(f"{m}월은 관광객이 평소보다 적고 {weather}.")
+        elif low:
+            sentences.append(f"{m}월은 관광객이 평소보다 적어요.")
+        elif weather:
+            sentences.append(f"{m}월은 {weather}.")
+        if index is not None:
+            numbers.append(f"{m}월 관광객 지표 {index} (1이 연평균, 와이파이 관광 사용량 기준)")
+        if weather:  # 날씨가 실패 이유일 때만
+            total = len(mc["bad_weeks"]) + len(mc.get("good_weeks", []))
+            ratios = [w for b in mc["bad_weeks"] for w in b["why"]]
+            numbers.append(
+                f"{m}월 날씨 나쁜 주 {len(mc['bad_weeks'])}/{total}주 ({'; '.join(ratios[:2])})"
+            )
+    return " ".join(sentences) or "추천 시기에 맞지 않는 달이 있어요.", numbers
+
+
+def _target_reason(r, change) -> tuple[str, list[str]]:
+    e = r.evidence or {}
+    who = e.get("target") or "대상"
+    months = months_text(change.before)
+    numbers = []
+    if a := e.get("age_share"):
+        numbers.append(
+            f"대상 비중 {a['dong_share_pct']}% (제주 평균 {a['jeju_share_pct']}%, 와이파이 사용자 기준)"
+        )
+    return (
+        f"{months}에는 이 동네에 '{who}' 방문이 제주 평균보다 적어서, 더 많이 찾는 달로 바꿨어요.",
+        numbers,
+    )
+
+
+def _budget_reason(r, change) -> tuple[str, list[str]]:
+    e = r.evidence or {}
+    numbers = []
+    if e.get("format_median_krw") is not None:
+        numbers.append(
+            f"입력 예산 {won(e.get('input_krw'))}, 같은 형식 축제 예산 중간값 {won(e['format_median_krw'])}"
+        )
+    return "가진 예산으로 연 같은 형식 축제 사례가 없어서, 규모를 줄인 버전으로 바꿨어요.", numbers
+
+
+def _venue_reason(r, change) -> tuple[str, list[str]]:
+    region = (r.evidence or {}).get("region") or "이 지역"
+    return f"{region} 안에서 관광객이 모이는 장소를 찾지 못해, 이웃 동네 장소로 바꿨어요.", []
+
+
+REASONS = {
+    "check_timing": _timing_reason,
+    "check_target": _target_reason,
+    "check_budget": _budget_reason,
+    "check_venue": _venue_reason,
+}
+
+
+def _after_note(next_results, change) -> str | None:
+    """바꾼 달이 통과가 아니라 조건부면 솔직하게 알린다."""
+    if change.field != "timing.recommended_months" or not next_results:
+        return None
+    timing = next((r for r in next_results if r.check == "check_timing"), None)
+    if timing is None:
+        return None
+    e = timing.evidence or {}
+    in_season = "제철 안에서 " if e.get("material_season") else ""
+    notes = []
+    for m in change.after:
+        mc = _month_check(timing, m)
+        if not mc or mc["status"] != "conditional":
+            continue
+        if m in e.get("slightly_low_months", []):
+            notes.append(f"{m}월은 평소보다 관광객이 약간 적지만, {in_season}가장 나은 달이에요.")
+        elif mc.get("overlapping_festivals"):
+            notes.append(
+                f"{m}월에는 같은 재료 축제가 있지만, {in_season}가장 나은 달이에요. 날짜가 겹치지 않게 잡아 주세요."
+            )
+    return " ".join(notes) or None
+
+
+def friendly_changes(run) -> list[dict]:
+    """화면용 바뀐 점: title, reason, numbers(작게), note(조건부일 때), season."""
+    out = []
+    rounds = run.rounds
+    for i, rd in enumerate(rounds):
+        nxt = rounds[i + 1].results if i + 1 < len(rounds) else None
+        for change in rd.changes:
+            r = _source_check(rd.results, change)
+            if r is not None and r.check in REASONS:
+                reason, numbers = REASONS[r.check](r, change)
+            else:
+                reason, numbers = change.why, []
+            season = None
+            if change.field == "timing.recommended_months":
+                timing = next((x for x in rd.results if x.check == "check_timing"), None)
+                ms = ((timing.evidence or {}).get("material_season") or {}) if timing else {}
+                if ms.get("months"):
+                    season = f"제철: {months_text(ms['months'])}"  # 근거 문구는 보여주지 않는다
+            title = (
+                f"{FIELD_LABELS.get(change.field, change.field)}: "
+                f"{value_text(change.field, change.before)} → {value_text(change.field, change.after)}"
+            )
+            if out and out[-1]["title"] == title and out[-1]["round"] == rd.round:
+                out[-1]["reason"] += " " + reason  # 같은 변경을 두 확인이 제안하면 한 칸에
+                out[-1]["numbers"] += numbers
+                continue
+            out.append(
+                {
+                    "round": rd.round,
+                    "title": title,
+                    "reason": reason,
+                    "numbers": numbers,
+                    "note": _after_note(nxt, change),
+                    "season": season,
+                }
+            )
+    return out

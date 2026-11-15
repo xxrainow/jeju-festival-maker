@@ -22,6 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 from agent.draft_contracts import CheckResult, IdeaCard, Suggestion, UserRequest
+from analytics.check_timing import ADMIN_BUILD_NOTE
 from analytics.periods import CANDIDATE_PERIOD
 
 DEMOGRAPHICS_PATH = Path("data/processed/wifi_users_demographics.csv")
@@ -173,9 +174,9 @@ def check_target(
     evidence: dict = {"target": request.target, "age_groups": sorted(ages, key=AGE_BANDS.index),
                       "sex": sex, "target_rules": rules, "months": months}  # fmt: skip
 
-    def pending(why: str) -> CheckResult:
+    def pending(why: str, *extra: str) -> CheckResult:
         return CheckResult(check="check_target", status="pending", reason=why,
-                           evidence=evidence, warnings=[why, ELDERLY_WARNING])  # fmt: skip
+                           evidence=evidence, warnings=[why, *extra, ELDERLY_WARNING])  # fmt: skip
 
     if not request.target:
         return pending("대상이 입력되지 않아 확인하지 않았어요.")
@@ -188,7 +189,8 @@ def check_target(
         return pending("지역이 없어 동네와 제주 평균을 비교하지 못했어요.")
     if demo is None:
         return pending(
-            "와이파이 성·연령 표가 없어요. uv run python -m analytics.real_checks --build 로 만들어 주세요."
+            "와이파이 성·연령 표가 아직 없어요. 관리자에게 표 만들기를 요청해 주세요.",
+            ADMIN_BUILD_NOTE,
         )
     if demo[demo["admin_area"] == request.region].empty:
         return pending(f"{request.region}에는 와이파이 사용자 자료가 없어요.")
@@ -228,7 +230,7 @@ def check_target(
         sources.append(flow["source"])
         if flow["is_synthetic"]:
             warnings.append(
-                "evidence의 4-11 비중(flow)은 가상 데이터예요. 판정은 와이파이 실데이터로만 했어요."
+                "참고로 보여 주는 4-11 유동인구 비중은 가상 데이터예요. 판정은 와이파이 실데이터로만 했어요."
             )
 
     label = " · ".join(evidence["age_groups"] + ([sex] if sex else []))

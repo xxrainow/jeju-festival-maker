@@ -206,7 +206,9 @@ def test_all_fail_moves_to_best_passing_month_in_season():
     )
     # 7월이 지수가 가장 높지만 감귤 제철이 아니고, 1월은 날씨 fail → 11월
     assert r.status == "fail" and r.suggestion.value == [11]
-    assert "제철(11·12·1월, 근거: 테스트 근거)" in r.suggestion.why
+    assert "제철(11·12·1월)" in r.suggestion.why and "근거" not in r.suggestion.why
+    # 제철 근거(팀 내부 문서)는 evidence에만
+    assert r.evidence["material_season"] == {"months": [11, 12, 1], "basis": "테스트 근거"}
     # 제철 안에 통과하는 달이 없으면 제안 없음
     r = check_timing(card([12]), request(), data(outsider=outsider_table(index), season=[12]))
     assert r.suggestion is None and any("통과하는 다른 달이 없어" in w for w in r.warnings)

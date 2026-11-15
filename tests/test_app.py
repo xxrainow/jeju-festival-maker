@@ -95,6 +95,65 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert len(run.rounds[-1].results) == 5
     assert len(at.dataframe) == 1  # 장소 후보 표
 
+    shown = [m.value for m in at.markdown]
+    assert any(v.startswith("**추천 시기: 12월 → 11월") for v in shown)  # 필드 이름 대신 쉬운 말
+    assert not any("timing.recommended_months" in v for v in shown)
+    assert any("timing.recommended_months" in c.value for c in at.code)  # 개발자용 원문은 접기 안에
+
     next(b for b in at.button if b.label == "이대로 진행").click().run()
     assert any("기획서 기능 준비 중" in i for i in labels(at, "info"))
     assert not at.exception
+
+
+def _round(n, timing_status, timing_evidence, suggestion=None, changes=()):
+    from agent.draft_contracts import CheckRound
+
+    results = [
+        CheckResult(
+            check="check_timing",
+            status=timing_status,
+            reason="원문",
+            evidence=timing_evidence,
+            suggestion=suggestion,
+        ),
+        *[
+            CheckResult(check=c, status="pass", reason="r")
+            for c in ("check_venue", "check_target", "check_risk", "check_budget")
+        ],
+    ]
+    return CheckRound(round=n, results=results, changes=list(changes))
+
+
+def test_friendly_changes_use_plain_words():
+    from agent.draft_contracts import IdeaChange, Suggestion
+
+    why = "추천 월이 모두 확인을 통과하지 못해 … 재료 제철(11·12·1월) 안에서 골랐어요."
+    sug = Suggestion(field="timing.recommended_months", value=[12], why=why)
+    first = _round(1, "fail", {
+        "low_months": [1],
+        "material_season": {"months": [11, 12, 1], "basis": "기획서 7절 내부 근거"},
+        "month_checks": [{"month": 1, "status": "fail", "outsider_visitors_index": 0.71, "good_weeks": [],
+                          "bad_weeks": [{"week": "1월 2주차", "why": ["바람 1.8배, 9년 중 9년"]}]}],
+    }, sug, [IdeaChange(field="timing.recommended_months", before=[1], after=[12], why=why)])  # fmt: skip
+    second = _round(2, "conditional", {
+        "slightly_low_months": [12], "material_season": {"months": [11, 12, 1], "basis": "x"},
+        "month_checks": [{"month": 12, "status": "conditional"}],
+    })  # fmt: skip
+    card = CARD.model_copy(
+        update={"timing": CARD.timing.model_copy(update={"recommended_months": [1]})}
+    )
+    final = card.model_copy(
+        update={"timing": card.timing.model_copy(update={"recommended_months": [12]})}
+    )
+    run = VerificationRun(
+        original=card, final=final, rounds=[first, second], outcome="ready_for_approval"
+    )
+    [ch] = screen.friendly_changes(run)
+    assert ch["title"] == "추천 시기: 1월 → 12월"
+    assert ch["reason"] == "1월은 관광객이 평소보다 적고 바람이 강한 주가 많아요."
+    assert ch["note"] == "12월은 평소보다 관광객이 약간 적지만, 제철 안에서 가장 나은 달이에요."
+    assert ch["season"] == "제철: 11·12·1월"
+    shown = " ".join([ch["title"], ch["reason"], ch["note"], ch["season"], *ch["numbers"]])
+    assert "기획서" not in shown and "timing." not in shown
+    for word in ("fail", "pass", "conditional"):
+        assert word not in shown

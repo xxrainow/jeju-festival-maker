@@ -28,6 +28,7 @@ import pandas as pd
 
 from agent.draft_contracts import CheckResult, IdeaCard, Suggestion, UserRequest
 from analytics.bus_hourly import NIGHT_HOURS
+from analytics.check_timing import ADMIN_BUILD_NOTE
 from analytics.periods import RECENT_PERIOD
 
 PROCESSED = Path("data/processed")
@@ -228,15 +229,16 @@ def check_venue(
     region = request.region
     evidence: dict = {"region": region, "radius_m": radius_m, "candidate_places": None}
 
-    def pending(why):
+    def pending(why, *extra):
         return CheckResult(check="check_venue", status="pending", reason=why,
-                           evidence=evidence, warnings=[why])  # fmt: skip
+                           evidence=evidence, warnings=[why, *extra])  # fmt: skip
 
     if not region:
         return pending("지역이 없어 후보 장소를 찾지 않았어요.")
     if places is None or stations is None:
         return pending(
-            "장소·정류소 표가 없어요. uv run python -m analytics.real_checks --build 로 만들어 주세요."
+            "장소·정류소 표가 아직 없어요. 관리자에게 표 만들기를 요청해 주세요.",
+            ADMIN_BUILD_NOTE,
         )
     low_usage = float(stations["daily_users"].median())
     cands = candidates_in(region, places, stations, radius_m, low_usage)

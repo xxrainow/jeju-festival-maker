@@ -54,6 +54,7 @@ WIFI_WARNING = (
     "4-11 유동인구 실데이터가 1년치 쌓이면 그것으로 바꿔요."
 )
 STATUS_ORDER = {"pass": 0, "conditional": 1, "fail": 2}
+ADMIN_BUILD_NOTE = "관리자용: uv run python -m analytics.real_checks --build 로 표를 만들어요."
 # 외지인 지수 세 단계: PASS_INDEX 이상 pass, LOW_INDEX~PASS_INDEX conditional, LOW_INDEX 미만 fail
 PASS_INDEX = 1.0
 LOW_INDEX = 0.8
@@ -329,7 +330,7 @@ def _suggest(card, checks, all_checks, data) -> Suggestion | None:
         keep = [m for m in months if m not in {c.month for c in failed}]
         why = "; ".join(c.fail_reason() for c in failed) + ". 그 달을 빼요."
         return Suggestion(field="timing.recommended_months", value=keep, why=why)
-    season, basis = data.material_season.get(card.material, (None, None))
+    season, _basis = data.material_season.get(card.material, (None, None))
     for wanted in ("pass", "conditional"):
         options = [
             c
@@ -339,12 +340,14 @@ def _suggest(card, checks, all_checks, data) -> Suggestion | None:
         if options:
             best = max(options, key=lambda c: c.index)
             why = (
-                f"추천 월이 모두 fail이라, 다른 달 중 {'통과하고' if wanted == 'pass' else '조건부로 통과하고'} "
+                f"추천 월이 모두 확인을 통과하지 못해, 다른 달 중 "
+                f"{'통과하고' if wanted == 'pass' else '조건부로 통과하고'} "
                 f"외지인 방문 지수가 가장 높은 "
                 f"{best.month}월({best.index:.2f})로 바꿔요."
             )
             if season:
-                why += f" 재료 제철({'·'.join(map(str, season))}월, 근거: {basis}) 안에서 골랐어요."
+                # 제철 근거(내부 문서)는 evidence["material_season"]에만 남긴다
+                why += f" 재료 제철({'·'.join(map(str, season))}월) 안에서 골랐어요."
             return Suggestion(field="timing.recommended_months", value=[best.month], why=why)
     return None
 
@@ -363,11 +366,10 @@ def check_timing(
         return _pending("지역이 없어 외지인 방문과 날씨를 확인하지 못했어요.", evidence, [], [])
     if data.outsider is None or data.weekly is None or data.station_by_dong is None:
         return _pending(
-            "시기 확인용 표가 아직 없어요. "
-            "uv run python -m analytics.check_timing --build 로 만들어 주세요.",
+            "시기 확인용 표가 아직 없어요. 관리자에게 표 만들기를 요청해 주세요.",
             evidence,
             [],
-            [],
+            [ADMIN_BUILD_NOTE],
         )
 
     weather, w_sources, w_warnings = timing_weather_evidence(
@@ -394,6 +396,10 @@ def check_timing(
         warnings.append(note)
     evidence["outsider_visitors_index"] = {m: round(float(index[m]), 2) for m in months}
     evidence["outsider_index_source"] = source
+    season = data.material_season.get(card.material)
+    evidence["material_season"] = (
+        {"months": season[0], "basis": season[1]} if season else None
+    )  # basis는 팀 내부 근거라 화면에 보여주지 않는다
     evidence["low_months"] = [m for m in months if index[m] < LOW_INDEX]
     evidence["slightly_low_months"] = [m for m in months if LOW_INDEX <= index[m] < PASS_INDEX]
     evidence["outsider_index_rule"] = (

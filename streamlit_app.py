@@ -221,12 +221,19 @@ for r in last.results:
                     st.write(f"- {w}")
 
 st.subheader("바뀐 점")
-lines = summarize(run)
-if lines:
-    for line in lines:
-        st.write(f"- {line}")
-else:
+changes = screen.friendly_changes(run)
+if not changes:
     st.write("바뀐 점이 없어요.")
+for ch in changes:
+    with st.container(border=True):
+        st.markdown(f"**{ch['title']}**")
+        st.write(ch["reason"])
+        if ch["note"]:
+            st.write(f"⚠️ {ch['note']}")
+        for n in ch["numbers"]:
+            st.caption(n)
+        if ch["season"]:
+            st.caption(ch["season"])
 with st.expander("확인 기록 (회차별)"):
     for rd in run.rounds:
         st.markdown(
@@ -236,6 +243,9 @@ with st.expander("확인 기록 (회차별)"):
                 for x in rd.results
             )
         )
+    st.caption("개발자용 원문 (summarize)")
+    for line in summarize(run):
+        st.code(line, language=None)
 
 if run.outcome != "ready_for_approval":
     st.warning("고쳐도 통과하지 못한 확인이 있어요. 다른 아이디어를 골라보세요.")
