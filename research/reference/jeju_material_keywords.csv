@@ -14,7 +14,7 @@ material,category,keywords,seasonal,manual_months,manual_months_basis,note,match
 고사리,농산물,고사리,true,,,,true
 마늘,농산물,마농|마늘,true,,,,true
 흑돼지,농산물,도새기|흑돼지,false,,,,true
-방어,수산물,방어,true,,,,true
+방어,수산물,방어,true,11|12|1|2,해양수산부 이달의 수산물 2021년 1월 (제철 11월~이듬해 2월),기존 축제(최남단 방어 축제 11월) 월만 쓰면 겨울 제철이 빠짐,true
 갈치,수산물,갈치,true,,,,true
 자리돔,수산물,자리돔,true,,,,true
 소라,수산물,소라,true,,,,true
