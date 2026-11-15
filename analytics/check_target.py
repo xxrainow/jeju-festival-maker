@@ -3,7 +3,7 @@
 기준 (설계 문서 9-3): 입력 대상의 연령대 비중이 그 동네에서 제주 평균 이상인가.
 
 - 자료: 와이파이 장소별 사용자 현황(성·연령, 실데이터)이 기본. 4-11 유동인구가 있으면 evidence에 같이 보여주고,
-  가짜 데이터면 is_synthetic=True와 경고를 붙인다 (판정은 와이파이로만 한다)
+  가짜 데이터면 evidence flow에만 "가상 데이터"로 표시한다. 판정은 와이파이 실데이터라 결과 is_synthetic=False
 - 비중 = 그 동네 와이파이 장소 사용자 중 대상 연령대(성별) 비율, 카드 추천 월만.
   제주 평균 = 행정동·읍면 표에 들어간 모든 장소의 같은 비율
 - 배수 = 동네 비중 ÷ 제주 평균. 1.0 이상 pass, 0.9 이상 conditional, 그 미만 fail
@@ -93,9 +93,12 @@ def build_demographics(users: pd.DataFrame, places: pd.DataFrame) -> pd.DataFram
 
 @lru_cache(maxsize=1)
 def load_demographics() -> pd.DataFrame | None:
-    if not DEMOGRAPHICS_PATH.exists():
+    from analytics.reference_data import reference_first
+
+    path = reference_first(DEMOGRAPHICS_PATH.name, DEMOGRAPHICS_PATH)  # analytics/reference/ 먼저
+    if not path.exists():
         return None
-    return pd.read_csv(DEMOGRAPHICS_PATH, encoding="utf-8-sig")
+    return pd.read_csv(path, encoding="utf-8-sig")
 
 
 def _share(df: pd.DataFrame, ages: set[str], sex: str | None) -> float | None:
@@ -146,6 +149,7 @@ def flow_evidence(region: str, ages: set[str], sex: str | None) -> dict | None:
         "measure": "방문인구(visit_pop_cnt)",
         "source": flow.label,
         "is_synthetic": flow.is_synthetic,
+        "data_label": "가상 데이터" if flow.is_synthetic else "실데이터",
     }
 
 
@@ -224,9 +228,8 @@ def check_target(
         sources.append(flow["source"])
         if flow["is_synthetic"]:
             warnings.append(
-                "evidence의 4-11 비중(flow)은 가짜 데이터예요. 판정은 와이파이로만 했어요."
+                "evidence의 4-11 비중(flow)은 가상 데이터예요. 판정은 와이파이 실데이터로만 했어요."
             )
-    is_synthetic = bool(evidence.get("flow", {}).get("is_synthetic"))
 
     label = " · ".join(evidence["age_groups"] + ([sex] if sex else []))
     detail = ", ".join(
@@ -272,6 +275,6 @@ def check_target(
         evidence=evidence,
         sources=sources,
         suggestion=suggestion,
-        is_synthetic=is_synthetic,
+        is_synthetic=False,  # 판정은 와이파이 실데이터
         warnings=warnings,
     )

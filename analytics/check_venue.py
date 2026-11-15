@@ -122,7 +122,10 @@ def _distance_m(lat1, lon1, lat2, lon2) -> float:
 
 @lru_cache(maxsize=1)
 def load_venue_tables():
+    from analytics.reference_data import reference_first
+
     def read(path):
+        path = reference_first(path.name, path)  # analytics/reference/ 먼저
         return (
             pd.read_csv(path, encoding="utf-8-sig", dtype={"stationId": str})
             if path.exists()

@@ -130,7 +130,8 @@ def test_target_shows_synthetic_flow(monkeypatch):
 
     monkeypatch.setattr(fs, "load_flow", lambda: fake_flow(True))
     r = check_target(card(), request(), demographics(0.4), use_flow=True)
-    assert r.evidence["flow"]["is_synthetic"] and r.is_synthetic
+    assert r.evidence["flow"]["is_synthetic"] and r.evidence["flow"]["data_label"] == "가상 데이터"
+    assert not r.is_synthetic  # 판정은 와이파이 실데이터
     assert r.status == "pass"  # 판정은 와이파이로
 
 

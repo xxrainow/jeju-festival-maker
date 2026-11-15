@@ -220,6 +220,10 @@ class TimingData:
 
 
 def _read(path: Path, **kw) -> pd.DataFrame | None:
+    """analytics/reference/에 같은 이름의 표가 있으면 그것을 먼저 읽는다."""
+    from analytics.reference_data import reference_first
+
+    path = reference_first(path.name, path)
     return pd.read_csv(path, encoding="utf-8-sig", **kw) if path.exists() else None
 
 

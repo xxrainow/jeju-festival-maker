@@ -104,7 +104,12 @@ def load_bus_stations(path: Path = BUS_STATIONS_PATH) -> pd.DataFrame:
     return df
 
 
-def load_wifi_ap(path: Path = WIFI_AP_PATH) -> pd.DataFrame:
+def load_wifi_ap(path: Path | None = None) -> pd.DataFrame:
+    """허브 와이파이 AP 정보. analytics/reference/에 올린 사본을 먼저 읽고, 없으면 data/raw/."""
+    if path is None:
+        from analytics.reference_data import reference_first
+
+        path = reference_first(WIFI_AP_PATH.name, WIFI_AP_PATH)
     df = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
     df["area"] = df["addressDong"].map(parse_area)
     df["place_key"] = df["apGroupName"].map(strip_ap_number)
