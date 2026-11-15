@@ -110,9 +110,9 @@ MAX_REGION_PLACES = 3
 REGION_NOTICE = "{region} 안에 관련 장소가 있거나 같은 재료 축제가 열리는 재료를 우선했어요."
 TRIANGLE_FACTOR = 0.5
 NEUTRAL_INTEREST = 0.5
-TOP_N = 10  # LLM에 넘기는 후보 수
+TOP_N = 10  # LLM에 넘기는 후보 수 상한 (형식별 1개라 실제로는 형식 수 이하)
 MAX_EXISTING = 3  # 후보·카드에 붙이는 기존 제주 축제 수
-MAX_REPEAT = 3  # 상위 후보 안에서 같은 형식·같은 재료의 최대 개수
+MAX_REPEAT = 3  # 후보 목록 안에서 같은 재료를 우선하는 최대 개수
 IDEA_COUNT = 3
 INTEREST_NOTICE = (
     "제주 소재 사전이 없어 임시 재료 목록을 썼어요. 관광객 관심 지표 대신 제주 축제의 소재 비중을 "
@@ -245,7 +245,7 @@ class Candidate(BaseModel):
 
 @dataclass
 class CandidateSet:
-    candidates: list[Candidate]  # 점수 내림차순, 상위 TOP_N개
+    candidates: list[Candidate]  # 점수 내림차순, 형식별 최고점 1개씩
     rules: AppliedRules
     notices: list[str] = field(default_factory=list)
 
@@ -357,7 +357,7 @@ def build_candidates(
     out.sort(key=lambda c: (-c.score, FORMATS.index(c.format), c.material))
     top = [
         c.model_copy(update={"candidate_id": f"cand_{i:02d}"})
-        for i, c in enumerate(_cap_repeats(out, top_n), 1)
+        for i, c in enumerate(_best_per_format(out, top_n), 1)
     ]
     rules = AppliedRules(
         material_category=usable[0].category if fixed and len(categories) == 1 else None,
@@ -368,23 +368,25 @@ def build_candidates(
     return CandidateSet(top, rules, notices)
 
 
-def _cap_repeats(ordered: list[Candidate], top_n: int, cap: int = MAX_REPEAT) -> list[Candidate]:
-    """점수 순서를 지키되 같은 형식·같은 재료가 cap개를 넘지 않게 top_n개를 고른다.
+def _best_per_format(
+    ordered: list[Candidate], top_n: int, cap: int = MAX_REPEAT
+) -> list[Candidate]:
+    """형식마다 점수가 가장 높은 후보 1개만 남긴다 (최대 top_n개, 점수 순서 유지).
 
-    재료를 고정하지 않았을 때 한두 재료가 상위를 다 차지하지 않게 한다. 모자라면 남은 순서대로 채운다.
+    LLM이 같은 형식을 두 번 고르지 못하게 목록에서부터 겹치는 형식을 뺀다.
+    한 재료가 여러 형식을 다 차지하지 않게 같은 재료는 cap개까지 우선하고,
+    그 형식에 다른 재료가 없으면 cap을 넘어도 그 형식의 최고점 후보를 쓴다.
     """
-    formats: dict[str, int] = {}
+    chosen: dict[str, Candidate] = {}
     materials: dict[str, int] = {}
-    chosen, rest = [], []
     for c in ordered:
-        if formats.get(c.format, 0) < cap and materials.get(c.material, 0) < cap:
-            chosen.append(c)
-            formats[c.format] = formats.get(c.format, 0) + 1
-            materials[c.material] = materials.get(c.material, 0) + 1
-        else:
-            rest.append(c)
-    picked = (chosen + rest)[:top_n]
-    return sorted(picked, key=ordered.index)
+        if c.format in chosen or materials.get(c.material, 0) >= cap:
+            continue
+        chosen[c.format] = c
+        materials[c.material] = materials.get(c.material, 0) + 1
+    for c in ordered:
+        chosen.setdefault(c.format, c)
+    return sorted(chosen.values(), key=ordered.index)[:top_n]
 
 
 def pick_diverse(candidates: list[Candidate], k: int = IDEA_COUNT) -> list[Candidate]:

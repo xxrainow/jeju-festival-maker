@@ -183,9 +183,14 @@ def test_region_bonus_and_related_places(trend_data):
         "오름", "자연", None, strength=0.8, places=(("성산 오름", "서귀포시 성산읍", 40.0),)
     )
     mats = (sea, oreum)
-    plain = build_candidates(UserRequest(), trend_data, mats)
     local = build_candidates(UserRequest(region="제주시 애월읍"), trend_data, mats)
-    score = {(c.format, c.material): c.score for c in plain.candidates}
+    # 형식별 1개라 재료마다 따로 만든 점수와 비교한다 (가산점으로 형식의 대표 재료가 바뀐다)
+    score = {
+        (c.format, c.material): c.score
+        for m in mats
+        for c in build_candidates(UserRequest(), trend_data, (m,)).candidates
+    }
+    assert any(c.material == "해변" for c in local.candidates)
     for c in local.candidates:
         base = score[(c.format, c.material)]
         if c.material == "해변":
