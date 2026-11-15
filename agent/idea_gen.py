@@ -67,6 +67,42 @@ PURPOSE_BOOST: dict[str, tuple[str, ...]] = {
     "지역 상권 활성화": ("시장·상권", "푸드·디저트", "도심·거리·골목"),
 }
 PURPOSE_BONUS = 0.1
+
+# 목적은 자유 글자다 (화면 입력, 한 문장 입력). 점수·KPI용으로만 키워드로 세 묶음에 넣는다
+PURPOSE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "지역 상권 활성화": (
+        "상권",
+        "가게",
+        "매출",
+        "시장",
+        "골목",
+        "상인",
+        "상점",
+        "소상공인",
+        "장사",
+    ),
+    "관광객 유치": ("관광", "외지인", "방문객", "여행객"),
+    "주민 참여": ("주민", "화합", "마을 사람", "마을사람", "공동체", "이웃"),
+}
+
+
+def purpose_category(purpose: str | None) -> str | None:
+    """자유 글자 목적 → "지역 상권 활성화" / "관광객 유치" / "주민 참여" / None.
+
+    여러 묶음의 말이 함께 있으면 문장에서 먼저 나온 말의 묶음을 고른다. 못 묶으면 None
+    (가산점 없음, 기본 KPI).
+    """
+    if not purpose or not purpose.strip():
+        return None
+    first: tuple[int, str] | None = None
+    for category, words in PURPOSE_KEYWORDS.items():
+        for w in words:
+            i = purpose.find(w)
+            if i >= 0 and (first is None or i < first[0]):
+                first = (i, category)
+    return first[1] if first else None
+
+
 # 희망 지역 안에 재료 관련 와이파이 장소가 있으면 더하는 점수 (기획서 9-1 "재료·장소를 그 지역으로 좁힘").
 # 가중치 재조정 전 임시값. 지역 밖 재료를 빼지는 않는다 (장소 연결이 없는 재료도 축제는 열 수 있어서)
 REGION_BONUS = 0.1
@@ -253,7 +289,7 @@ def build_candidates(
     if notice:
         notices.append(notice)
     fixed = request.interest is not None and notice is None
-    boosted = PURPOSE_BOOST.get(request.purpose or "", ())
+    boosted = PURPOSE_BOOST.get(purpose_category(request.purpose) or "", ())
 
     max_lift = max(s.new_lift for s in data.formats.values()) or 1
     max_new = max(s.new_count for s in data.formats.values()) or 1
@@ -470,7 +506,7 @@ def build_card(
     examples = [] if limit is None else [
         BudgetExample(name=n, budget_krw=b) for n, b in stats.budgets_krw if b <= limit
     ][:3]  # fmt: skip
-    if request.purpose and request.purpose in PURPOSE_BOOST:
+    if purpose_category(request.purpose) in PURPOSE_BOOST:
         match = "일치" if candidate.purpose_boosted else "부분 일치"
     else:
         match = None

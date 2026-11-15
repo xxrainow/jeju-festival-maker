@@ -150,7 +150,9 @@ def last_checks(run: VerificationRun) -> list[CheckResult]:
 
 def build_kpis(request: UserRequest, card: IdeaCard) -> list[PlanKPI]:
     basis = [f.name for f in card.existing_jeju_festivals]
-    rows = KPI_BY_PURPOSE.get(request.purpose or "", DEFAULT_KPI)
+    from agent.idea_gen import purpose_category
+
+    rows = KPI_BY_PURPOSE.get(purpose_category(request.purpose) or "", DEFAULT_KPI)
     return [
         PlanKPI(
             metric=metric,

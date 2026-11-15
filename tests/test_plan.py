@@ -157,3 +157,15 @@ def test_markdown_and_save(tmp_path):
         FestivalPlan.model_validate_json(json_path.read_text(encoding="utf-8")).plan_id
         == plan.plan_id
     )
+
+
+def test_free_text_purpose_picks_kpi():
+    from agent.plan import build_kpis
+
+    card = RUN.final
+    req = DEMO_REQUEST.model_copy(update={"purpose": "관광객 좀 끌고 싶어요"})
+    assert [k.metric for k in build_kpis(req, card)] == ["외지인 방문 증가율"]
+    req2 = DEMO_REQUEST.model_copy(update={"purpose": "가게 매출 올리기"})
+    assert [k.metric for k in build_kpis(req2, card)] == ["외지인 방문 증가율", "카드 매출 증가율"]
+    req3 = DEMO_REQUEST.model_copy(update={"purpose": "마을 홍보"})
+    assert [k.metric for k in build_kpis(req3, card)] == ["외지인 방문 증가율"]  # 기본 KPI
