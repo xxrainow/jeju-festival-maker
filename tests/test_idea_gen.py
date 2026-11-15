@@ -2,6 +2,7 @@ import pytest
 
 from agent.draft_contracts import UserRequest
 from agent.idea_gen import (
+    FORMATS,
     INTEREST_NOTICE,
     PAIRING,
     SEED_MATERIALS,
@@ -63,9 +64,22 @@ def test_candidates_sorted_and_capped(trend_data):
     cset = build_candidates(UserRequest(), trend_data)
     scores = [c.score for c in cset.candidates]
     assert scores == sorted(scores, reverse=True)
-    assert len(cset.candidates) == 10
+    formats = [c.format for c in cset.candidates]
+    assert len(formats) == len(set(formats)) >= 3  # 형식별 1개라 LLM이 형식을 겹치게 고를 수 없다
     assert max(sum(c.material == m for c in cset.candidates) for m in ("갈치", "방어")) <= 3
     assert [c.candidate_id for c in cset.candidates][:2] == ["cand_01", "cand_02"]
+
+
+def test_best_per_format_keeps_top_score_of_each_format(trend_data):
+    from agent.idea_gen import _best_per_format
+
+    full = build_candidates(UserRequest(), trend_data, top_n=100)
+    assert len({c.format for c in full.candidates}) == len(full.candidates)
+    # 재료 상한(3)에 걸려도 그 형식에 다른 재료가 없으면 형식을 빼지 않는다
+    one = [c for c in full.candidates[:1]]
+    same = [c.model_copy(update={"format": f}) for c, f in zip(one * 5, FORMATS[:5], strict=False)]
+    picked = _best_per_format(same, top_n=10, cap=3)
+    assert [c.format for c in picked] == list(FORMATS[:5])
 
 
 def test_pick_diverse_prefers_new_format_and_material(trend_data):

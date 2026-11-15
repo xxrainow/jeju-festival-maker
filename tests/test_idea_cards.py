@@ -89,9 +89,12 @@ def test_parse_picks_rejects_bad_ids(trend_data, mutate, message):
 
 
 def test_parse_picks_rejects_same_format(trend_data):
+    """후보 목록은 형식별 1개지만, LLM이 목록 밖 규칙을 어겨도 막는지 확인한다."""
     cset = build_candidates(UserRequest(), trend_data)
     first = cset.candidates[0]
-    same = [c.candidate_id for c in cset.candidates if c.format == first.format][:2]
+    twin = first.model_copy(update={"candidate_id": "cand_99", "material": "갈치"})
+    cset.candidates.append(twin)
+    same = [first.candidate_id, twin.candidate_id]
     other = next(c.candidate_id for c in cset.candidates if c.format != first.format)
     with pytest.raises(CardResponseError, match="형식"):
         parse_picks(picks_for(cset, [*same, other]), cset)
