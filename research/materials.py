@@ -45,6 +45,7 @@ FESTIVAL_DATES_PATH = (
 
 INTEREST_PERIOD = ("202301", "202412")
 NEUTRAL_INTEREST = 0.5
+FESTIVAL_MONTH_BASIS = "기존 제주 축제 개최 월 (공식 제철 근거 없음, 대용)"
 MAX_PLACE_DETAILS = 40  # 재료마다 저장하는 관련 장소 수 (사용량 큰 순)
 INTEREST_SOURCE = "와이파이 장소별 방문자별 사용량 2023-01~2024-12"
 FESTIVAL_SOURCE = "제주 축제 (문체부 지역축제 2024-2026, 전국문화축제표준데이터)"
@@ -150,7 +151,9 @@ def _months(row, months: list[int]) -> tuple[tuple[int, ...] | None, str]:
     if row["manual_months"]:
         return row["manual_months"], row["manual_months_basis"] or "수동 입력"
     if row["seasonal"] and months:
-        return tuple(sorted(set(months))), "기존 제주 축제 개최 월"
+        # 공식 제철 자료가 없으면 기존 축제 개최 월을 제철 대용으로 쓴다 (꽃 축제는 개화기, 수산물·농산물
+        # 축제는 어획·수확기에 연다는 가정). 근거 칸에 대용이라고 드러낸다 (설계 기획서 6절)
+        return tuple(sorted(set(months))), FESTIVAL_MONTH_BASIS
     return None, "연중 (계절 제약 없음)"
 
 
