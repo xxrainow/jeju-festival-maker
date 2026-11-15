@@ -115,7 +115,9 @@ def _day_of_year(d) -> int | None:
 
 
 def festival_dates(plan: pd.DataFrame | None, standard: pd.DataFrame | None) -> pd.DataFrame:
-    """제주 축제 날짜표: name, start, end, months, source, dates_known.
+    """제주 축제 날짜표: name, start, end, months, source, dates_known, admin_area.
+
+    admin_area(행정동·읍면)는 계획의 admin_area 칸, 표준데이터는 미리 붙인 admin_area 칸(좌표 판정)을 쓴다.
 
     같은 축제(정규명)는 날짜가 있는 쪽, 그다음 문체부 2026 계획을 남긴다.
     날짜가 미정이면 시작 월만 있는 행으로 남긴다 (dates_known=False).
@@ -131,6 +133,7 @@ def festival_dates(plan: pd.DataFrame | None, standard: pd.DataFrame | None) -> 
                 "end": plan["end_date"],
                 "start_month": pd.to_numeric(plan["start_month"], errors="coerce"),
                 "source": "문체부 2026 계획",
+                "admin_area": plan.get("admin_area"),
                 "priority": 0,
             }
         )
@@ -145,12 +148,15 @@ def festival_dates(plan: pd.DataFrame | None, standard: pd.DataFrame | None) -> 
                     "end": s["축제종료일자"],
                     "start_month": pd.to_datetime(s["축제시작일자"], errors="coerce").dt.month,
                     "source": "전국문화축제표준데이터",
+                    "admin_area": s.get("admin_area"),
                     "priority": 1,
                 }
             )
         )
     if not frames:
-        return pd.DataFrame(columns=["name", "start", "end", "months", "source", "dates_known"])
+        return pd.DataFrame(
+            columns=["name", "start", "end", "months", "source", "dates_known", "admin_area"]
+        )
     # 날짜는 합친 뒤에 바꾼다 (날짜가 모두 빈 표를 날짜형으로 합치면 pandas 경고가 난다)
     df = pd.concat([f.astype({"start": object, "end": object}) for f in frames], ignore_index=True)
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
@@ -159,6 +165,10 @@ def festival_dates(plan: pd.DataFrame | None, standard: pd.DataFrame | None) -> 
     df["end"] = df["end"].fillna(df["start"])
     df["dates_known"] = df["start"].notna()
     df["_k"] = df["name"].map(norm_name)
+    # 남기는 행에 동네가 없으면 같은 축제의 다른 출처 행에서 가져온다
+    df["admin_area"] = df.groupby("_k")["admin_area"].transform(
+        lambda a: a.dropna().iloc[0] if a.notna().any() else None
+    )
     df = df.sort_values(["dates_known", "priority"], ascending=[False, True])
     df = df.drop_duplicates("_k").drop(columns=["_k", "priority"])
 
@@ -170,7 +180,8 @@ def festival_dates(plan: pd.DataFrame | None, standard: pd.DataFrame | None) -> 
 
     df["months"] = [months(r) for r in df.itertuples()]
     df = df[df["months"] != ""]
-    return df[["name", "start", "end", "months", "source", "dates_known"]].reset_index(drop=True)
+    cols = ["name", "start", "end", "months", "source", "dates_known", "admin_area"]
+    return df[cols].reset_index(drop=True)
 
 
 def _festival_overlaps_week(fest, week: int) -> bool:
@@ -409,6 +420,7 @@ def check_timing(
             ),
             "bad_weather_months": [c.month for c in checks if not c.good_weeks],
             "recommended_weeks": [week_text(w) for c in checks for w in c.recommended_weeks],
+            "recommended_week_numbers": [w for c in checks for w in c.recommended_weeks],
             "overlapping_festivals": [f | {"month": c.month} for c in checks for f in c.festivals],
             "month_checks": [
                 {
@@ -499,7 +511,9 @@ def build(flow_path: Path | None = None) -> None:
     from analytics.report_area_link import table
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
-    usage = pd.read_parquet(oi.WIFI_USAGE_AGG_PATH)
+    from analytics.reference_data import load_wifi_usage_agg
+
+    usage = load_wifi_usage_agg()
     usage = usage[usage["visit_type"].notna()]
     wifi = oi.wifi_outsider_index(usage, oi.wifi_place_areas(usage["wifi_place_name"]))
     flow = None
@@ -518,6 +532,13 @@ def build(flow_path: Path | None = None) -> None:
 
     plan = _read(FESTIVAL_PLAN_JEJU_PATH)
     standard = load_festivals()
+    from analytics.boundary import load_jeju_boundaries
+
+    boundaries = load_jeju_boundaries()
+    standard["admin_area"] = [
+        boundaries.locate(lat, lon)
+        for lat, lon in zip(standard["위도"], standard["경도"], strict=True)
+    ]
     fests = festival_dates(plan, standard)
     fests.to_csv(FESTIVAL_DATES_PATH, index=False, encoding="utf-8-sig")
 

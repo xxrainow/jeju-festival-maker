@@ -19,7 +19,6 @@ import pandas as pd
 from analytics.periods import COMPARISON_PERIOD, AnalysisPeriod
 
 OUTPUT_PATH = Path("data/processed/outsider_index.csv")
-WIFI_USAGE_AGG_PATH = Path("data/processed/wifi_usage_by_place_month_type.parquet")
 TOURISM_VISIT_TYPE = "관광"
 OUTSIDER_RESIDENCE = "그외"
 MIN_FLOW_MONTHS = 12
@@ -42,23 +41,17 @@ def _index_table(monthly: pd.DataFrame, source: str, is_synthetic: bool) -> pd.D
     return out[COLUMNS].sort_values(["admin_area", "month"]).reset_index(drop=True)
 
 
-def wifi_place_areas(place_names: pd.Series) -> pd.DataFrame:
-    """와이파이 장소 → 행정동·읍면. 후보지 비교표와 같은 연결(AP 좌표 판정, 길·애매함 제외)."""
-    from analytics.area_link import (
-        link_wifi_places,
-        load_bus_stations,
-        load_wifi_ap,
-        mark_exclusions,
-    )
-    from analytics.boundary import load_jeju_boundaries
-    from analytics.candidate_compare import ADMIN, placement
+def wifi_place_areas(place_names: pd.Series | None = None) -> pd.DataFrame:
+    """와이파이 장소 → 행정동·읍면. 후보지 비교표와 같은 연결(AP 좌표 판정, 길·애매함 제외).
 
-    totals = pd.DataFrame({"wifi_place_name": place_names.unique(), "users": 0})
-    linked = mark_exclusions(
-        link_wifi_places(totals, load_wifi_ap(), load_bus_stations(), load_jeju_boundaries())
-    )
-    placed = linked[placement(linked) == ADMIN]
-    return placed[["wifi_place_name", "area"]].rename(columns={"area": "admin_area"})
+    analytics/reference/area_link_wifi.csv를 먼저 읽는다 (analytics.reference_data).
+    """
+    from analytics.reference_data import admin_places
+
+    placed = admin_places()
+    if place_names is not None:
+        placed = placed[placed["wifi_place_name"].isin(place_names)]
+    return placed[["wifi_place_name", "admin_area"]]
 
 
 def wifi_outsider_index(
