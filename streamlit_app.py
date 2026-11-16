@@ -41,6 +41,73 @@ def footer() -> None:
         ui.caption(f"- {s}")
 
 
+def show_promo_section(plan) -> None:
+    """⑥ 최종 승인 → 홍보물(포스터 + SNS 글). 승인 전에는 홍보물 버튼을 막는다."""
+    from agent.plan import PlanNotApprovedError, approve_plan, require_approved, save_plan
+    from app import promo
+
+    st.header("5. 홍보물")
+    approved = plan.status == "approved"
+    if not approved:
+        ui.info("기획서를 최종 승인하면 홍보물을 만들 수 있어요.")
+        if st.button("기획서 최종 승인"):
+            plan = approve_plan(plan)
+            md_path, _ = save_plan(plan)  # 같은 파일 이름으로 승인본을 덮어쓴다
+            ss["plan"] = plan.model_dump(mode="json")
+            ss["plan_path"] = str(md_path)
+            ss.pop("promo", None)
+            st.rerun()
+    else:
+        ui.success("기획서를 최종 승인했어요.")
+    if st.button("홍보물 만들기", disabled=not approved):
+        try:
+            require_approved(plan)
+            with st.spinner("포스터와 SNS 글을 만드는 중이에요…"):
+                from agent.proposals import default_llm
+
+                result = promo.make_promo(
+                    plan,
+                    api_key=settings.llm_api_key.get_secret_value() or None,
+                    image_model=settings.image_model or None,
+                    llm=default_llm(),
+                )
+        except PlanNotApprovedError as e:
+            ui.warning(str(e))
+        except Exception as e:  # noqa: BLE001
+            ui.error(str(e))
+        else:
+            ss["promo"] = result.model_dump(mode="json")
+    if "promo" not in ss:
+        return
+    result = promo.PromoResult.model_validate(ss["promo"])
+    if result.is_synthetic:
+        ui.warning("🧪 가상 데이터가 섞인 기획서로 만든 홍보물이에요.")
+    left, right = st.columns([2, 3])
+    with left:
+        st.image(result.poster_path, caption="포스터 미리보기 (1200×1600)")
+        with open(result.poster_path, "rb") as f:
+            st.download_button(
+                "포스터 내려받기", f.read(), file_name="poster.png", mime="image/png"
+            )
+        if result.image_cropped:
+            ui.caption("받은 그림이 세로 3:4가 아니어서 1200×1600에 맞춰 잘라 썼어요.")
+    with right:
+        if result.image_notice:
+            ui.warning(result.image_notice)
+            ui.caption("그림 설명 (그대로 복사해 쓰세요)")
+            st.code(result.image_prompt, language=None)
+            ui.caption("포스터 문구")
+            st.code("\n".join(result.poster_text.values()), language=None)
+        ui.markdown("**SNS 글 (인스타그램)**")
+        if result.sns_text:
+            st.code(result.sns_text + "\n\n" + " ".join(result.hashtags), language=None)
+        if result.sns_notice:
+            ui.warning(result.sns_notice)
+        ui.markdown("**정보 일치 검사** (기획서와 같은지)")
+        for c in result.checks:
+            ui.write(f"{'✅' if c.ok else '⚠️'} {c.item}: {c.detail}")
+
+
 def stop() -> None:
     """출처 문구를 남기고 여기서 멈춘다."""
     footer()
@@ -56,6 +123,7 @@ def reset_after(step: str) -> None:
         "run",
         "manual_run",
         "approved",
+        "promo",
         "plan",
         "plan_path",
     ]
@@ -369,7 +437,7 @@ chosen_name = st.radio("어느 안으로 진행할까요?", list(options), horiz
 chosen = options[chosen_name]
 if ss.get("approved") and ss["approved"] != chosen_name:
     # 진행할 안을 바꾸면 예전 안으로 만든 기획서를 지운다 (다시 확인할 때는 reset_after("manual_run")이 지움)
-    for key in ("approved", "plan", "plan_path"):
+    for key in ("approved", "plan", "plan_path", "promo"):
         ss.pop(key, None)
 ready = chosen.outcome == "ready_for_approval"
 if not ready:
@@ -383,6 +451,7 @@ if not ready:
         )
 if st.button("이대로 진행", disabled=not ready):
     ss.pop("plan", None)
+    ss.pop("promo", None)  # 기획서를 다시 만들면 홍보물도 지운다
     ss["approved"] = chosen_name
 if ss.get("approved") and ss["approved"] in options:
     approved_run = options[ss["approved"]]
@@ -412,6 +481,7 @@ if ss.get("approved") and ss["approved"] in options:
             ui.markdown(plan_to_markdown(plan))
             ui.caption(f"저장: {ss.get('plan_path', '')}")
             if plan.is_synthetic:
-                ui.warning("가짜·합성 데이터 결과가 섞여 있어요.")
+                ui.warning("🧪 가상 데이터가 섞인 확인 결과로 만든 기획서예요.")
+            show_promo_section(plan)
 
 footer()

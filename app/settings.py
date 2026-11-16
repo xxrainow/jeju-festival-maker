@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     llm_provider: str = ""
     llm_model: str = ""
     llm_api_key: SecretStr = SecretStr("")
+    image_model: str = ""  # 포스터 배경 그림 모델 (비우면 app.promo.DEFAULT_IMAGE_MODEL)
 
     jeju_hub_key: SecretStr = SecretStr("")
 

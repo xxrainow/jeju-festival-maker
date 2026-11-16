@@ -513,3 +513,36 @@ def test_interest_sentence_follows_basis():
     assert screen.evidence_lines(card2, jeju_avg=47.2)[2][1].startswith(
         "감귤 관련 제주 장소의 와이파이 사용량"
     )
+
+
+def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
+    import agent.plan
+    import agent.proposals
+    from app import promo
+
+    monkeypatch.setattr(agent.proposals, "default_llm", lambda: FakePlanLLM())
+    monkeypatch.setattr(
+        agent.plan, "save_plan", lambda plan: (tmp_path / "p.md", tmp_path / "p.json")
+    )
+    monkeypatch.setattr(promo, "OUTPUT_DIR", tmp_path / "promo")
+    at = to_results()
+    next(b for b in at.button if b.label == "이대로 진행").click().run()
+    make = next(b for b in at.button if b.label == "홍보물 만들기")
+    assert make.disabled  # 승인 전에는 막힘
+    next(b for b in at.button if b.label == "기획서 최종 승인").click().run()
+    from agent.draft_contracts import FestivalPlan
+
+    assert FestivalPlan.model_validate(at.session_state["plan"]).status == "approved"
+    make = next(b for b in at.button if b.label == "홍보물 만들기")
+    assert not make.disabled
+    make.click().run()
+    assert not at.exception
+    result = promo.PromoResult.model_validate(at.session_state["promo"])
+    assert Path(result.poster_path).exists() and not result.used_ai_image
+    assert any("기본 포스터" in w for w in labels(at, "warning"))  # 키 없음 안내
+    assert any(c.value == "\n".join(result.poster_text.values()) for c in at.code)  # 포스터 문구
+    # 안을 바꾸면 홍보물도 지워진다
+    next(r for r in at.radio if r.label.startswith("어느 안")).set_value("에이전트 추천안").run()
+    assert "promo" in at.session_state  # 같은 안이면 그대로
+    at = recheck(at, [11, 12])
+    assert "promo" not in at.session_state and "plan" not in at.session_state
