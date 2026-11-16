@@ -49,6 +49,8 @@ for card in proposal.ideas:                         # 정확히 3장, rank 순�
     st.write(card.reference.type, [f.name for f in card.reference.designated_festivals])
     st.write("추천 시기:", card.timing.recommended_months)
     st.write("검증할 가설:", card.hypotheses)
+    if card.related_places:                         # 희망 지역 안 관련 장소 (지역을 입력했을 때만)
+        st.write("지역 안 관련 장소:", [p.name for p in card.related_places])
 ```
 
 - `rank`, `score`는 화면에 보여주지 않는다 (순서에만 쓴다)
@@ -98,6 +100,22 @@ else:
 - LLM 문장에 입력에 없는 숫자가 나오면 거절하고 다시 요청한다 (월 표기는 허용)
 - 정해지지 않은 날짜·장소·주최·항목별 예산은 "미확인", KPI 기준값·목표치는 "데이터 대기"
 - 처음 만든 기획안은 `status="draft"`. 사용자가 최종 승인하면 `approved`로 바꾸고, 그 뒤에만 홍보물을 만든다
+
+```python
+from agent.plan import PlanNotApprovedError, approve_plan, require_approved
+
+if st.button("최종 승인"):
+    plan = approve_plan(plan)          # status="approved", approved_at 기록 (원본은 그대로)
+    save_plan(plan)                    # 같은 파일 이름으로 승인본을 덮어쓴다
+
+# 홍보물 만들기 전 (B)
+try:
+    require_approved(plan)
+except PlanNotApprovedError as e:
+    st.warning(str(e))                 # "기획안을 최종 승인한 뒤에 홍보물을 만들 수 있어요."
+```
+
+- 홍보물에 쓸 칸: `plan.overview`(축제명·기간·지역·대상·예산·목적·주최), `plan.programs`, `plan.sections`(컨셉 `concept`, 홍보 계획 `promotion`), `plan.idea`(형식·재료). 숫자는 기획안 값만 쓰면 정보 일치 검사가 쉬워진다
 
 ## 4. 오류
 

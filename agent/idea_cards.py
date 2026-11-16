@@ -24,7 +24,7 @@ MAX_HYPOTHESES = 3
 
 SYSTEM_PROMPT = f"""\
 당신은 제주 지역 축제 기획을 돕는 도우미입니다.
-<candidates>의 축제 후보(형식 × 제주 재료) 중 실제 1일 소규모 축제로 말이 되는 {IDEA_COUNT}개를 고르고,
+<candidates>의 축제 후보(형식 × 제주 재료) 중 실제 1~2일 소규모 축제로 말이 되는 {IDEA_COUNT}개를 고르고,
 각 후보의 이름, 한 줄 컨셉, 고른 이유, 검증할 가설을 씁니다.
 
 규칙:
@@ -94,6 +94,9 @@ def build_user_prompt(request: UserRequest, cset: CandidateSet, data: TrendData)
                 f"{name}({month}월)" if month else name for name, month in c.existing_festivals
             ],
             "전국 지정 축제 사례": [name for name, _ in stats.designated[:3]],
+            "희망 지역 안 관련 장소": [name for name, _ in c.region_places],
+            "희망 지역에서 같은 재료 축제가 열림": c.region_festival,
+            "관광 비중 기준": c.interest_metric,
             "트렌드 해석": stats.interpretation[0],
             "전략": stats.interpretation[1],
         })  # fmt: skip

@@ -109,6 +109,10 @@ def plain_source(src: str | None) -> str:
 _UNSET = object()
 
 
+# 카드 visitor_interest.metric에 이 말이 있으면 "축제 동네" 기준 (agent.idea_gen.INTEREST_METRICS)
+FESTIVAL_AREA_MARK = "축제가 열리는 동네"
+
+
 def jeju_tourist_share() -> float | None:
     """제주 전체 장소의 관광 목적 와이파이 사용량 비중(%) = A의 소재 사전 base_tourist_share_pct.
 
@@ -162,19 +166,31 @@ def evidence_lines(card: IdeaCard, jeju_avg=_UNSET) -> list[tuple[str, str, str]
     else:
         # 와이파이는 사람 수가 아니라 데이터 사용량이다. 제주 전체 평균 관광 비중과 비교한다
         avg = jeju_tourist_share() if jeju_avg is _UNSET else jeju_avg
-        body = (
-            f"{card.material} 관련 제주 장소의 와이파이 사용량 중 관광 목적이 {vi.value:.0f}%예요"
-        )
-        if avg is None:
-            interest = ("관광객 관심", body + ".")
+        # 기준이 둘이다 (A의 소재 사전 interest_basis, 카드에는 visitor_interest.metric으로 온다)
+        # - 장소 이름: 재료 이름이 든 와이파이 장소 (예: 한담해변 → 해변)
+        # - 축제 동네: 그런 장소가 없어 같은 재료 기존 축제가 열리는 동네 전체로 대신 잰 값 (예: 방어 → 대정읍)
+        by_festival_area = FESTIVAL_AREA_MARK in (vi.metric or "")
+        if by_festival_area:
+            subject = f"{card.material} 축제가 열리는 동네"
+            body = f"{subject}의 와이파이 사용량 중 관광 목적이 {vi.value:.0f}%예요"
+            note = f" {card.material} 자체가 아니라 동네 전체 기준이에요."
         else:
-            title = (
-                f"관광객이 많이 찾는 {josa(card.material, '이에요', '예요')}"
-                if vi.value >= avg
+            subject = f"{card.material} 관련 장소"
+            body = f"{card.material} 관련 제주 장소의 와이파이 사용량 중 관광 목적이 {vi.value:.0f}%예요"
+            note = ""
+        if avg is None:
+            interest = ("관광객 관심", body + "." + note)
+        else:
+            if vi.value >= avg:
+                title = (
+                    f"{subject}는 관광객이 많이 찾아요"
+                    if by_festival_area
+                    else f"관광객이 많이 찾는 {josa(card.material, '이에요', '예요')}"
+                )
+            else:
                 # 관광 외 사용량에는 거주뿐 아니라 업무·기타도 섞여 있어 "주민"이라고 하지 않는다
-                else f"{card.material} 관련 장소는 관광보다 생활·업무 이용이 많아요"
-            )
-            interest = (title, body + f" (제주 평균 {avg:.0f}%).")
+                title = f"{subject}는 관광보다 생활·업무 이용이 많아요"
+            interest = (title, body + f" (제주 평균 {avg:.0f}%)." + note)
     return [
         (*trend, plain_source(t.source)),
         (*gap, plain_source(g.source)),

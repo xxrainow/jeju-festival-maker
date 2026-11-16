@@ -227,9 +227,8 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert not table.astype(str).apply(lambda col: col.str.contains("\\", regex=False)).any().any()
 
     next(b for b in at.button if b.label == "이대로 진행").click().run()
-    assert any(
-        "AI 설정이 없어요" in w for w in labels(at, "warning")
-    )  # 기획서는 AI가 있어야 만든다
+    # agent/plan.py가 합쳐진 뒤로는 기획서 생성을 부르고, AI 설정이 없으면 안내 문장을 보여준다
+    assert any("AI 설정이 없어요" in w for w in labels(at, "warning"))
     assert not at.exception
 
 
@@ -487,3 +486,30 @@ def test_check_history_is_plain_words(no_llm):
     assert texts and texts[0].startswith("**처음 확인**: 시기 ❌ 실패")
     for t in texts:
         assert not re.search(r"[A-Za-z_]{3,}", t), t  # 영어·필드 이름 없음
+
+
+def test_interest_sentence_follows_basis():
+    """관광 비중 기준이 '축제 동네'면 재료가 아니라 동네 기준이라고 쓴다 (예: 방어 → 대정읍)."""
+    ev = CARD.evidence
+    fest = ev.visitor_interest.model_copy(update={
+        "value": 46.4, "status": "ready",
+        "metric": "같은 재료 기존 축제가 열리는 동네의 관광 목적 사용량 비중(%)",
+    })  # fmt: skip
+    card = CARD.model_copy(update={"material": "방어",
+                                   "evidence": ev.model_copy(update={"visitor_interest": fest})})  # fmt: skip
+    title, body, _ = screen.evidence_lines(card, jeju_avg=47.2)[2]
+    assert title == "방어 축제가 열리는 동네는 관광보다 생활·업무 이용이 많아요"
+    assert body == (
+        "방어 축제가 열리는 동네의 와이파이 사용량 중 관광 목적이 46%예요 (제주 평균 47%)."
+        " 방어 자체가 아니라 동네 전체 기준이에요."
+    )
+    assert "관련 제주 장소" not in body
+    high_title, _, _ = screen.evidence_lines(card, jeju_avg=40.0)[2]
+    assert high_title == "방어 축제가 열리는 동네는 관광객이 많이 찾아요"
+    place = ev.visitor_interest.model_copy(update={
+        "value": 62.0, "status": "ready", "metric": "관련 장소 관광 목적 사용량 비중(%)",
+    })  # fmt: skip
+    card2 = CARD.model_copy(update={"evidence": ev.model_copy(update={"visitor_interest": place})})
+    assert screen.evidence_lines(card2, jeju_avg=47.2)[2][1].startswith(
+        "감귤 관련 제주 장소의 와이파이 사용량"
+    )

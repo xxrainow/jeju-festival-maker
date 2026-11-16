@@ -1,11 +1,15 @@
+import pytest
+
 from agent.draft_contracts import UserRequest
 from agent.idea_gen import (
+    FORMATS,
     INTEREST_NOTICE,
     PAIRING,
     SEED_MATERIALS,
     build_candidates,
     build_card,
     pick_diverse,
+    purpose_category,
     resolve_interest,
 )
 
@@ -60,9 +64,22 @@ def test_candidates_sorted_and_capped(trend_data):
     cset = build_candidates(UserRequest(), trend_data)
     scores = [c.score for c in cset.candidates]
     assert scores == sorted(scores, reverse=True)
-    assert len(cset.candidates) == 10
+    formats = [c.format for c in cset.candidates]
+    assert len(formats) == len(set(formats)) >= 3  # 형식별 1개라 LLM이 형식을 겹치게 고를 수 없다
     assert max(sum(c.material == m for c in cset.candidates) for m in ("갈치", "방어")) <= 3
     assert [c.candidate_id for c in cset.candidates][:2] == ["cand_01", "cand_02"]
+
+
+def test_best_per_format_keeps_top_score_of_each_format(trend_data):
+    from agent.idea_gen import _best_per_format
+
+    full = build_candidates(UserRequest(), trend_data, top_n=100)
+    assert len({c.format for c in full.candidates}) == len(full.candidates)
+    # 재료 상한(3)에 걸려도 그 형식에 다른 재료가 없으면 형식을 빼지 않는다
+    one = [c for c in full.candidates[:1]]
+    same = [c.model_copy(update={"format": f}) for c, f in zip(one * 5, FORMATS[:5], strict=False)]
+    picked = _best_per_format(same, top_n=10, cap=3)
+    assert [c.format for c in picked] == list(FORMATS[:5])
 
 
 def test_pick_diverse_prefers_new_format_and_material(trend_data):
@@ -103,3 +120,33 @@ def test_year_round_candidate_gets_quiet_months(trend_data):
     assert card.timing.recommended_months == [1, 2, 4]  # 제주 축제 0개인 달 중 앞의 3개
     assert card.purpose_match is None
     assert card.budget.scale == "기본" and card.budget.small_examples == []
+
+
+@pytest.mark.parametrize(
+    ("text", "category"),
+    [
+        ("지역 상권 활성화", "지역 상권 활성화"),
+        ("상권 살리는", "지역 상권 활성화"),
+        ("가게 매출 올리기", "지역 상권 활성화"),
+        ("관광객 좀 끌고", "관광객 유치"),
+        ("주민 화합", "주민 참여"),
+        ("관광객 끌어서 상권 살리기", "관광객 유치"),  # 먼저 나온 말
+        ("마을 홍보", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_purpose_category(text, category):
+    assert purpose_category(text) == category
+
+
+def test_free_text_purpose_gets_boost_and_match(trend_data):
+    free = UserRequest(interest="감귤", season="겨울", purpose="상권 살리는")
+    cset = build_candidates(free, trend_data)
+    assert cset.rules.purpose_boosted == ["시장·상권", "푸드·디저트", "도심·거리·골목"]
+    market = next(c for c in cset.candidates if c.format == "시장·상권")
+    assert market.purpose_boosted
+    card = build_card(market, 1, free, trend_data, title="t", concept="c", hypotheses=["h"])
+    assert card.purpose_match == "일치"
+    none = UserRequest(interest="감귤", purpose="마을 홍보")
+    assert build_candidates(none, trend_data).rules.purpose_boosted == []

@@ -150,7 +150,9 @@ def last_checks(run: VerificationRun) -> list[CheckResult]:
 
 def build_kpis(request: UserRequest, card: IdeaCard) -> list[PlanKPI]:
     basis = [f.name for f in card.existing_jeju_festivals]
-    rows = KPI_BY_PURPOSE.get(request.purpose or "", DEFAULT_KPI)
+    from agent.idea_gen import purpose_category
+
+    rows = KPI_BY_PURPOSE.get(purpose_category(request.purpose) or "", DEFAULT_KPI)
     return [
         PlanKPI(
             metric=metric,
@@ -178,7 +180,7 @@ def build_evidence(request: UserRequest, card: IdeaCard) -> list[PlanEvidence]:
                                  value=f"{ev.jeju_gap.jeju_count}개", source=ev.jeju_gap.source))  # fmt: skip
     if ev.visitor_interest.status == "ready" and ev.visitor_interest.value is not None:
         rows.append(PlanEvidence(
-            label=f"{card.material} 관련 장소 관광 목적 사용량 비중 (사람 수 아님)",
+            label=f"{card.material}: {ev.visitor_interest.metric or '관광 목적 사용량 비중'} (사람 수 아님)",
             value=f"{ev.visitor_interest.value}%", source=ev.visitor_interest.source,
         ))  # fmt: skip
     b = card.budget
@@ -220,6 +222,10 @@ def build_limitations(card: IdeaCard, checks: list[CheckResult]) -> list[str]:
     ]
     if card.evidence.visitor_interest.status == "pending":
         out.append(f"{card.material}은(는) 관련 와이파이 장소가 없어 관광객 관심 지표가 없다")
+    elif "축제가 열리는 동네" in (card.evidence.visitor_interest.metric or ""):
+        out.append(
+            f"{card.material} 관광 비중은 재료 자체가 아니라 같은 재료 기존 축제가 열리는 동네 기준이다"
+        )
     for c in checks:
         for w in c.warnings:
             if w not in out:
@@ -265,6 +271,7 @@ def plan_payload(run: VerificationRun, request: UserRequest) -> dict:
             f"{f.name}({f.month}월)" if f.month else f.name for f in card.existing_jeju_festivals
         ],
         "관광 목적 사용량 비중(%)": ev.visitor_interest.value,
+        "관광 비중 기준": ev.visitor_interest.metric,
         "예산 비교": {
             "같은 형식 예산 중간값": krw_text(card.budget.format_median_krw),
             "규모": card.budget.scale,
@@ -537,6 +544,30 @@ def plan_to_markdown(plan: FestivalPlan) -> str:
     lines += [f"| {e.label} | {e.value} | {e.source} |" for e in plan.evidence]
     lines.append("")
     return "\n".join(lines)
+
+
+# ---------- 최종 승인 (설계 기획서 9-6: 승인된 기획안으로만 홍보물을 만든다) ----------
+
+
+class PlanNotApprovedError(RuntimeError):
+    """승인되지 않은 기획안으로 홍보물을 만들려고 함. 메시지는 화면에 그대로 보여줘도 되는 문장이다."""
+
+
+def approve_plan(plan: FestivalPlan, *, now: datetime | None = None) -> FestivalPlan:
+    """사용자가 기획안을 최종 승인했을 때 부른다. 승인 상태의 새 기획안을 돌려준다 (원본은 그대로).
+
+    이미 승인된 기획안이면 그대로 돌려준다. 내용을 고친 수정본은 generate_plan(version=2…)으로 새로 만든 뒤 승인한다.
+    """
+    if plan.status == "approved":
+        return plan
+    return plan.model_copy(update={"status": "approved", "approved_at": now or datetime.now(UTC)})
+
+
+def require_approved(plan: FestivalPlan) -> FestivalPlan:
+    """홍보물 생성 전에 부른다. 승인되지 않았으면 PlanNotApprovedError."""
+    if plan.status != "approved":
+        raise PlanNotApprovedError("기획안을 최종 승인한 뒤에 홍보물을 만들 수 있어요.")
+    return plan
 
 
 def save_plan(plan: FestivalPlan, out_dir: Path = OUTPUT_DIR) -> tuple[Path, Path]:
