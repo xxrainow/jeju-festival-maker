@@ -714,3 +714,52 @@ def venue_choices(run) -> list[dict]:
         {"name": c["name"], "admin_area": c["admin_area"]}
         for c in (venue.evidence or {}).get("candidate_places") or []
     ]
+
+
+# ---------- 단계별 화면, 예시 카드 이유 ----------
+
+STEPS = ["조건 입력", "아이디어", "데이터로 확인", "기획서", "홍보물"]
+CIRCLED = "①②③④⑤"
+NO_KEY_REASON = "AI 키가 설정되지 않았어요."
+QUOTA_REASON = "오늘 AI 사용 한도를 넘었어요. 잠시 뒤 다시 해보세요."
+CALL_FAIL_REASON = "AI 호출이 실패했어요."
+CHOSEN_DEMO_REASON = "예시 카드 보기를 골랐어요."
+
+
+def progress_text(step: int) -> str:
+    """맨 위 진행 표시. 지금 단계만 굵게."""
+    parts = []
+    for i, name in enumerate(STEPS, start=1):
+        label = f"{CIRCLED[i - 1]} {name}"
+        parts.append(f"**{label}**" if i == step else label)
+    return " → ".join(parts)
+
+
+def selection_summary(request, card=None) -> str:
+    """지금까지 고른 것 한 줄. 예: "서귀포시 대정읍 · 겨울 · 방어 · 예산 1,000만 원 / 고른 아이디어: …"."""
+    parts = [
+        request.region or "제주 전역",
+        request.season or "계절 미정",
+        request.interest or "소재 미정",
+        f"예산 {won(request.budget_max_krw)}",
+    ]
+    text = " · ".join(parts)
+    return text + (f" / 고른 아이디어: {card.title}" if card is not None else "")
+
+
+def ai_failure_reason(exc) -> str | None:
+    """카드 생성 오류가 AI 연결 문제면 쉬운 이유 문장, 아니면 None (조건 문제 등은 원래 안내를 쓴다).
+
+    오류 원문(HTTP 코드 등)은 화면에 보여주지 않는다.
+    """
+    from agent.llm import LLMError
+
+    msg = str(exc)
+    cause = exc.__cause__
+    if "AI 설정이 없어요" in msg:
+        return NO_KEY_REASON
+    if isinstance(cause, LLMError):
+        return QUOTA_REASON if "(HTTP 429)" in str(cause) else CALL_FAIL_REASON
+    if "AI 응답이 형식에 맞지 않아" in msg:
+        return CALL_FAIL_REASON
+    return None
