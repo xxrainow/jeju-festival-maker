@@ -102,8 +102,48 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
 .fl-tab.done {{ color: #ffffff; }}
 .fl-tab.done::before {{ content: "✓ "; color: var(--fl-accent); }}
 .fl-tab.active {{ background: var(--fl-accent); color: var(--fl-ink); font-weight: 600; }}
-.fl-ai {{ font-size: 12px; background: var(--fl-surface); border: 1px solid var(--fl-line);
-  border-radius: 999px; padding: 6px 12px; }}
+.fl-nav::after {{ content: ""; width: 84px; flex: none; }}
+@media (max-width: 900px) {{ .fl-nav::after {{ display: none; }} }}
+
+/* 접어 두는 설정 패널 */
+[data-testid="stSidebar"] {{ border-right: 1px solid var(--fl-line); }}
+[data-testid="stSidebarUserContent"] {{ padding: 24px 24px 32px; }}
+.fl-settings {{ color: var(--fl-ink); font-family: {_FONT}; }}
+.fl-settings-brand {{ display: flex; align-items: center; gap: 12px; margin: 4px 0 36px; }}
+.fl-settings-brand .fl-blob {{ width: 34px; height: 34px; flex: none; }}
+.fl-settings-brand b {{ display: block; font-size: 16px; letter-spacing: -.03em; }}
+.fl-settings-brand small {{ display: block; font-family: {_PIXEL}; font-size: 8px;
+  letter-spacing: .12em; color: var(--fl-ink-2); margin-top: 3px; }}
+.fl-settings-eyebrow {{ font-family: {_PIXEL}; font-size: 10px; letter-spacing: .18em;
+  color: var(--fl-ink-3); margin-bottom: 8px; }}
+.fl-settings h2 {{ font-size: 28px; font-weight: 700; letter-spacing: -.04em; margin: 0 0 10px;
+  padding: 0; line-height: 1.25; }}
+.fl-settings-intro {{ font-size: 13px; color: var(--fl-ink-2); margin: 0 0 24px; line-height: 1.6; }}
+.fl-settings-card {{ padding: 20px; border: 1px solid var(--fl-line); border-radius: 20px;
+  background: var(--fl-surface); }}
+.fl-settings-label {{ display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--fl-ink-2); margin-bottom: 18px; }}
+.fl-settings-state {{ display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;
+  border-radius: 999px; background: var(--fl-accent-soft); color: #a44816; font-size: 11px; }}
+.fl-settings-state::before {{ content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--fl-accent); }}
+.fl-settings-state.off {{ background: var(--fl-pending-soft); color: var(--fl-pending); }}
+.fl-settings-state.off::before {{ background: var(--fl-pending); }}
+.fl-settings-card h3 {{ font-size: 18px; margin: 0 0 8px; padding: 0; letter-spacing: -.03em; }}
+.fl-settings-card p {{ font-size: 13px; line-height: 1.75; color: var(--fl-ink-2); margin: 0; }}
+.fl-settings-privacy {{ border-top: 1px solid var(--fl-line); margin-top: 18px; padding-top: 14px;
+  font-size: 11px; line-height: 1.7; color: var(--fl-ink-3); }}
+.fl-settings-guide {{ margin-top: 30px; }}
+.fl-settings-guide h3 {{ font-size: 12px; font-weight: 600; color: var(--fl-ink-2);
+  padding: 0; margin: 0 0 14px; }}
+.fl-settings-guide ol {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }}
+.fl-settings-guide li {{ display: flex; align-items: center; gap: 10px; font-size: 13px;
+  color: var(--fl-ink-2); }}
+.fl-settings-guide li span {{ display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: none; background: var(--fl-surface); border: 1px solid var(--fl-line);
+  border-radius: 8px; font-size: 10px; color: var(--fl-ink-3); }}
+.fl-settings-foot {{ margin: 30px 0 0; padding-top: 18px; border-top: 1px solid var(--fl-line);
+  font-size: 11px; line-height: 1.8; color: var(--fl-ink-3); }}
 
 /* 단계 머리글 */
 .fl-head {{ margin: 28px 0 8px; }}
@@ -258,22 +298,256 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .fl-row .txt span {{ font-size: 12px; color: var(--fl-ink-3); }}
 .fl-row.todo .txt b {{ color: var(--fl-ink-3); }}
 .fl-row .eng {{ font-size: 12px; border: 1px solid var(--fl-line); border-radius: 999px; padding: 4px 12px; }}
-.st-key-foot {{ margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--fl-line); }}
+.fl-evidence-legend {{ display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px;
+  margin-top: 28px; font-family: {_FONT}; font-size: 12px; color: var(--fl-ink-2); }}
+.fl-evidence-legend > span {{ display: inline-flex; align-items: center; flex-wrap: wrap;
+  gap: 8px; line-height: 1.7; }}
+.fl-evidence-legend .fl-tag {{ margin: 0; flex-shrink: 0; }}
+.st-key-foot {{ margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--fl-line); }}
+
+/* 아이디어 요약 목록과 오른쪽 상세 패널 */
+.fl-idea-summary {{ display: grid; gap: 18px; padding: 20px 0; margin-top: 12px;
+  border-top: 1px solid var(--fl-line); }}
+.fl-idea-summary-row {{ display: grid; grid-template-columns: 74px 1fr; gap: 10px; }}
+.fl-idea-summary-label {{ font-size: 12px; color: var(--fl-ink-3); padding-top: 3px; }}
+.fl-idea-summary-row b {{ display: block; font-size: 14px; line-height: 1.6;
+  font-weight: 600; margin-top: 4px; word-break: keep-all; }}
+[class*="st-key-card-idea-"] h3 {{ font-size: 22px; line-height: 1.4; }}
+[class*="st-key-detail_"] button {{ width: 100%; background: var(--fl-ink);
+  color: white; border-color: var(--fl-ink); }}
+[class*="st-key-detail_"] button:hover {{ background: #2b2b2b; color: white; border-color: #2b2b2b; }}
+[role="dialog"]:has(.fl-idea-detail) {{ position: fixed; inset: 0 0 0 auto;
+  margin: 0; width: min(640px, 100vw); max-width: 100vw; height: 100dvh;
+  max-height: 100dvh; overflow-y: auto; transform: none; border: 0; border-radius: 28px 0 0 28px;
+  background: var(--fl-surface); box-shadow: -16px 0 64px rgba(18, 18, 18, .14); }}
+[role="dialog"]:has(.fl-idea-detail) [data-testid="stDialogContent"] {{
+  max-height: calc(100dvh - 80px); overflow-y: auto; padding-bottom: 12px; }}
+[role="dialog"]:has(.fl-idea-detail) h3 {{ font-size: 28px; word-break: keep-all; }}
+[class*="st-key-pick_"] button {{ background: var(--fl-accent); color: #fff;
+  border-color: var(--fl-accent); }}
+[class*="st-key-pick_"] button:hover {{ background: #ff7a22; color: #fff;
+  border-color: #ff7a22; }}
+.st-key-idea-detail-actions {{ position: sticky; bottom: -1px; background: var(--fl-surface);
+  border-top: 1px solid var(--fl-line); padding-top: 16px; padding-bottom: 8px; z-index: 2; }}
+[role="dialog"]:has(.fl-idea-detail) {{ padding: 32px 40px; }}
+[role="dialog"]:has(.fl-idea-detail) h2 {{ display: none; }}
+.fl-idea-detail {{ font-family: {_FONT}; color: var(--fl-ink); }}
+.fl-idea-detail h1 {{ font-size: 28px; line-height: 1.35; letter-spacing: -.04em;
+  margin: 26px 0 12px; padding: 0; word-break: keep-all; }}
+.fl-detail-concept {{ font-size: 16px; line-height: 1.7; color: var(--fl-ink-2); margin: 0; }}
+.fl-detail-section {{ margin-top: 28px; }}
+[role="dialog"] .fl-detail-section h3 {{ display: flex; align-items: center; flex-wrap: wrap;
+  gap: 10px; font-size: 17px; line-height: 1.5; margin: 0 0 16px; padding: 0; }}
+.fl-detail-section h3 .fl-tag {{ margin: 0; }}
+.fl-detail-copy {{ font-size: 14px; line-height: 1.85; margin: 0; word-break: keep-all; }}
+.fl-detail-metrics {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
+.fl-detail-metrics > div {{ background: var(--fl-surface-2); border-radius: 18px; padding: 18px 16px; }}
+.fl-detail-metrics strong {{ display: block; font-size: 34px; line-height: 1.25;
+  letter-spacing: -.04em; font-weight: 700; }}
+.fl-detail-metrics small {{ display: block; color: var(--fl-ink-2); font-size: 11px;
+  line-height: 1.5; margin-top: 6px; word-break: keep-all; }}
+.fl-detail-note {{ color: var(--fl-ink-3); font-size: 11px; line-height: 1.6; margin: 10px 0 0; }}
+.fl-detail-row {{ display: flex; align-items: baseline; justify-content: space-between;
+  gap: 20px; font-size: 14px; line-height: 1.7; padding: 8px 0; }}
+.fl-detail-row span {{ color: var(--fl-ink-2); word-break: keep-all; }}
+.fl-detail-row b {{ font-weight: 600; text-align: right; flex-shrink: 0; }}
+.fl-detail-budget {{ display: grid; gap: 16px; margin-bottom: 16px; }}
+.fl-budget-row {{ display: grid; grid-template-columns: 96px minmax(30px, 1fr) 88px;
+  gap: 12px; align-items: center; font-size: 12px; }}
+.fl-budget-row > span {{ color: var(--fl-ink-2); }}
+.fl-budget-row > b {{ font-weight: 500; }}
+.fl-budget-track {{ height: 14px; }}
+.fl-budget-track i {{ display: block; height: 100%; border-radius: 999px; }}
+.fl-budget-track .input {{ background: var(--fl-accent); }}
+.fl-budget-track .median {{ background: var(--fl-line); }}
+.fl-detail-interest {{ display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px;
+  font-size: 13px; line-height: 1.8; color: var(--fl-ink-2); }}
+.fl-detail-disclaimer {{ display: flex; align-items: baseline; gap: 10px; margin-top: 26px;
+  padding: 18px; background: var(--fl-pending-soft); border-radius: 18px;
+  font-size: 12px; color: var(--fl-ink-2); line-height: 1.8; }}
+.fl-detail-disclaimer .fl-tag {{ flex-shrink: 0; }}
+@media (max-width: 480px) {{
+  [role="dialog"]:has(.fl-idea-detail) {{ padding: 24px 20px; }}
+  .fl-detail-metrics {{ gap: 8px; }}
+  .fl-detail-metrics > div {{ padding: 14px 10px; }}
+  .fl-detail-metrics strong {{ font-size: 28px; }}
+  .fl-budget-row {{ grid-template-columns: 76px minmax(20px, 1fr) 70px; gap: 8px; }}
+}}
+@media (max-width: 640px) {{
+  [role="dialog"]:has(.fl-idea-detail) {{ border-radius: 0; }}
+}}
 </style>
 """
 
 
-def nav_html(step: int, has_llm: bool) -> str:
-    """로고 + 단계 캡슐 탭 (보여주기만, 누르는 기능 없음) + AI 설정 상태."""
+def nav_html(step: int) -> str:
+    """로고 + 단계 캡슐 탭 (보여주기만, 누르는 기능 없음)."""
     tabs = []
     for i, name in enumerate(screen.STEPS, start=1):
         cls = "active" if i == step else "done" if i < step else ""
         tabs.append(f'<span class="fl-tab {cls}">{i:02d} {escape(name)}</span>')
-    ai = "● AI 연결됨" if has_llm else "○ AI 설정 없음"
     return (
         '<div class="fl-nav"><div class="fl-logo"><span class="fl-blob"></span>'
         "<div><b>제주 축제랩</b><small>JEJU FESTA MAKER</small></div></div>"
-        f'<div class="fl-steps">{"".join(tabs)}</div><span class="fl-ai">{ai}</span></div>'
+        f'<div class="fl-steps">{"".join(tabs)}</div></div>'
+    )
+
+
+def idea_detail_html(card) -> str:
+    """상세 근거를 숫자 카드, 현황 행, 예산 비교로 구성한다."""
+    def section(title, body, kind=None):
+        badge = tag_html(kind) if kind else ""
+        return (
+            f'<section class="fl-detail-section"><h3>{escape(title)}{badge}</h3>'
+            f"{body}</section>"
+        )
+
+    def row(label, value):
+        return (
+            f'<div class="fl-detail-row"><span>{escape(label)}</span>'
+            f'<b>{escape(value)}</b></div>'
+        )
+
+    trend = card.evidence.trend
+    ready = trend.status != "pending"
+    verdict = trend.verdict if ready else None
+    short_verdict = next(
+        (v for k, v in (("확실한 상승", "상승"), ("관찰 대상", "관찰"),
+                        ("성숙·감소", "감소"), ("정체", "정체"))
+         if verdict and verdict.startswith(k)),
+        "확인 중",
+    )
+    metrics = (
+        (f"{trend.new_count}개" if ready and trend.new_count is not None else "—",
+         "2023년 이후 신설"),
+        (f"{trend.new_lift:.1f}배" if ready and trend.new_lift is not None else "—",
+         "신설 비율"),
+        (short_verdict, f"판정: {verdict}" if verdict else "데이터 대기"),
+    )
+    tiles = '<div class="fl-detail-metrics">' + "".join(
+        f'<div><strong>{escape(value)}</strong><small>{escape(label)}</small></div>'
+        for value, label in metrics
+    ) + "</div>"
+    tiles += '<p class="fl-detail-note">신설 비율은 기존 축제 대비 새 축제의 형식 비율이에요.</p>'
+    gap = card.evidence.jeju_gap
+    jeju = row(
+        f"같은 형식({card.format}) 축제",
+        f"{gap.jeju_count}개" if gap.status != "pending" and gap.jeju_count is not None
+        else "확인 중",
+    )
+    for festival in card.existing_jeju_festivals:
+        jeju += row("비슷한 소재: " + festival.name,
+                    f"{festival.month}월" if festival.month is not None else "개최 월 미확인")
+    months = screen.months_text(card.timing.recommended_months)
+    count = card.timing.jeju_festivals_in_month
+    jeju += row(f"{months}에 열리는 제주 축제", f"{count}개" if count is not None else "확인 중")
+    budget = card.budget
+    maximum = max(budget.input_krw or 0, budget.format_median_krw or 0, 1)
+    bars = '<div class="fl-detail-budget">'
+    for label, value, cls in (("입력한 예산", budget.input_krw, "input"),
+                              ("같은 형식 중앙값", budget.format_median_krw, "median")):
+        percent = (value or 0) / maximum * 100
+        bars += (
+            f'<div class="fl-budget-row"><span>{label}</span>'
+            f'<div class="fl-budget-track"><i class="{cls}" style="width:{percent:.2f}%"></i></div>'
+            f'<b>{escape(screen.won(value))}</b></div>'
+        )
+    bars += "</div>"
+    if budget.format_median_krw is None:
+        explanation = "비교할 예산은 아직 확인 중이에요."
+    elif budget.scale == "소규모 버전":
+        explanation = "→ 소규모 버전으로 제안해요."
+    elif budget.input_krw is None:
+        explanation = "예산을 정하면 규모를 맞춰 드릴게요."
+    else:
+        explanation = "→ 입력한 예산으로 기본 규모를 제안해요."
+    if budget.small_examples:
+        explanation += " 비슷한 소규모 사례: " + ", ".join(
+            f"{e.name} ({screen.won(e.budget_krw)})" for e in budget.small_examples
+        )
+    bars += f'<p class="fl-detail-copy">{escape(explanation)}</p>'
+    vi = card.evidence.visitor_interest
+    _, interest, _ = screen.evidence_lines(card)[2]
+    if vi.status == "pending" or vi.value is None:
+        interest = "이 소재의 관광객 관심 지표는 아직 확인 중이에요."
+        interest = tag_html("데이터 대기") + f"<span>{escape(interest)}</span>"
+    else:
+        interest = f"<span>{escape(interest)}</span>"
+    parts = [
+        '<div class="fl-idea-detail">',
+        format_html(f"{card.format} × {card.material}"),
+        f'<h1>{escape(card.title)}</h1><p class="fl-detail-concept">{escape(card.concept)}</p>',
+    ]
+    reason = card.pick_reason or trend.interpretation
+    if reason:
+        parts.append(section("왜 이 아이디어인가요?",
+                             f'<p class="fl-detail-copy">{escape(reason)}</p>', "Agent 해석"))
+    parts.append(section("전국 트렌드", tiles, "사실" if ready else "데이터 대기"))
+    parts.append(section("제주 현황", jeju,
+                         "사실" if gap.status != "pending" else "데이터 대기"))
+    if card.reference.designated_festivals:
+        examples = "".join(row(f.name, f.grade) for f in card.reference.designated_festivals)
+        parts.append(section("비슷한 성공 축제", examples, "사실"))
+    parts.append(section("예산", bars, "Agent 해석"))
+    parts.append(section("관광객 관심", f'<div class="fl-detail-interest">{interest}</div>'))
+    parts.append(
+        '<div class="fl-detail-disclaimer">' + tag_html("주최 측 주장")
+        + '<span>축제 방문객 수는 지자체 자체 보고라 참고값으로만 보여주고 점수에는 쓰지 않아요.</span></div>'
+    )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def evidence_legend_html() -> str:
+    """하단에서 근거 배지의 의미를 한 번에 안내한다."""
+    entries = (
+        ("사실", "데이터에서 나온 값"),
+        ("Agent 해석", "Agent의 판단"),
+        ("주최 측 주장", "축제 방문객 수는 지자체 자체 보고라 참고만 하고 점수에는 쓰지 않아요. 순위·점수는 보여주지 않아요."),
+    )
+    return '<div class="fl-evidence-legend" role="note" aria-label="근거 표시 안내">' + "".join(
+        f"<span>{tag_html(kind)}<span>{escape(description)}</span></span>"
+        for kind, description in entries
+    ) + "</div>"
+
+
+def idea_summary_html(rows: list[tuple[str, str, str]]) -> str:
+    """짧은 요약에서도 사실과 해석의 구분은 유지한다."""
+    return '<div class="fl-idea-summary">' + "".join(
+        '<div class="fl-idea-summary-row">'
+        f'<span class="fl-idea-summary-label">{escape(label)}</span>'
+        f'<div>{tag_html(kind)}<b>{escape(value)}</b></div></div>'
+        for label, value, kind in rows
+    ) + "</div>"
+
+
+def sidebar_html(has_llm: bool) -> str:
+    """AI 설정 상태와 서비스 이용 순서를 보여주는 설정 패널."""
+    state = "사용 가능" if has_llm else "설정 필요"
+    title = "함께 기획할 준비가 됐어요" if has_llm else "예시 카드로 먼저 둘러보세요"
+    description = (
+        "문장으로 조건을 정리하고, 아이디어와 기획서 문장을 만드는 데 AI를 사용해요."
+        if has_llm
+        else "AI 설정이 없으면 한 문장 입력·새 카드·기획서는 안내 문구로 대신해요. "
+        "예시 카드로 흐름을 볼 수 있어요."
+    )
+    guide = ("조건을 정해요", "아이디어를 골라요", "제주 데이터로 확인해요", "기획서를 승인해요", "홍보물을 만들어요")
+    steps = "".join(f"<li><span>{i:02d}</span>{text}</li>" for i, text in enumerate(guide, 1))
+    return (
+        '<div class="fl-settings">'
+        '<div class="fl-settings-brand"><span class="fl-blob" aria-hidden="true"></span>'
+        '<div><b>제주 축제랩</b><small>JEJU FESTA MAKER</small></div></div>'
+        '<div class="fl-settings-eyebrow">WORKSPACE</div>'
+        '<h2>설정</h2><p class="fl-settings-intro">축제를 준비하는 나의 작업 공간</p>'
+        '<section class="fl-settings-card" aria-label="AI 설정 상태">'
+        '<div class="fl-settings-label">AI 설정'
+        f'<span class="fl-settings-state{"" if has_llm else " off"}">{state}</span></div>'
+        f'<h3>{title}</h3><p>{description}</p>'
+        '<div class="fl-settings-privacy">API 키는 화면에 표시하지 않아요.</div></section>'
+        '<section class="fl-settings-guide" aria-label="이용 순서">'
+        f'<h3>이렇게 사용해요</h3><ol>{steps}</ol></section>'
+        '<p class="fl-settings-foot">전국 축제에서 아이디어를 찾고,<br>'
+        '제주 데이터로 우리 동네에 맞게 다듬어요.</p></div>'
     )
 
 
@@ -328,7 +602,8 @@ def badge_html(status: str) -> str:
 
 
 def tag_html(kind: str) -> str:
-    return f'<span class="fl-tag {EVIDENCE_TONE[kind]}">{escape(kind)}</span>'
+    label = "데이터" if kind == "사실" else kind
+    return f'<span class="fl-tag {EVIDENCE_TONE[kind]}">{escape(label)}</span>'
 
 
 def check_head_html(label: str, status: str, synthetic: bool) -> str:

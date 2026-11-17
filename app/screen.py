@@ -198,6 +198,37 @@ def evidence_lines(card: IdeaCard, jeju_avg=_UNSET) -> list[tuple[str, str, str]
     ]
 
 
+def idea_summary(card: IdeaCard) -> list[tuple[str, str, str]]:
+    """목록에서는 비교에 필요한 수치만 보여주고, 자세한 근거는 패널에서 읽는다."""
+    trend = card.evidence.trend
+    if trend.status == "pending" or trend.new_count is None:
+        trend_text = "아직 확인 중"
+    else:
+        trend_text = f"전국 새 축제 {trend.new_count}개"
+        if trend.new_lift is not None:
+            trend_text += f" · 신설 비율 {trend.new_lift:.1f}배"
+    gap = card.evidence.jeju_gap
+    gap_text = (
+        "아직 확인 중"
+        if gap.status == "pending" or gap.jeju_count is None
+        else f"같은 형식 축제 {gap.jeju_count}개"
+    )
+    budget = card.budget
+    if budget.format_median_krw is None:
+        budget_text = "비교 예산 확인 중"
+    elif budget.input_krw is None:
+        budget_text = f"비슷한 축제 보통 {won(budget.format_median_krw)}"
+    else:
+        scale = "작게 여는 안" if budget.scale == "소규모 버전" else "기본 규모"
+        budget_text = f"{won(budget.input_krw)} · {scale}"
+    return [
+        ("전국 트렌드", trend_text, "데이터 대기" if trend_text == "아직 확인 중" else "사실"),
+        ("제주 현황", gap_text, "데이터 대기" if gap_text == "아직 확인 중" else "사실"),
+        ("예산", budget_text, "데이터 대기" if budget.format_median_krw is None
+         else "Agent 해석" if budget.input_krw is not None else "사실"),
+    ]
+
+
 def reference_text(card: IdeaCard) -> str:
     ref = card.reference
     if ref.type == "선점 기회" or not ref.designated_festivals:
