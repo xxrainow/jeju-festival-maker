@@ -740,12 +740,62 @@ def test_demo_toggle_is_in_options_and_explains_how_to_turn_off(no_llm):
     toggle = next(c for c in options.checkbox if c.label == screen.DEMO_TOGGLE_LABEL)
     assert screen.DEMO_TOGGLE_LABEL == "시연용 예시 카드 보기 (AI 없이)"
     assert toggle.value is False  # 기본은 꺼짐
-    toggle.check()  # 입력 폼의 값은 아이디어 보기와 함께 제출
+    toggle.check().run()  # 시연 조건을 채운 뒤 사용자가 확인하고 제출
     click(at, "아이디어 보기")
     warnings = labels(at, "warning")
     chosen = [w for w in warnings if screen.CHOSEN_DEMO_WARNING in w]
     assert chosen and "① 조건 입력에서 체크를 끄면" in chosen[0]
     assert not any(screen.DEMO_WARNING in w for w in warnings)  # "AI 연결 전이라 …"는 안 나옴
+
+
+def test_demo_toggle_prefills_conditions_before_submission(no_llm, monkeypatch):
+    from agent import demo_cards
+
+    monkeypatch.setattr("agent.proposals.demo_proposal", demo_cards.demo_proposal)
+
+    def no_ai(*args, **kwargs):
+        raise AssertionError("시연에서는 AI를 호출하면 안 된다")
+
+    monkeypatch.setattr("agent.proposals.default_llm", no_ai)
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.checkbox[0].check().run()
+    assert not at.exception
+    assert at.selectbox[0].value == "제주시 애월읍"
+    assert at.selectbox[1].value == "겨울"
+    assert at.text_input[2].value == "감귤"
+    assert at.text_input[3].value == "가족"
+    assert at.number_input[0].value == 10_000_000
+    assert at.session_state["step"] == 1
+    assert "request" not in at.session_state and "proposal" not in at.session_state
+    click(at, "아이디어 보기")
+    assert at.session_state["request"]["region"] == "제주시 애월읍"
+    pick(at)
+    run = VerificationRun.model_validate(at.session_state["run"])
+    assert run.original.timing.recommended_months == [1]
+    assert run.final.timing.recommended_months == [12]
+    results = {r.check: r for r in run.rounds[-1].results}
+    assert results["check_timing"].status != "pending"
+    assert results["check_venue"].status == "pass"
+    assert screen.venue_table(results["check_venue"])
+    assert not at.exception
+
+
+def test_demo_conditions_remain_editable_and_toggle_off_keeps_values(no_llm):
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.checkbox[0].check().run()
+    at.selectbox[0].select("서귀포시 대정읍")
+    at.number_input[0].set_value(5_000_000)
+    click(at, "아이디어 보기")
+    assert at.session_state["request"]["region"] == "서귀포시 대정읍"
+    assert at.session_state["request"]["budget_max_krw"] == 5_000_000
+    assert not at.exception
+
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.checkbox[0].check().run()
+    at.checkbox[0].uncheck().run()
+    assert at.selectbox[0].value == "제주시 애월읍"
+    assert at.number_input[0].value == 10_000_000
+    assert "proposal" not in at.session_state
 
 
 def test_demo_warning_text_by_reason():
