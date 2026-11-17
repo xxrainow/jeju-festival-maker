@@ -164,6 +164,44 @@ def test_markdown_and_save(tmp_path):
     )
 
 
+def test_plan_groups_limitations_and_routes_operational_warnings():
+    from agent.plan import build_limitations, plan_warning_notes
+
+    duplicate_proxy = "외지인 방문은 와이파이 관광 사용량으로 대신 본 값이에요."
+    festival = "같은 동네(애월읍) 다른 축제 '마을축제'가 같은 달에 있어요 (날짜 미확인)."
+    shuttle = "야간 귀가 승차가 적은 후보 정류소가 있어요. 귀가 셔틀을 검토해 주세요."
+    weather = "참고: 8월은 평소보다 더위가 많아요 (판정에는 쓰지 않음)."
+    timing = "8월은 외지인 방문이 평소보다 약간 적은 달이에요 (지수 0.90)."
+    run = RUN.model_copy(deep=True)
+    checks = run.rounds[-1].results
+    checks[0].warnings = [duplicate_proxy, weather, timing, timing]
+    checks[1].warnings = [duplicate_proxy, shuttle, shuttle]
+    checks[3].warnings = [festival, "정체는 교통량 가상 데이터로 계산했어요."]
+    limitations = build_limitations(run.final, checks)
+    assert len(limitations) == 5
+    assert [s.split(":")[0] for s in limitations] == [
+        "대리 지표", "가상 데이터", "데이터 범위", "방문객 수", "KPI"
+    ]
+    assert not any(w in " ".join(limitations) for w in (festival, shuttle, weather, timing))
+    notes = plan_warning_notes(checks)
+    assert notes["timing"] == [timing]
+    assert notes["risk"].count(shuttle) == 1
+    plan = generate_plan(run, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    assert plan.limitations == limitations
+    risk = next(s.body for s in plan.sections if s.key == "risk")
+    assert all(note in risk for note in (festival, shuttle, weather))
+    md = plan_to_markdown(plan)
+    overview = md.split("## 2.")[0]
+    assert timing in overview
+    assert md.count(shuttle) == 1
+    assert md.count(timing) == 1
+    # 이전 저장 데이터의 미분류 주의 문구도 표시할 때 분류·중복 제거한다.
+    legacy = plan.model_copy(update={"limitations": [duplicate_proxy, shuttle, timing] * 8})
+    assert plan_to_markdown(legacy) == md
+    payload = plan_payload(run, DEMO_REQUEST)
+    assert payload["시기 확인 참고"] == [timing]
+
+
 def test_change_history_uses_plain_words():
     """변경 이력과 LLM 입력에 필드 이름(timing.recommended_months)을 그대로 쓰지 않는다."""
     plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
