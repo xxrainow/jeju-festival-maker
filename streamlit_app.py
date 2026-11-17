@@ -391,12 +391,14 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
         with cols[i % 3], st.container(key=f"res-{r.status}-{key}-{i}"):
             st.html(style.check_head_html(screen.CHECK_LABELS[r.check], r.status, r.is_synthetic))
             ui.write(r.reason)
-            for line in screen.key_numbers(r):
-                ui.caption(line)
+            with st.container(key=f"check-numbers-{key}-{i}"):
+                for line in screen.key_numbers(r):
+                    ui.caption(line)
             if r.check == "check_venue" and (rows := screen.venue_table(r)):
                 st.dataframe(pd.DataFrame(rows), hide_index=True)
             if r.sources:
-                ui.caption("출처: " + " / ".join(r.sources))
+                with st.container(key=f"check-source-{key}-{i}"):
+                    ui.caption("출처: " + " · ".join(r.sources))
             if r.warnings:
                 with st.expander("주의할 점"):
                     for w in r.warnings:
@@ -439,8 +441,13 @@ def card_summary(c) -> str:
 
 
 def step_check(request: UserRequest, card) -> None:
+    with st.container(key="verification"):
+        verification_content(request, card)
+
+
+def verification_content(request: UserRequest, card) -> None:
     st.html(style.head_html(3))
-    st.html(style.chips_html([f"고른 아이디어: {card.title}"]))
+    st.html(style.check_selection_html(card.title))
     if "run" not in ss:
         from agent.verify import verify_idea
 
@@ -460,10 +467,10 @@ def step_check(request: UserRequest, card) -> None:
     else:
         agent_tab, manual_tab = st.tabs(["에이전트 추천안", "내가 고친 안"])
         with agent_tab:
-            ui.caption(card_summary(run.final))
+            ui.caption("에이전트 추천안: " + card_summary(run.final))
             show_run(run, with_changes=True)
         with manual_tab:
-            ui.caption(card_summary(manual.final))
+            ui.caption("내가 고친 안: " + card_summary(manual.final))
             show_run(manual, with_changes=False, key="manual")
 
     # 직접 고쳐서 다시 확인
@@ -475,24 +482,27 @@ def step_check(request: UserRequest, card) -> None:
     current_place = base.venue[0].name if base.venue else screen.NO_VENUE
     scale_names = list(screen.SCALE_LABELS.values())
     with st.form("manual_form"):
-        m1, m2, m3 = st.columns(3)
-        months = m1.multiselect(
-            "개최 월",
-            list(range(1, 13)),
-            default=base.timing.recommended_months,
-            format_func=lambda m: f"{m}월",
-        )
-        place = m2.selectbox(
-            "장소 (장소 후보 표에서)",
-            place_names,
-            index=place_names.index(current_place) if current_place in place_names else 0,
-        )
-        scale = m3.radio(
-            "규모",
-            scale_names,
-            index=scale_names.index(screen.SCALE_LABELS.get(base.budget.scale, "기본")),
-            horizontal=True,
-        )
+        m1, m2, m3 = st.columns([350, 430, 308])
+        with m1, st.container(key="check-field-month"):
+            months = st.multiselect(
+                "개최 월",
+                list(range(1, 13)),
+                default=base.timing.recommended_months,
+                format_func=lambda m: f"{m}월",
+            )
+        with m2, st.container(key="check-field-place"):
+            place = st.selectbox(
+                "장소 (장소 후보 표에서)",
+                place_names,
+                index=place_names.index(current_place) if current_place in place_names else 0,
+            )
+        with m3, st.container(key="check-field-scale"):
+            scale = st.radio(
+                "규모",
+                scale_names,
+                index=scale_names.index(screen.SCALE_LABELS.get(base.budget.scale, "기본")),
+                horizontal=True,
+            )
         recheck = st.form_submit_button("이 조건으로 다시 확인")
     if recheck:
         if not months:
@@ -526,15 +536,16 @@ def step_check(request: UserRequest, card) -> None:
             ss.pop(key, None)
     ready = chosen.outcome == "ready_for_approval"
     if not ready:
-        if chosen_name == "내가 고친 안":
-            ui.warning(
-                "❌ 항목이 남아 있어 기획서를 만들 수 없어요. 다른 값을 바꿔서 다시 확인해보세요."
-            )
-        else:
-            ui.warning(
-                "고쳐도 통과하지 못한 확인이 있어요. 직접 고쳐서 다시 확인하거나 다른 아이디어를 골라보세요."
-            )
-    if st.button("이대로 진행", type="primary", disabled=not ready):
+        with st.container(key="check-blocked"):
+            if chosen_name == "내가 고친 안":
+                ui.warning(
+                    "❌ 항목이 남아 있어 기획서를 만들 수 없어요. 다른 값을 바꿔서 다시 확인해보세요."
+                )
+            else:
+                ui.warning(
+                    "고쳐도 통과하지 못한 확인이 있어요. 직접 고쳐서 다시 확인하거나 다른 아이디어를 골라보세요."
+                )
+    if st.button("이대로 진행", type="primary", disabled=not ready, key="check-proceed"):
         if ss.get("approved") != chosen_name or "plan" not in ss:
             ss.pop("plan", None)
             ss.pop("promo", None)  # 기획서를 다시 만들면 홍보물도 지운다
