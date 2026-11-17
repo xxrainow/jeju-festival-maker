@@ -29,7 +29,21 @@ def propose_idea_cards(
     progress(단계, 설명)를 넘기면 단계가 시작될 때마다 알려준다 (1 트렌드 계산 ~ 4 가설 정리).
     """
     if demo:
-        return demo_proposal()
+        proposal = demo_proposal()
+        # 데모의 애월·감귤 문장은 고정 예시임을 유지한다. 예산만 사용자 조건과 일치시킨다.
+        proposal.input.budget_max_krw = request.budget_max_krw
+        for card in proposal.ideas:
+            card.budget.input_krw = request.budget_max_krw
+            card.budget.scale = (
+                "소규모 버전" if request.budget_max_krw is not None
+                and card.budget.format_median_krw is not None
+                and request.budget_max_krw < card.budget.format_median_krw else "기본"
+            )
+            card.budget.small_examples = [
+                e for e in card.budget.small_examples
+                if request.budget_max_krw is not None and e.budget_krw <= request.budget_max_krw
+            ]
+        return proposal
     if llm is None:
         llm = default_llm()
     if llm is None:
