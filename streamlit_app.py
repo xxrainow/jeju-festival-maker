@@ -151,6 +151,18 @@ def parse_sentence() -> None:
         ss["parsed_sentence"] = sentence.strip()
 
 
+def fill_demo_conditions() -> None:
+    """시연을 켤 때만 기본 조건을 채운다. 제출 전 수정한 값은 그대로 사용한다."""
+    if not ss.get("use_demo"):
+        return
+    from agent.demo_cards import DEMO_REQUEST
+
+    ss["draft"] = DEMO_REQUEST.model_dump(mode="json")
+    ss["draft_from_ai"] = False
+    ss.pop("notes", None)
+    ss.pop("parse_error", None)
+
+
 def step_request() -> None:
     error = ss.pop("parse_error", None)
     st.html(style.HERO)
@@ -184,6 +196,17 @@ def step_request() -> None:
         if st.button(screen.RETRY_CARDS_LABEL, type="primary", key="retry_ideas"):
             ss["idea_job"] = {"demo": False}
             goto(2)
+
+    # 폼 밖에서 즉시 반영해야 채워진 조건을 제출 전에 확인할 수 있다.
+    with st.expander("시연 옵션"):
+        use_demo = st.checkbox(
+            screen.DEMO_TOGGLE_LABEL, key="use_demo", on_change=fill_demo_conditions
+        )
+        if use_demo:
+            ui.caption(
+                "애월·겨울·감귤·가족·1,000만 원 조건을 채웠어요. "
+                "아래에서 확인·수정한 뒤 ‘아이디어 보기’를 눌러주세요. AI는 사용하지 않아요."
+            )
 
     draft = ss.get("draft") or ss.get("request") or {}
     from_ai = bool(ss.get("draft_from_ai"))
@@ -241,8 +264,6 @@ def step_request() -> None:
             "대상을 비우면 ‘대상’ 확인은 데이터 대기로 남아요. "
             "계절과 소재가 맞지 않으면 막지 않고 알려만 드려요."
         )
-        with st.expander("시연 옵션"):
-            use_demo = st.checkbox(screen.DEMO_TOGGLE_LABEL, value=False)
         confirmed = st.form_submit_button("아이디어 보기", type="primary")
     if confirmed:
         try:
