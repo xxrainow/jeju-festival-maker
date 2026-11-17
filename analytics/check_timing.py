@@ -285,10 +285,19 @@ class MonthCheck:
     def slightly_low(self) -> bool:
         return LOW_INDEX <= self.index < PASS_INDEX
 
+    def weather_text(self) -> str:
+        """모든 주가 나쁜 달의 이유. 나쁜 주의 실제 원인(바람·폭우)에 맞춘다."""
+        kinds = {why.split()[0] for _, reasons in self.bad_weeks for why in reasons}
+        if kinds == {"바람"}:
+            return "바람이 강한 주가 많아요"
+        if kinds == {"폭우"}:
+            return "폭우가 잦은 주가 많아요"
+        return "모든 주가 평소보다 폭우·바람이 잦아요"
+
     def fail_reason(self) -> str | None:
         low = self.index < LOW_INDEX
         low_text = f"외지인 방문 지수({self.index:.2f})가 {LOW_INDEX}보다 낮"
-        weather = "모든 주가 평소보다 폭우·바람이 잦아요"
+        weather = self.weather_text()
         if low and not self.good_weeks:
             text = f"{self.month}월은 {low_text}고, {weather}"
         elif low:
@@ -549,6 +558,12 @@ def check_timing(
                     "good_weeks": [week_text(w) for w in c.good_weeks],
                     "bad_weeks": [{"week": week_text(w), "why": r} for w, r in c.bad_weeks],
                     "overlapping_festivals": [f["name"] for f in c.festivals],
+                    # 같은 동네·10km 이내 같은 재료 축제 (fail 이유. 화면 "바뀐 점"에서 쓴다)
+                    "near_festivals": [
+                        {k: f[k] for k in ("name", "admin_area", "relation", "distance_km")}
+                        for f in c.near_festivals
+                    ],
+                    "near_downgraded": c.near_downgraded,
                 }
                 for c in checks
             ],

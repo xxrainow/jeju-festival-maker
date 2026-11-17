@@ -138,11 +138,32 @@ def test_bad_week_needs_ratio_and_years():
     all_bad = weekly_table({w: (1.6, 2) for w in may})
     r = check_timing(card([5]), request(), data(all_bad))
     assert r.status == "fail" and r.evidence["bad_weather_months"] == [5]
-    assert "폭우·바람" in r.reason
+    assert "5월은 폭우가 잦은 주가 많아요" in r.reason  # 폭우만 나쁨
     # 9년 중 1년뿐이거나 1.5배 미만이면 나쁜 주가 아님
     for ratio, years in [(3.0, 1), (1.4, 5)]:
         weekly = weekly_table({w: (ratio, years) for w in may})
         assert check_timing(card([5]), request(), data(weekly)).status == "pass"
+
+
+def test_bad_weather_reason_matches_actual_cause():
+    """모든 주가 나쁜 달의 이유: 바람만, 폭우만, 둘 다를 나눠 쓴다."""
+    may = weeks_of(5)
+
+    def reason(rain: bool, wind: bool) -> str:
+        w = weekly_table()
+        bad = w["week"].isin(may)
+        if rain:
+            w.loc[bad, ["heavy_rain_ratio", "heavy_rain_years"]] = [1.6, 2]
+        if wind:
+            w.loc[bad, ["strong_wind_ratio", "strong_wind_years"]] = [1.8, 9]
+        r = check_timing(card([5, 6]), request(), data(w))
+        assert r.status == "fail" and r.evidence["bad_weather_months"] == [5]
+        assert r.suggestion.value == [6] and r.suggestion.why.startswith(r.reason[:-1])
+        return r.reason
+
+    assert reason(rain=False, wind=True) == "5월은 바람이 강한 주가 많아요."
+    assert reason(rain=True, wind=False) == "5월은 폭우가 잦은 주가 많아요."
+    assert reason(rain=True, wind=True) == "5월은 모든 주가 평소보다 폭우·바람이 잦아요."
 
 
 def test_rain_and_heat_are_reference_only():
