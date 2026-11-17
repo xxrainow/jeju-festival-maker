@@ -8,6 +8,7 @@ from agent.fake_checks import FAKE_TOOLS
 from agent.fake_checks import check_timing as fake_check_timing
 from agent.verify import verify_idea
 from analytics.check_timing import (
+    NEAR_FESTIVAL_KM,
     REAL_TOOLS,
     TimingData,
     check_timing,
@@ -137,11 +138,32 @@ def test_bad_week_needs_ratio_and_years():
     all_bad = weekly_table({w: (1.6, 2) for w in may})
     r = check_timing(card([5]), request(), data(all_bad))
     assert r.status == "fail" and r.evidence["bad_weather_months"] == [5]
-    assert "폭우·바람" in r.reason
+    assert "5월은 폭우가 잦은 주가 많아요" in r.reason  # 폭우만 나쁨
     # 9년 중 1년뿐이거나 1.5배 미만이면 나쁜 주가 아님
     for ratio, years in [(3.0, 1), (1.4, 5)]:
         weekly = weekly_table({w: (ratio, years) for w in may})
         assert check_timing(card([5]), request(), data(weekly)).status == "pass"
+
+
+def test_bad_weather_reason_matches_actual_cause():
+    """모든 주가 나쁜 달의 이유: 바람만, 폭우만, 둘 다를 나눠 쓴다."""
+    may = weeks_of(5)
+
+    def reason(rain: bool, wind: bool) -> str:
+        w = weekly_table()
+        bad = w["week"].isin(may)
+        if rain:
+            w.loc[bad, ["heavy_rain_ratio", "heavy_rain_years"]] = [1.6, 2]
+        if wind:
+            w.loc[bad, ["strong_wind_ratio", "strong_wind_years"]] = [1.8, 9]
+        r = check_timing(card([5, 6]), request(), data(w))
+        assert r.status == "fail" and r.evidence["bad_weather_months"] == [5]
+        assert r.suggestion.value == [6] and r.suggestion.why.startswith(r.reason[:-1])
+        return r.reason
+
+    assert reason(rain=False, wind=True) == "5월은 바람이 강한 주가 많아요."
+    assert reason(rain=True, wind=False) == "5월은 폭우가 잦은 주가 많아요."
+    assert reason(rain=True, wind=True) == "5월은 모든 주가 평소보다 폭우·바람이 잦아요."
 
 
 def test_rain_and_heat_are_reference_only():
@@ -212,6 +234,50 @@ def test_all_fail_moves_to_best_passing_month_in_season():
     # 제철 안에 통과하는 달이 없으면 제안 없음
     r = check_timing(card([12]), request(), data(outsider=outsider_table(index), season=[12]))
     assert r.suggestion is None and any("통과하는 다른 달이 없어" in w for w in r.warnings)
+
+
+def test_input_season_first_then_notice_when_moving_outside():
+    """입력 계절(겨울) 안에서 먼저 고르고, 없을 때만 계절 밖으로 + 안내 (QA 2차 #8·#12)."""
+    assert request().season == "겨울"
+    # 11월(가을)이 지수가 더 높아도 겨울인 1월을 먼저 고른다
+    index = {12: 0.7, 11: 1.6, 1: 1.2}
+    r = check_timing(
+        card([12]), request(), data(outsider=outsider_table(index), season=[11, 12, 1])
+    )
+    assert r.suggestion.value == [1] and "입력한 계절" not in r.suggestion.why
+    assert "season_outside_suggestion" not in r.evidence
+    # 겨울이 모두 안 되면 제철 안의 11월로 + 안내
+    jan_bad = weekly_table({w: (2.0, 3) for w in weeks_of(1)})
+    r = check_timing(
+        card([12]), request(), data(jan_bad, outsider_table(index), season=[11, 12, 1])
+    )
+    sentence = "입력한 계절(겨울)에는 맞는 달이 없어 제철 안의 11월로 바꿨어요."
+    assert r.suggestion.value == [11] and r.suggestion.why.endswith(sentence)
+    assert r.evidence["season_outside_suggestion"] == sentence
+    # 제철이 없는 재료는 "제철 안의" 없이
+    winter_low = outsider_table({12: 0.5, 1: 0.5, 2: 0.5, 5: 1.8})
+    r = check_timing(card([12, 1, 2]), request(), data(outsider=winter_low))
+    assert r.suggestion.value == [5]
+    assert (
+        r.evidence["season_outside_suggestion"]
+        == "입력한 계절(겨울)에는 맞는 달이 없어 5월로 바꿨어요."
+    )
+    # 처음부터 계절 밖 달인 카드(바꾼 적 없음)에는 "바꿨어요"를 붙이지 않는다
+    r = check_timing(card([5]), request(), data())
+    assert "입력한 계절" not in r.reason and "season_outside_suggestion" not in r.evidence
+
+
+def test_numbers_shown_never_contradict_thresholds():
+    """0.796을 0.80으로 보여주고 "0.8보다 낮아요"라고 하지 않는다 (QA 2차 #6)."""
+    from analytics.check_timing import INDEX_THRESHOLDS, precise, precise_text
+
+    assert precise_text(0.796, INDEX_THRESHOLDS) == "0.796"
+    assert precise_text(0.9, INDEX_THRESHOLDS) == "0.90"
+    assert precise_text(0.996, INDEX_THRESHOLDS) == "0.996"  # 1.00으로 보이면 연평균 이상처럼 보임
+    assert precise(0.8049, INDEX_THRESHOLDS) == 0.8
+    r = check_timing(card([5, 6]), request(), data(outsider=outsider_table({5: 0.796})))
+    assert "5월은 외지인 방문 지수(0.796)가 0.8보다 낮아요" in r.reason
+    assert r.evidence["outsider_visitors_index"][5] == 0.796
 
 
 def test_same_material_festival_is_conditional():
@@ -343,3 +409,91 @@ def test_low_data_region_gets_notice():
     assert sum("53km" in w for w in r.warnings) == 1  # 거리 경고는 한 번만
     assert r.evidence["station_distance_km"] == 53.0
     assert check_timing(card([5]), request(), data()).evidence["low_data"] == []
+
+
+# ---------- 같은 재료 축제의 장소와 거리 ----------
+
+NEAR, FAR = "제주시 한림읍", "서귀포시 성산읍"
+# 동네 중심 좌표: 한림읍은 애월읍에서 약 6km, 성산읍은 약 50km
+CENTROIDS = pd.DataFrame(
+    {
+        "admin_area": [REGION, NEAR, FAR],
+        "station": ["제주", "제주", "제주"],
+        "centroid_lat": [33.45, 33.45, 33.40],
+        "centroid_lon": [126.37, 126.305, 126.90],
+    }
+)
+
+
+def located(name, month, area, start=None, end=None):
+    """같은 재료 축제 한 줄 (행정동 포함). start가 없으면 날짜 미확인."""
+    t = festival_table((name, start, end) if start else (name, None, month))
+    return t.assign(admin_area=area)
+
+
+def area_data(fests, season=(5, 6), index=None):
+    d = data(festivals=fests, season=list(season), outsider=outsider_table(index or {}))
+    d.station_by_dong = CENTROIDS
+    return d
+
+
+def test_same_area_festival_fails_and_suggests_other_month():
+    fests = located("애월 감귤 축제", 5, REGION, "2026-05-14", "2026-05-15")
+    r = check_timing(card([5]), request(), area_data(fests, index={6: 1.3}))
+    assert r.status == "fail"
+    assert r.suggestion.value == [6]  # 제철 안, 가까운 같은 재료 축제가 없고 통과하는 달
+    f = r.evidence["overlapping_festivals"][0]
+    assert (f["name"], f["months"], f["admin_area"], f["distance_km"], f["relation"]) == (
+        "애월 감귤 축제",
+        [5],
+        REGION,
+        0.0,
+        "같은 동네",
+    )
+    assert f["start"] == "2026-05-14" and f["end"] == "2026-05-15"
+    assert "가까운 곳에서 같은 재료 축제가 열려요" in r.reason and "같은 동네" in r.reason
+
+
+def test_near_festival_within_10km_fails():
+    fests = located("한림 감귤 축제", 5, NEAR)
+    r = check_timing(card([5]), request(), area_data(fests, index={6: 1.3}))
+    f = r.evidence["overlapping_festivals"][0]
+    assert f["relation"] == "가까운 동네" and 0 < f["distance_km"] <= NEAR_FESTIVAL_KM == 10
+    assert r.status == "fail" and r.suggestion.value == [6]
+
+
+def test_far_festival_stays_conditional():
+    fests = located("성산 감귤 축제", 5, FAR)
+    r = check_timing(card([5]), request(), area_data(fests))
+    f = r.evidence["overlapping_festivals"][0]
+    assert f["relation"] == "먼 동네" and f["distance_km"] > NEAR_FESTIVAL_KM
+    assert r.status == "conditional" and r.suggestion is None
+
+
+def test_unknown_area_stays_conditional():
+    fests = located("어딘가 감귤 축제", 5, None)
+    r = check_timing(card([5]), request(), area_data(fests))
+    f = r.evidence["overlapping_festivals"][0]
+    assert f["relation"] == "장소 미확인" and f["admin_area"] is None and f["distance_km"] is None
+    assert r.status == "conditional"
+
+
+def test_near_festival_without_other_month_is_conditional_with_warning():
+    fests = located("애월 감귤 축제", 5, REGION)
+    r = check_timing(card([5]), request(), area_data(fests, season=(5,)))  # 제철이 5월뿐
+    assert r.status == "conditional" and r.suggestion is None
+    assert any("다른 달이 없어요" in w and "애월 감귤 축제" in w for w in r.warnings)
+    assert r.evidence["month_checks"][0]["status"] == "conditional"
+
+
+def test_near_festival_only_removes_that_month():
+    fests = located("애월 감귤 축제", 5, REGION)
+    r = check_timing(card([5, 6]), request(), area_data(fests))
+    assert r.status == "fail" and r.suggestion.value == [6]  # 그 달만 빼요
+    assert "그 달을 빼요" in r.suggestion.why
+
+
+def test_low_outsider_fail_is_not_downgraded_by_festival_rule():
+    fests = located("애월 감귤 축제", 5, REGION)
+    r = check_timing(card([5]), request(), area_data(fests, season=(5,), index={5: 0.5}))
+    assert r.status == "fail"  # 외지인 fail은 그대로

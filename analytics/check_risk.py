@@ -219,7 +219,7 @@ def check_risk(
             )
         if res["is_synthetic"]:
             is_synthetic = True
-            warnings.append("주거 밀집은 4-11 가짜 데이터로 계산했어요. 실제 거주인구가 아니에요.")
+            warnings.append("주거 밀집은 4-11 가상 데이터로 계산했어요. 실제 거주인구가 아니에요.")
 
     # 3. 정체
     points = venue_points(card, venue_result)

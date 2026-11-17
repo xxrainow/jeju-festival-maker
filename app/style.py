@@ -42,7 +42,7 @@ STATUS_WORD = {"pass": "통과", "conditional": "조건부", "fail": "실패", "
 # 근거 종류 태그 (Figma Evidence Tag)
 EVIDENCE_TONE = {
     "사실": "sea",
-    "Agent 해석": "accent",
+    "에이전트 해석": "accent",
     "주최 측 주장": "ink",
     "데이터 대기": "pending",
     "가상 데이터": "warn",
@@ -54,7 +54,7 @@ STEP_TITLES = {
     2: ("아이디어 3개를 골라왔어요",
         "전국에서 늘고 있는 축제 형식과 제주 재료를 엮었어요. 근거를 보고 하나를 골라주세요."),
     3: ("제주 데이터로 확인했어요",
-        "고른 아이디어의 가설을 확인 도구 5개로 살펴봤어요. 실패한 항목은 Agent가 고쳐서 다시 확인해요."),
+        "고른 아이디어의 가설을 확인 도구 5개로 살펴봤어요. 실패한 항목은 에이전트가 고쳐서 다시 확인해요."),
     4: ("기획서 초안이 나왔어요",
         "근거·가정·미확인 사항을 나눠 적었어요. 최종 승인하면 이 내용 그대로 홍보물을 만들어요."),
     5: ("홍보물 시안이에요",
@@ -637,14 +637,14 @@ def idea_detail_html(card) -> str:
     reason = card.pick_reason or trend.interpretation
     if reason:
         parts.append(section("왜 이 아이디어인가요?",
-                             f'<p class="fl-detail-copy">{escape(reason)}</p>', "Agent 해석"))
+                             f'<p class="fl-detail-copy">{escape(reason)}</p>', "에이전트 해석"))
     parts.append(section("전국 트렌드", tiles, "사실" if ready else "데이터 대기"))
     parts.append(section("제주 현황", jeju,
                          "사실" if gap.status != "pending" else "데이터 대기"))
     if card.reference.designated_festivals:
         examples = "".join(row(f.name, f.grade) for f in card.reference.designated_festivals)
         parts.append(section("비슷한 성공 축제", examples, "사실"))
-    parts.append(section("예산", bars, "Agent 해석"))
+    parts.append(section("예산", bars, "에이전트 해석"))
     parts.append(section("관광객 관심", f'<div class="fl-detail-interest">{interest}</div>'))
     parts.append(
         '<div class="fl-detail-disclaimer">' + tag_html("주최 측 주장")
@@ -658,7 +658,7 @@ def evidence_legend_html() -> str:
     """하단에서 근거 배지의 의미를 한 번에 안내한다."""
     entries = (
         ("사실", "데이터에서 나온 값"),
-        ("Agent 해석", "Agent의 판단"),
+        ("에이전트 해석", "에이전트의 판단"),
         ("주최 측 주장", "축제 방문객 수는 지자체 자체 보고라 참고만 하고 점수에는 쓰지 않아요. 순위·점수는 보여주지 않아요."),
     )
     return '<div class="fl-evidence-legend" role="note" aria-label="근거 표시 안내">' + "".join(
@@ -693,7 +693,7 @@ def sidebar_html(has_llm: bool) -> str:
         '<div class="fl-settings">'
         f'<div class="fl-settings-brand"><img class="fl-blob" src="{_BRAND_MARK_URI}" alt="">'
         '<div><b>제주 축제 메이커</b><small>JEJU FESTIVAL MAKER</small></div></div>'
-        '<div class="fl-settings-eyebrow">WORKSPACE</div>'
+        '<div class="fl-settings-eyebrow">작업 공간</div>'
         '<h2>설정</h2><p class="fl-settings-intro">축제를 준비하는 나의 작업 공간</p>'
         '<section class="fl-settings-card" aria-label="AI 설정 상태">'
         '<div class="fl-settings-label">AI 설정'
@@ -708,11 +708,11 @@ def sidebar_html(has_llm: bool) -> str:
 
 
 def head_html(step: int, title: str | None = None, desc: str | None = None) -> str:
-    """STEP 0n / 05 — 단계 이름 + 큰 제목 + 설명."""
+    """단계 0n / 05 — 단계 이름 + 큰 제목 + 설명."""
     default_title, default_desc = STEP_TITLES[step]
     name = screen.STEPS[step - 1]
     return (
-        f'<div class="fl-head"><div class="fl-eyebrow">STEP {step:02d} / {len(screen.STEPS):02d}'
+        f'<div class="fl-head"><div class="fl-eyebrow">단계 {step:02d} / {len(screen.STEPS):02d}'
         f" — <span>{escape(name)}</span></div>"
         f'<div class="fl-h1">{escape(title or default_title)}</div>'
         f'<p class="fl-desc">{escape(desc or default_desc)}</p></div>'
@@ -818,12 +818,12 @@ def format_html(text: str) -> str:
 
 HERO = (
     '<div class="fl-hero">'
-    '<div class="side"><small>PLAN YOUR</small><b>우리 동네</b></div>'
+    '<div class="side"><small>함께 기획하는</small><b>우리 동네</b></div>'
     '<div class="fl-orb"><div class="sq"></div><div class="hole"></div><div class="plus"></div>'
     '<span class="tag" style="left:-30px;top:-14px">#애월 감귤</span>'
     '<span class="tag" style="right:-50px;top:40px">#대정 방어</span>'
     '<span class="tag" style="right:-6px;bottom:-16px">#성산 유채</span></div>'
-    '<div class="side right"><small>FESTA LAB</small><b>축제 만들기</b></div></div>'
+    '<div class="side right"><small>제주 축제랩</small><b>축제 만들기</b></div></div>'
     '<p class="fl-hero-desc">전국 축제 트렌드에서 아이디어를 찾고, 제주 데이터로 확인해서 '
     "기획서와 홍보물까지 만들어요.</p>"
     '<div class="fl-examples" aria-hidden="true">'

@@ -47,6 +47,8 @@ def request(region=REGION, target="가족"):
         ("중장년", {"40대", "50대"}, None),
         ("어르신", {"60대 이상"}, None),
         ("엄마와 아이", {"10대 미만", "30대", "40대"}, "여성"),
+        ("영유아", {"10대 미만"}, None),
+        ("어린이", {"10대 미만"}, None),
         ("40대", {"40대"}, None),
         ("10대 미만 자녀", {"10대 미만", "30대", "40대"}, None),
         ("관광객", set(), None),
@@ -71,13 +73,9 @@ def demographics(dong_family: float, months=range(1, 13), may_family=None) -> pd
     return df.assign(source="와이파이 장소별 사용자 현황 (성·연령) 테스트")
 
 
-def target(dong_family, req=None, c=None, season=(), **kw):  # season=(): 제철 제한 없음
+def target(dong_family, req=None, c=None, **kw):
     return check_target(
-        c or card(),
-        req or request(),
-        demographics(dong_family, **kw),
-        season=season,
-        use_flow=False,
+        c or card(), req or request(), demographics(dong_family, **kw), use_flow=False
     )
 
 
@@ -85,18 +83,68 @@ def test_target_levels_and_warning():
     # 제주 평균 = (애월 + 한림) / 2000
     assert target(0.4).status == "pass"  # 0.4 / 0.35 = 1.14
     assert target(0.28).status == "conditional"  # 0.28 / 0.29 = 0.97
-    r = target(0.1)  # 0.1 / 0.2 = 0.5
-    assert r.status == "fail" and r.check == "check_target"
+    r = target(0.1)  # 0.1 / 0.2 = 0.5: 낮아도 fail이 아니라 conditional (대상은 사용자가 정한 값)
+    assert r.status == "conditional" and r.check == "check_target"
     assert ELDERLY_WARNING in r.warnings and not r.is_synthetic
     assert r.evidence["age_share"]["ratio"] == 0.5
 
 
-def test_target_fail_suggests_better_month_in_season():
+def test_low_target_only_warns_without_suggestion():
+    """대상 비중이 많이 낮아도 Agent가 고칠 수 없으니 경고만 (QA #7·#13)."""
     r = target(0.1, may_family=0.6)
-    assert r.suggestion.field == "timing.recommended_months" and r.suggestion.value == [7]
-    r = target(0.1, may_family=0.6, season=[11, 12])
-    assert r.suggestion is None and any("다른 달이 없어" in w for w in r.warnings)
+    assert r.status == "conditional" and r.suggestion is None
+    assert "제주 평균보다 낮아요" in r.reason
+    assert (
+        "이 동네는 가족 비중이 제주 평균보다 낮아요. 홍보 대상을 넓히거나 장소를 바꿔보세요."
+        in r.warnings
+    )
     assert any("20대" in w for w in r.warnings)  # 이 동네에서 비중 높은 연령대
+    slightly = target(0.28)  # 0.97배: 조금 낮음, 경고 없음
+    assert "조금 낮아요" in slightly.reason
+    assert not any("홍보 대상을 넓히" in w for w in slightly.warnings)
+
+
+def test_share_numbers_never_look_contradictory():
+    """0.1% vs 0.1%, 0.80배처럼 판정과 어긋나 보이는 표시를 막는다 (QA 2차 #13)."""
+    from analytics.check_target import share_numbers
+
+    n = share_numbers(0.00068, 0.001)
+    assert n["dong_share_pct"] != n["jeju_share_pct"]  # 0.07% / 0.1%
+    assert share_numbers(0.2, 0.4)["dong_share_pct"] == 20.0  # 보통은 소수 첫째 자리
+    assert share_numbers(0.8975, 1.0)["ratio"] == 0.897  # 0.90으로 반올림하면 0.9 기준과 어긋남
+    assert share_numbers(0.5, 1.0)["ratio"] == 0.5
+
+
+def test_family_is_judged_by_30s_40s_only():
+    """가족: 10대 미만은 와이파이 자료에 거의 없어 빼고 30·40대로만 판정, 근거에 적는다."""
+    r = target(0.4)
+    assert r.evidence["age_groups"] == ["30대", "40대"]
+    assert r.evidence["excluded_age_groups"] == ["10대 미만"]
+    assert r.evidence["target_age_groups"] == ["10대 미만", "30대", "40대"]
+    assert r.evidence["excluded_note"] == "10대 미만은 자료가 거의 없어 제외"
+    assert r.reason.endswith("(10대 미만은 자료가 거의 없어 제외).")
+    assert "10대 미만" not in r.reason.split(":")[0]  # 대상 이름 칸에는 30·40대만
+    from app.screen import key_numbers
+
+    assert any(line.endswith("· 10대 미만은 자료가 거의 없어 제외") for line in key_numbers(r))
+
+
+@pytest.mark.parametrize(
+    ("who", "bands"),
+    [("어르신", "60대 이상"), ("영유아", "10대 미만"), ("어르신과 어린이", "10대 미만·60대 이상"),
+     ("70대 여성", "60대 이상")],
+)  # fmt: skip
+def test_unmeasured_ages_are_pending(who, bands):
+    """60대 이상·10대 미만은 2020-07 이후 거의 집계되지 않아 판정하지 않는다 (데이터 대기)."""
+    r = target(0.4, req=request(target=who))
+    assert r.status == "pending" and r.suggestion is None
+    assert r.reason == f"와이파이 자료에 {bands}이 거의 집계되지 않아 확인할 수 없어요."
+    # 어르신이 섞여 있어도 잴 수 있는 연령대가 있으면 그것으로 판정
+    mixed = target(0.4, req=request(target="청년과 어르신"))
+    assert (
+        mixed.status != "pending"
+        and mixed.evidence["excluded_note"] == "60대 이상은 자료가 거의 없어 제외"
+    )
 
 
 def test_target_checks_sex_too():
@@ -109,7 +157,7 @@ def test_target_low_data_notice():
     small = pd.concat([small, small.assign(admin_area="제주시 연동", users=small["users"] * 100),
                        small.assign(admin_area="제주시 노형동", users=small["users"] * 100)])  # fmt: skip
     small.loc[small["admin_area"] == REGION, "users"] //= 100  # 애월읍만 아주 적게
-    r = check_target(card(), request(), small, season=(), use_flow=False)
+    r = check_target(card(), request(), small, use_flow=False)
     assert any("동네 중앙값" in n for n in r.evidence["low_data"])
     assert any("대상 연령대 사용자가" in n for n in r.evidence["low_data"])
     assert any("자료가 적어 결과가 불안정" in w for w in r.warnings)
@@ -322,7 +370,7 @@ def test_risk_warns_other_festival_same_area_same_week():
 def test_risk_residential_density_with_synthetic_flag():
     r = risk(flow=fake_flow(True))
     assert r.status == "conditional" and "소음 민원 주의" in r.reason
-    assert r.is_synthetic and any("가짜 데이터" in w for w in r.warnings)
+    assert r.is_synthetic and any("가상 데이터" in w for w in r.warnings)
     assert r.evidence["residential"]["areas"][0]["ratio"] == 1.5
     r = risk(flow=fake_flow(False), areas=(OTHER,))
     assert r.status == "pass" and not r.is_synthetic

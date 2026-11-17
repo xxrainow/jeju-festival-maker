@@ -16,7 +16,7 @@ RAW_DIR = Path("data/raw")
 DEMO_DIR = Path("data/demo")
 REAL_KEYS = ("4-11", "유동인구(읍면동)")
 SOURCE = "4-11 내국인 유동인구(읍면동)"
-SYNTHETIC_WARNING = "4-11 유동인구는 명세서 구조로 만든 가짜 데이터예요. 실제 제주 인구가 아니에요."
+SYNTHETIC_WARNING = "4-11 유동인구는 명세서 구조로 만든 가상 데이터예요. 실제 제주 인구가 아니에요."
 # SKT 연령 코드 → 와이파이 연령대
 AGE_BANDS = {
     "0009": "10대 미만", "1014": "10대", "1519": "10대", "2024": "20대", "2529": "20대",
@@ -35,7 +35,7 @@ class FlowData:
     @property
     def label(self) -> str:
         period = f" {self.period[0]}~{self.period[1]}" if self.period else ""
-        return f"{SOURCE}{period}" + (" (가짜 데이터)" if self.is_synthetic else "")
+        return f"{SOURCE}{period}" + (" (가상 데이터)" if self.is_synthetic else "")
 
 
 def find_flow_file() -> tuple[Path, bool] | None:
