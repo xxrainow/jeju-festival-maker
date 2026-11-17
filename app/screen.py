@@ -587,6 +587,21 @@ def friendly_changes(run) -> list[dict]:
 DEMO_WARNING = (
     "AI 연결 전이라 입력과 상관없는 예시 카드예요. 입력한 지역·계절·재료가 반영되지 않았어요."
 )
+# 사용자가 직접 예시 카드 보기를 켠 경우 (AI 오류로 예시 카드가 나온 경우는 DEMO_WARNING)
+DEMO_TOGGLE_LABEL = "시연용 예시 카드 보기 (AI 없이)"
+CHOSEN_DEMO_WARNING = (
+    "예시 카드 보기가 켜져 있어요. 입력한 조건과 상관없는 시연용 카드예요. "
+    "① 조건 입력에서 체크를 끄면 입력한 조건으로 AI가 카드를 만들어요."
+)
+
+
+def demo_warning_text(reason: str | None, diffs: list[str]) -> str:
+    """예시 카드 위 노란 경고. 직접 켰으면 끄는 방법을, AI 오류면 이유를 알려준다."""
+    other = ("\n\n입력과 다른 점: " + " / ".join(diffs)) if diffs else ""
+    if reason == CHOSEN_DEMO_REASON:
+        return f"### ⚠️ 시연용 예시 카드예요\n**{CHOSEN_DEMO_WARNING}**{other}"
+    because = f"\n\n이유: {reason}" if reason else ""
+    return f"### ⚠️ 예시 카드예요\n**{DEMO_WARNING}**{because}{other}"
 
 
 def material_seasons() -> dict[str, list[int]]:

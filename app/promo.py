@@ -36,7 +36,11 @@ IMAGE_SIZE = "1K"
 POSTER_SIZE = (1200, 1600)
 FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NotoSansKR-Bold.otf"
 OUTPUT_DIR = Path("outputs/promo")
-AI_CREDIT = "배경 이미지: AI 생성 (Gemini)"
+AI_CREDIT = "이미지: AI 생성 (Gemini)"  # AI 그림을 쓴 포스터에만 Pillow로 작게 넣는다 (글자 검사에서는 뺀다)
+TITLE_MAX, LINE_MAX, MAX_PROGRAMS = 15, 30, 3  # 포스터 문구 길이 (제목 15자, 나머지 한 줄 30자)
+POSTER_ATTEMPTS = 3  # 글자 넣은 포스터: 처음 1번 + 다시 생성 2번
+EXTRA_TOLERANCE = 2  # 글자 검사에서 정하지 않은 글자를 몇 자까지 봐줄지 (읽기 오차)
+TEXT_FALLBACK_NOTICE = "AI가 글자를 정확히 그리지 못해 글자를 따로 얹었어요."
 SNS_ATTEMPTS = 3  # 처음 1번 + 다시 생성 2번
 HASHTAG_COUNT = 5
 
@@ -91,6 +95,10 @@ CATEGORY_COLORS = {  # 단색 기본 포스터 배경 (재료 분류)
 }  # fmt: skip
 
 
+class TextReadError(RuntimeError):
+    """포스터 글자를 읽지 못함 (글자 검사를 할 수 없음)."""
+
+
 class ImageQuotaError(RuntimeError):
     """이미지 모델 한도·결제 문제 (무료 키 포함)."""
 
@@ -116,7 +124,13 @@ class PromoResult(BaseModel):
     plan_version: int
     created_at: datetime
     poster_path: str
-    poster_text: dict[str, str]  # title, period, place
+    poster_text: dict[str, str]  # title, period, place (포스터에 쓴 값)
+    poster_lines: dict[str, str] = Field(default_factory=dict)  # 포스터 문구 6줄 (위치별)
+    poster_mode: str = (
+        "plain"  # ai_text: AI가 글자까지 그림 / overlay: 글자 없는 그림 + Pillow / plain: 단색
+    )
+    text_attempts: int = 0  # 글자 넣은 포스터를 만든 횟수
+    text_problems: list[str] = Field(default_factory=list)  # 마지막 글자 검사에서 나온 문제
     used_ai_image: bool
     image_cropped: bool = False  # 3:4가 아니어서 1200×1600으로 잘라 씀
     image_prompt: str
@@ -169,8 +183,158 @@ def promo_payload(plan: FestivalPlan) -> dict:
     }
 
 
+def shorten(text: str, limit: int) -> str:
+    """limit자 안으로 줄인다. 띄어쓰기에서 끊고, 없으면 글자에서 끊는다 (말줄임표는 붙이지 않는다)."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    return cut[: cut.rfind(" ")] if " " in cut[1:] else cut
+
+
+def _concept_line(plan: FestivalPlan) -> str:
+    concept = _section(plan, "concept") or plan.idea.concept or ""
+    first = re.split(r"(?<=[.!?])\s", concept.strip())[0].rstrip(".!? ")
+    for end in ("이다", "입니다", "이에요", "예요"):
+        if first.endswith(end):
+            first = first[: -len(end)]
+            break
+    return shorten(first, LINE_MAX)
+
+
+def _closing_line(plan: FestivalPlan) -> str:
+    purpose = (plan.overview.purpose or "").strip()
+    text = f"{purpose}에 함께해 주세요" if purpose else "많은 관심과 참여 부탁드려요"
+    return shorten(text, LINE_MAX)
+
+
+def poster_lines(plan: FestivalPlan) -> dict[str, str]:
+    """포스터에 넣을 문구 6줄. 기획서 값으로만 코드가 정한다 (셔틀·주최·문의처·가격 등 없는 정보는 넣지 않는다).
+
+    기간·장소는 사실 정보라 줄이지 않는다 (미확인은 "추후 공지").
+    """
+    texts = fixed_texts(plan)
+    names = [p.name.strip() for p in plan.programs if p.name.strip()][:MAX_PROGRAMS]
+    while names and len(" · ".join(names)) > LINE_MAX:
+        names.pop()  # 이름 중간을 자르지 않고 뒤 프로그램을 뺀다
+    lines = {
+        "top": _concept_line(plan),
+        "title": shorten(texts["title"], TITLE_MAX),
+        "period": texts["period"],
+        "place": texts["place"],
+        "box": " · ".join(names),
+        "bottom": _closing_line(plan),
+    }
+    return {k: v for k, v in lines.items() if v}
+
+
+# 지역 이름 → 영어 (국어의 로마자 표기법, 음운 변화는 반영하지 않은 단순 변환)
+_INITIALS = [
+    "g",
+    "kk",
+    "n",
+    "d",
+    "tt",
+    "r",
+    "m",
+    "b",
+    "pp",
+    "s",
+    "ss",
+    "",
+    "j",
+    "jj",
+    "ch",
+    "k",
+    "t",
+    "p",
+    "h",
+]
+_VOWELS = ["a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we",
+           "wi", "yu", "eu", "ui", "i"]  # fmt: skip
+_FINALS = ["", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "p", "l", "m", "p", "p",
+           "t", "t", "ng", "t", "t", "k", "t", "p", "t"]  # fmt: skip
+
+
+def romanize(word: str) -> str:
+    out = []
+    for i, ch in enumerate(word):
+        if not ("가" <= ch <= "힣"):
+            continue
+        code = ord(ch) - 0xAC00
+        cho, jung, jong = code // 588, (code % 588) // 28, code % 28
+        initial = _INITIALS[cho]
+        if (
+            cho == 5 and out and out[-1].endswith(("l", "n"))
+        ):  # ㄹ 앞이 ㄹ·ㄴ 받침이면 l (한림 → Hallim)
+            out[-1] = out[-1][:-1] + "l"
+            initial = "l"
+        out.append(initial + _VOWELS[jung] + _FINALS[jong])
+    return "".join(out).capitalize()
+
+
+def region_en(region: str | None) -> str:
+    """ "서귀포시 대정읍" → "Daejeong". 읍·면·동 글자는 뺀다."""
+    if not region:
+        return ""
+    name = region.split()[-1]
+    name = re.sub(r"[0-9]*(읍|면|동)$", "", name) or name
+    return romanize(name)
+
+
+TITLE_COLORS = {
+    "자연": "green",
+    "농산물": "orange",
+    "수산물": "deep blue",
+    "문화·생활": "brown",
+    "경관": "purple",
+}
+SCENES = {
+    "여름·물놀이": "a small summer water festival", "시장·상권": "a small local market",
+    "정원·가드닝": "a small garden festival", "푸드·디저트": "a small food and dessert festival",
+    "맥주·주류": "a small outdoor drinks festival", "도심·거리·골목": "a small alley street festival",
+    "야간·빛·드론": "a small night light festival", "영화·책·아트": "a small art festival",
+}  # fmt: skip
+
+
+def text_poster_prompt(plan: FestivalPlan, lines: dict[str, str]) -> str:
+    """한글 문구까지 그리는 포스터 그림 설명 (AI Studio에서 시험한 형식).
+
+    장면은 재료·형식·계절·지역으로 만들고, 그 뒤에 위치별 문구를 따옴표로 넣는다.
+    센터 데이터·집계 수치·예산은 넣지 않는다.
+    """
+    idea = plan.idea
+    seasons = sorted(
+        {SEASON_EN[m] for m in idea.timing.recommended_months}, key=list(SEASON_EN.values()).index
+    )
+    season = " and ".join(seasons)
+    place = region_en(plan.overview.region)
+    where = f"in {place}, Jeju Island" if place else "in Jeju Island"
+    scene = SCENES.get(idea.format, "a small community festival")
+    material = MATERIAL_EN.get(idea.material, "a local Jeju specialty")
+    mood = FORMAT_MOOD.get(idea.format, "a cheerful community festival")
+    color = TITLE_COLORS.get(idea.material_category, "orange")
+    slots = [
+        ("Top, small", lines.get("top")),
+        (f"Title, large bold {color}", lines.get("title")),
+        ("Under title, first line", lines.get("period")),
+        ("Under title, second line", lines.get("place")),
+        ("Bottom box", lines.get("box")),
+        ("Bottom line", lines.get("bottom")),
+    ]
+    text_rules = "\n".join(f'- {where_}: "{text}"' for where_, text in slots if text)
+    return (
+        f"Vertical 3:4 festival poster, warm hand-drawn illustration of {scene} "
+        f"{'in ' + season + ' ' if season else ''}{where}: {material}, {mood}, families walking. "
+        "Leave clean space at the top and bottom for text.\n\n"
+        "Render ONLY the following Korean text, exactly as written, with no other text anywhere "
+        "(no signs on stalls, no English, no extra words, no numbers other than those given):\n"
+        f"{text_rules}"
+    )
+
+
 def image_prompt(plan: FestivalPlan) -> str:
-    """배경 그림 설명 (영어). 이름·기간·장소·숫자·센터 데이터는 넣지 않는다."""
+    """글자 없는 배경 그림 설명 (영어). 글자 넣은 포스터가 검사를 통과하지 못할 때 쓴다."""
     idea = plan.idea
     material = MATERIAL_EN.get(idea.material, "a local Jeju specialty")
     mood = FORMAT_MOOD.get(idea.format, "a cheerful community festival")
@@ -264,6 +428,75 @@ def generate_background(
     return img, retried or off_ratio
 
 
+# ---------- 포스터 글자 읽기·검사 ----------
+
+READ_SYSTEM = """포스터 그림에 보이는 글자를 그대로 옮겨 적는다. 고치거나 빼거나 보태지 않는다.
+보이는 글자를 한 줄씩 적고, 글자가 없으면 빈 목록을 준다.
+JSON으로만 답한다: {"lines": ["...", "..."]}"""
+
+
+def read_poster_text(
+    img: Image.Image, api_key: str, model: str, transport=None, timeout: float = 60
+) -> list[str]:
+    """텍스트 LLM(그림 입력)으로 포스터 글자를 읽는다. Interactions API의 image 입력 블록을 쓴다."""
+    from agent.gemini import extract_text
+
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="PNG")
+    body = {
+        "model": model,
+        "system_instruction": READ_SYSTEM,
+        "input": [
+            {"type": "text", "text": "이 포스터에 보이는 글자를 모두 그대로 적어줘."},
+            {
+                "type": "image",
+                "mime_type": "image/png",
+                "data": base64.b64encode(buf.getvalue()).decode(),
+            },
+        ],
+        "response_format": {"type": "text", "mime_type": "application/json"},
+    }
+    try:
+        with httpx.Client(timeout=timeout, transport=transport) as client:
+            resp = client.post(
+                ENDPOINT,
+                headers={
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json",
+                    "Api-Revision": API_REVISION,
+                },
+                json=body,
+            )
+        if resp.status_code >= 400:
+            raise TextReadError(f"포스터 글자를 읽지 못했어요 (HTTP {resp.status_code}).")
+        data = json.loads(_strip_fence(extract_text(resp.json())))
+        return [str(x).strip() for x in data.get("lines", []) if str(x).strip()]
+    except TextReadError:
+        raise
+    except Exception as exc:  # 네트워크·형식 오류 (키는 메시지에 넣지 않는다)
+        raise TextReadError(f"포스터 글자를 읽지 못했어요 ({type(exc).__name__}).") from exc
+
+
+def _norm(text: str) -> str:
+    """비교용: 띄어쓰기·문장부호를 뺀다."""
+    return re.sub(r"[\s·|•,.:;!?~'\"“”‘’()\[\]\-–—]+", "", text)
+
+
+def check_poster_text(read_lines: list[str], lines: dict[str, str], allowed: set[str]) -> list[str]:
+    """(a) 정한 문구가 다 있는지 (b) 정하지 않은 글자·기획서에 없는 숫자가 없는지. 문제 목록."""
+    text = _norm(" ".join(read_lines)).replace(_norm(AI_CREDIT), "")
+    problems = [f"빠진 문구: {v}" for v in lines.values() if _norm(v) not in text]
+    rest = text
+    for v in sorted(lines.values(), key=len, reverse=True):
+        rest = rest.replace(_norm(v), "")
+    extra = re.sub(r"[^0-9A-Za-z가-힣]", "", rest)
+    if len(extra) > EXTRA_TOLERANCE:
+        problems.append(f"정하지 않은 글자: {extra[:30]}")
+    if nums := unknown_numbers(" ".join(read_lines).replace(AI_CREDIT, ""), allowed):
+        problems.append(f"기획서에 없는 숫자: {', '.join(nums)}")
+    return problems
+
+
 # ---------- 포스터 그리기 ----------
 
 
@@ -278,6 +511,29 @@ def _cover(img: Image.Image, size=POSTER_SIZE) -> Image.Image:
     resized = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
     left, top = (resized.width - w) // 2, (resized.height - h) // 2
     return resized.crop((left, top, left + w, top + h))
+
+
+def _contain(img: Image.Image, size=POSTER_SIZE) -> Image.Image:
+    """글자가 잘리지 않게 비율을 지켜 안에 넣고, 남는 곳은 가장자리 색으로 채운다."""
+    w, h = size
+    scale = min(w / img.width, h / img.height)
+    resized = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
+    fill = resized.getpixel((0, 0))
+    canvas = Image.new("RGB", size, fill)
+    canvas.paste(resized, ((w - resized.width) // 2, (h - resized.height) // 2))
+    return canvas
+
+
+def add_credit(img: Image.Image) -> Image.Image:
+    """AI 그림을 쓴 포스터 오른쪽 아래에 작게 AI 표기."""
+    poster = img.convert("RGB").copy()
+    draw = ImageDraw.Draw(poster)
+    small = _font(24)
+    w, h = poster.size
+    tw = draw.textlength(AI_CREDIT, font=small)
+    draw.text((w - 80 - tw + 2, h - 48), AI_CREDIT, font=small, fill=(40, 40, 40))  # 그림자
+    draw.text((w - 80 - tw, h - 50), AI_CREDIT, font=small, fill=(235, 235, 235))
+    return poster
 
 
 def _wrap(draw, text: str, font, width: int) -> list[str]:
@@ -314,9 +570,9 @@ def render_poster(
         for line in _wrap(draw, texts[key], sub_font, w - margin * 2)[:2]:
             draw.text((margin, y), line, font=sub_font, fill=(255, 245, 225))
             y += 64
+    del small
     if background is not None:  # AI 그림을 쓴 포스터만 표기
-        tw = draw.textlength(AI_CREDIT, font=small)
-        draw.text((w - margin - tw, h - 50), AI_CREDIT, font=small, fill=(230, 230, 230))
+        return add_credit(poster)
     return poster.convert("RGB")
 
 
@@ -405,8 +661,15 @@ def consistency_checks(plan: FestivalPlan, result: "PromoResult") -> list[PromoC
     allowed = allowed_numbers(promo_payload(plan))
     checks = []
     for key, label in (("title", "축제 이름"), ("period", "기간"), ("place", "장소")):
-        same = result.poster_text.get(key) == texts[key]
-        checks.append(PromoCheck(item=f"포스터 {label}", ok=same, detail=texts[key]))
+        shown = result.poster_text.get(key, "")
+        same = shown == texts[key] or (key == "title" and shown and texts[key].startswith(shown))
+        detail = (
+            texts[key] if shown == texts[key] else f"{shown} (기획서: {texts[key]}, 길어서 줄임)"
+        )
+        checks.append(PromoCheck(item=f"포스터 {label}", ok=bool(same), detail=detail))
+    if result.poster_mode == "ai_text":
+        checks.append(PromoCheck(item="포스터 글자 검사", ok=not result.text_problems,
+                                 detail="정한 문구만 그대로 들어갔어요"))  # fmt: skip
     if result.sns_text is None:
         checks.append(PromoCheck(item="SNS 글", ok=False, detail="만들지 못했어요"))
         return checks
@@ -439,27 +702,54 @@ def make_promo(
     llm=None,
     transport=None,
     out_dir: Path | None = None,
+    text_model: str | None = None,
 ) -> PromoResult:
     """승인된 기획서로 포스터와 SNS 글을 만든다. 승인 전이면 agent.plan.PlanNotApprovedError."""
     from agent.plan import require_approved
 
     require_approved(plan)
+    from agent.gemini import DEFAULT_MODEL as DEFAULT_TEXT_MODEL
+    from agent.plan import allowed_numbers
+
     texts = fixed_texts(plan)
-    prompt = image_prompt(plan)
-    background, cropped, notice = None, False, None
+    lines = poster_lines(plan)
+    prompt = text_poster_prompt(plan, lines)
+    allowed = allowed_numbers({**promo_payload(plan), **lines})
+    color = CATEGORY_COLORS.get(plan.idea.material_category, (46, 125, 90))
+    model = image_model or DEFAULT_IMAGE_MODEL
+    mode, poster, cropped, notice, attempts, problems = "plain", None, False, None, 0, []
     if not api_key:
         notice = NO_KEY_NOTICE
     else:
         try:
-            background, cropped = generate_background(
-                prompt, api_key, image_model or DEFAULT_IMAGE_MODEL, transport=transport
-            )
+            # 1) 이미지 모델이 한글 문구까지 그린다. 글자를 읽어 검사하고, 틀리면 다시 (최대 2번)
+            for _ in range(POSTER_ATTEMPTS):
+                attempts += 1
+                img, cropped = generate_background(prompt, api_key, model, transport=transport)
+                try:
+                    read = read_poster_text(
+                        img, api_key, text_model or DEFAULT_TEXT_MODEL, transport
+                    )
+                except TextReadError as exc:
+                    problems = [str(exc)]
+                    break  # 검사를 못 하면 글자를 따로 얹는다
+                problems = check_poster_text(read, lines, allowed)
+                if not problems:
+                    mode, poster = "ai_text", add_credit(_contain(img))
+                    break
+            # 2) 그래도 틀리면 지금 방식: 글자 없는 그림 + Pillow 한글
+            if mode != "ai_text":
+                background, cropped = generate_background(
+                    image_prompt(plan), api_key, model, transport=transport
+                )
+                mode, notice = "overlay", TEXT_FALLBACK_NOTICE
+                poster = render_poster({**texts, "title": lines["title"]}, background, color)
         except ImageQuotaError:
-            notice = QUOTA_NOTICE
+            mode, notice = "plain", QUOTA_NOTICE
         except ImageGenerationError:
-            notice = FAIL_NOTICE
-    color = CATEGORY_COLORS.get(plan.idea.material_category, (46, 125, 90))
-    poster = render_poster(texts, background, color)
+            mode, notice = "plain", FAIL_NOTICE
+    if poster is None or mode == "plain":
+        mode, poster = "plain", render_poster({**texts, "title": lines["title"]}, None, color)
     out_dir = OUTPUT_DIR if out_dir is None else out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{plan.plan_id}_v{plan.version}_poster.png"
@@ -474,8 +764,12 @@ def make_promo(
         plan_version=plan.version,
         created_at=datetime.now(UTC),
         poster_path=str(path),
-        poster_text=texts,
-        used_ai_image=background is not None,
+        poster_text={**texts, "title": lines["title"]},
+        poster_lines=lines,
+        poster_mode=mode,
+        text_attempts=attempts,
+        text_problems=problems if mode != "ai_text" else [],
+        used_ai_image=mode in ("ai_text", "overlay"),
         image_cropped=cropped,
         image_prompt=prompt,
         image_notice=notice,

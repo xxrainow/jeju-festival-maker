@@ -558,7 +558,9 @@ def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
     result = promo.PromoResult.model_validate(at.session_state["promo"])
     assert Path(result.poster_path).exists() and not result.used_ai_image
     assert any("기본 포스터" in w for w in labels(at, "warning"))  # 키 없음 안내
-    assert any(c.value == "\n".join(result.poster_text.values()) for c in at.code)  # 포스터 문구
+    assert any(
+        c.value == "\n".join(result.poster_lines.values()) for c in at.code
+    )  # 포스터 문구 6줄
     # ③으로 돌아가서 같은 안이면 그대로, 다시 확인하면 홍보물도 지워진다
     click(at, "← 이전 단계로")
     click(at, "← 이전 단계로")
@@ -707,3 +709,28 @@ def test_non_ai_card_error_stays_on_step_one(monkeypatch):
     at = click(confirm(), "아이디어 보기")
     assert at.session_state["step"] == 1 and "proposal" not in at.session_state
     assert any("조건에 맞는 형식이 3개보다 적어요" in w for w in labels(at, "warning"))
+
+
+def test_demo_toggle_is_in_options_and_explains_how_to_turn_off(no_llm):
+    at = confirm()
+    options = next(e for e in at.expander if e.label == "시연 옵션")
+    toggle = next(c for c in options.checkbox if c.label == screen.DEMO_TOGGLE_LABEL)
+    assert screen.DEMO_TOGGLE_LABEL == "시연용 예시 카드 보기 (AI 없이)"
+    assert toggle.value is False  # 기본은 꺼짐
+    toggle.check().run()
+    click(at, "아이디어 보기")
+    warnings = labels(at, "warning")
+    chosen = [w for w in warnings if screen.CHOSEN_DEMO_WARNING in w]
+    assert chosen and "① 조건 입력에서 체크를 끄면" in chosen[0]
+    assert not any(screen.DEMO_WARNING in w for w in warnings)  # "AI 연결 전이라 …"는 안 나옴
+
+
+def test_demo_warning_text_by_reason():
+    chosen = screen.demo_warning_text(screen.CHOSEN_DEMO_REASON, ["지역: 입력 A · 카드 B"])
+    assert screen.CHOSEN_DEMO_WARNING in chosen and screen.DEMO_WARNING not in chosen
+    assert "입력과 다른 점: 지역: 입력 A · 카드 B" in chosen
+    quota = screen.demo_warning_text(screen.QUOTA_REASON, [])
+    assert (
+        screen.DEMO_WARNING in quota and f"이유: {screen.QUOTA_REASON}" in quota
+    )  # AI 오류는 그대로
+    assert screen.CHOSEN_DEMO_WARNING not in quota
