@@ -7,6 +7,7 @@
 
 import json
 import re
+from collections.abc import Callable
 
 from agent.draft_contracts import IdeaProposal, UserRequest
 from agent.idea_gen import (
@@ -173,6 +174,9 @@ def parse_picks(raw: str, cset: CandidateSet) -> list[dict]:
     return picks
 
 
+Progress = Callable[[int, str], None]
+
+
 def generate_idea_cards(
     request: UserRequest,
     data: TrendData,
@@ -180,15 +184,27 @@ def generate_idea_cards(
     *,
     materials: tuple[Material, ...] = SEED_MATERIALS,
     max_attempts: int = 2,
+    progress: Progress | None = None,
 ) -> IdeaProposal:
-    """후보를 만들고 LLM이 3개를 고르게 한 뒤 카드 묶음을 돌려준다."""
+    """후보를 만들고 LLM이 3개를 고르게 한 뒤 카드 묶음을 돌려준다.
+
+    progress(단계, 설명)를 넘기면 단계가 시작될 때마다 알려준다 (화면의 진행 상황용).
+    단계: 2 형식 × 재료 조합 점수, 3 카드 문장 쓰기(AI), 4 확인할 가설 정리.
+    """
+    step = progress or (lambda i, detail: None)
     if max_attempts < 1:
         raise ValueError("max_attempts는 1 이상이어야 해요.")
+    step(2, "형식과 제주 재료를 엮어 점수를 매기는 중")
     cset = build_candidates(request, data, materials)
-    if len({c.format for c in cset.candidates}) < IDEA_COUNT:
+    formats = len({c.format for c in cset.candidates})
+    if formats < IDEA_COUNT:
         raise CardGenerationError(
             "조건에 맞는 형식이 3개보다 적어요. 관심 소재나 계절 조건을 넓혀 다시 시도해주세요."
         )
+    step(
+        3,
+        f"후보 {len(cset.candidates)}개 · 형식 {formats}개 중에서 형식이 겹치지 않게 3개를 골라요",
+    )
     user_prompt = build_user_prompt(request, cset, data)
     problem = ""
     for _ in range(max_attempts):
@@ -210,6 +226,7 @@ def generate_idea_cards(
             f"마지막 문제: {problem}"
         )
 
+    step(4, "고르면 제주 데이터로 확인할 것 2개씩")
     # 순위는 LLM이 고른 순서가 아니라 코드 점수 순서
     picks.sort(key=lambda p: cset.candidates.index(p["candidate"]))
     cards = [

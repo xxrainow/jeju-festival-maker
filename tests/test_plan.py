@@ -22,7 +22,12 @@ from agent.plan import (
 from agent.verify import verify_idea
 
 NOW = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
-RUN = verify_idea(demo_proposal().ideas[0], DEMO_REQUEST, FAKE_TOOLS, festivals_by_month={11: 2})
+_DEMO = demo_proposal().ideas[0]
+# 가짜 도구 시나리오(12월 실패 → 11월)를 쓰려고 추천 월만 12월로 바꾼 사본 (데모 카드는 1월)
+_CARD = _DEMO.model_copy(
+    update={"timing": _DEMO.timing.model_copy(update={"recommended_months": [12]})}
+)
+RUN = verify_idea(_CARD, DEMO_REQUEST, FAKE_TOOLS, festivals_by_month={11: 2})
 
 
 class FakeLLM:
@@ -157,6 +162,49 @@ def test_markdown_and_save(tmp_path):
         FestivalPlan.model_validate_json(json_path.read_text(encoding="utf-8")).plan_id
         == plan.plan_id
     )
+
+
+def test_change_history_uses_plain_words():
+    """변경 이력과 LLM 입력에 필드 이름(timing.recommended_months)을 그대로 쓰지 않는다."""
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    md = plan_to_markdown(plan)
+    assert "- 추천 시기: 12월 → 11월 (" in md
+    assert "timing.recommended_months" not in md
+    payload = plan_payload(RUN, DEMO_REQUEST)
+    assert payload["바뀐 점"][0].startswith("추천 시기: 12월 → 11월")
+    assert not any("timing." in c for c in payload["바뀐 점"])
+
+
+def test_venue_candidates_are_not_written_as_decided():
+    """장소를 정하지 않았으면 후보 이름은 '후보'라고 밝힌 문장에서만 쓸 수 있다."""
+    from agent.plan import unconfirmed_venue_claims
+
+    names = ["곽지과물해변", "금산공원"]
+    claim = "장소는 곽지과물해변을 활용한다. 셔틀을 검토한다."
+    assert unconfirmed_venue_claims(claim, names) == ["곽지과물해변"]
+    assert unconfirmed_venue_claims("후보인 곽지과물해변·금산공원 중에서 고른다.", names) == []
+    allowed = allowed_numbers(plan_payload(RUN, DEMO_REQUEST))
+    bad = good_response(operation=claim)
+    with pytest.raises(PlanResponseError, match="정하지 않은 장소"):
+        parse_plan_text(json.dumps(bad, ensure_ascii=False), allowed, names)
+    ok = good_response(operation="장소는 미확인이고, 후보로 곽지과물해변을 검토한다.")
+    assert parse_plan_text(json.dumps(ok, ensure_ascii=False), allowed, names)
+
+
+def test_chosen_venue_goes_to_overview():
+    """직접 고쳐서 다시 확인에서 사용자가 고른 장소는 개요에 쓰고, 후보 목록에서 뺀다."""
+    from agent.draft_contracts import VenueCandidate
+
+    final = RUN.final.model_copy(
+        update={"venue": [VenueCandidate(name="곽지과물해변", admin_area="제주시 애월읍")]}
+    )
+    run = RUN.model_copy(update={"final": final})
+    payload = plan_payload(run, DEMO_REQUEST)
+    assert payload["최종 아이디어"]["장소"] == "곽지과물해변 (사용자 선택, 대관 조건 미확인)"
+    assert "곽지과물해변" not in payload["최종 아이디어"]["장소 후보 (확정 아님)"]
+    plan = generate_plan(run, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    assert plan.overview.venue.startswith("곽지과물해변")
+    assert "| 장소 | 곽지과물해변 (사용자 선택" in plan_to_markdown(plan)
 
 
 def test_free_text_purpose_picks_kpi():

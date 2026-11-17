@@ -3,11 +3,14 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from agent.demo_cards import demo_proposal
 from agent.draft_contracts import CheckResult, VerificationRun
 from app import screen
+from tests.demo_helpers import december_demo  # noqa: F401 - 픽스처
+from tests.demo_helpers import december_demo_proposal as demo_proposal
 
 APP = str(Path(__file__).resolve().parents[1] / "streamlit_app.py")
+# 데모 카드 1은 시연용으로 1월이지만, 이 파일의 화면 테스트는 원래 12월 카드 기준이다
+pytestmark = pytest.mark.usefixtures("december_demo")
 CARD = demo_proposal().ideas[0]
 
 
@@ -709,6 +712,23 @@ def test_non_ai_card_error_stays_on_step_one(monkeypatch):
     at = click(confirm(), "아이디어 보기")
     assert at.session_state["step"] == 1 and "proposal" not in at.session_state
     assert any("조건에 맞는 형식이 3개보다 적어요" in w for w in labels(at, "warning"))
+
+
+def test_real_demo_card_fails_january_and_moves_to_december(no_llm, monkeypatch):
+    """실제 데모 카드(추천 1월)는 애월에서 시기 확인에 실패하고 12월로 고쳐진다 (시연 흐름)."""
+    import agent.proposals
+    from agent import demo_cards
+
+    monkeypatch.setattr(agent.proposals, "demo_proposal", demo_cards.demo_proposal)
+    at = to_results("제주시 애월읍")
+    run = VerificationRun.model_validate(at.session_state["run"])
+    assert run.rounds[0].results[0].check == "check_timing"
+    assert run.rounds[0].results[0].status == "fail"
+    assert run.final.timing.recommended_months == [12]
+    assert run.outcome == "ready_for_approval"
+    shown = [m.value for m in at.markdown]
+    assert any(v.startswith("**추천 시기: 1월 → 12월") for v in shown)
+    assert not at.exception
 
 
 def test_demo_toggle_is_in_options_and_explains_how_to_turn_off(no_llm):

@@ -162,3 +162,22 @@ def test_real_path_with_fake_llm(trend_data):
         REQUEST, demo=False, llm=llm, data=trend_data, materials=SEED_MATERIALS
     )
     assert len(proposal.ideas) == 3
+
+
+def test_progress_reports_each_step_in_order(trend_data):
+    """화면의 '아이디어 만드는 중' 진행 상황: 1 트렌드 → 2 조합 점수 → 3 카드 문장(AI) → 4 가설."""
+    cset = build_candidates(REQUEST, trend_data)
+    llm = FakeLLM(picks_for(cset, distinct_ids(cset)))
+    seen = []
+    proposal = propose_idea_cards(
+        REQUEST,
+        demo=False,
+        llm=llm,
+        data=trend_data,
+        materials=SEED_MATERIALS,
+        progress=lambda step, detail: seen.append((step, detail)),
+    )
+    assert [s for s, _ in seen] == [1, 2, 3, 4]
+    assert all(detail for _, detail in seen)
+    assert f"후보 {len(cset.candidates)}개" in seen[2][1]
+    assert len(proposal.ideas) == 3
