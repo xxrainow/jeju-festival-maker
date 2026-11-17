@@ -750,6 +750,14 @@ def season_notice(run) -> str | None:
     return notice
 
 
+def round_status_row(rd) -> dict:
+    """타임라인 한 줄: "처음 확인" + 항목별 (이름, 상태)."""
+    return {
+        "label": f"{ORDINALS.get(rd.round, f'{rd.round}번째')} 확인",
+        "items": [(CHECK_LABELS[r.check], r.status) for r in rd.results],
+    }
+
+
 def friendly_changes(run) -> list[dict]:
     """화면용 바뀐 점: title, reason, numbers(작게), note(조건부일 때), season."""
     out = []
@@ -874,44 +882,6 @@ def demo_differences(proposal, request) -> list[str]:
 ORDINALS = {1: "처음", 2: "두 번째", 3: "세 번째", 4: "네 번째"}
 SCALE_LABELS = {"기본": "기본", "소규모 버전": "작게"}  # 화면 이름 (계약 값 → 화면)
 NO_VENUE = "(정하지 않음)"
-
-
-def _ro(word: str) -> str:
-    """조사 (으)로: 받침이 없거나 ㄹ 받침이면 "로"."""
-    ch = word.strip()[-1:]
-    if not ch or not ("가" <= ch <= "힣"):
-        return word + "로"
-    jong = (ord(ch) - 0xAC00) % 28
-    return word + ("로" if jong in (0, 8) else "으로")
-
-
-def round_summary(run) -> list[str]:
-    """확인 과정을 쉬운 말로. 고친 게 없으면 "5가지를 확인했어요."."""
-    lines = []
-    for rd in run.rounds:
-        merged: list[dict] = []  # 같은 변경을 여러 확인이 제안하면 한 줄로
-        for change in rd.changes:
-            r = _source_check(rd.results, change)
-            label = CHECK_LABELS.get(r.check, "확인") if r is not None else "확인"
-            same = next(
-                (m for m in merged
-                 if (m["change"].field, m["change"].before, m["change"].after)
-                 == (change.field, change.before, change.after)),
-                None,
-            )  # fmt: skip
-            if same is None:
-                merged.append({"change": change, "labels": [label]})
-            elif label not in same["labels"]:
-                same["labels"].append(label)
-        for m in merged:
-            c = m["change"]
-            before, after = value_text(c.field, c.before), value_text(c.field, c.after)
-            what = josa("·".join(m["labels"]), "이", "가")
-            lines.append(
-                f"{ORDINALS.get(rd.round, f'{rd.round}번째')} 확인에서 {what} 맞지 않아 "
-                f"{before} → {_ro(after)} 바꾼 뒤 다시 확인했어요."
-            )
-    return lines or [f"{len(run.rounds[-1].results)}가지를 확인했어요."]
 
 
 def edited_card(card, months: list[int], venue: dict | None, scale: str):

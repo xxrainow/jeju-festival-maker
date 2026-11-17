@@ -231,8 +231,8 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert any(v.startswith("**추천 시기: 12월 → 1월") for v in shown)  # 필드 이름 대신 쉬운 말
     assert not any("timing.recommended_months" in v for v in shown)
     assert not at.code  # 개발자용 원문은 화면에 없음
-    assert any("처음 확인에서 시기가 맞지 않아 12월 → 1월로 바꾼 뒤 다시 확인했어요." in c.value
-               for c in at.caption)  # fmt: skip
+    # 확인 결과 요약 줄·회차 설명은 화면에서 뺐다 (카드와 "바뀐 점"에 같은 내용이 있음)
+    assert not any("다시 확인했어요" in c.value for c in at.caption)
 
     # 화면 문장에는 이스케이프 안 된 "~"가 없다 (추천 주, 출처 기간 등). 표 값은 그대로
     import re
@@ -536,9 +536,15 @@ def test_failing_manual_plan_blocks_progress(no_llm):
 
 def test_check_cards_use_combined_details_and_keep_evidence(no_llm):
     at = to_results()
-    details = [e for e in at.expander if e.label == "상세 결과와 근거 보기"]
+    details = [
+        e for e in at.expander
+        if e.label == "상세 결과와 근거 보기" or e.label.startswith("장소 후보 ")
+    ]
     assert len(details) == 5
     assert not any(e.label == "주의할 점" for e in at.expander)
+    # 장소 카드는 펼침 문구에 후보 개수를 보여준다 (표 행 수와 같게)
+    venue_rows = len(details[1].dataframe[0].value)
+    assert details[1].label == f"장소 후보 {venue_rows}곳 비교·근거 보기"
     assert len(details[1].dataframe) == 1  # 장소 후보는 통합 상세 안에 보존
     assert any(c.value.startswith("출처:") for c in details[1].caption)
     assert any("반경 500m" in c.value for c in details[1].caption)
@@ -708,11 +714,17 @@ def test_check_history_is_plain_words(no_llm):
     import re
 
     at = to_results()
-    history = next(e for e in at.expander if e.label == "확인 과정 자세히 보기")
-    texts = [m.value for m in history.markdown]
-    assert texts and texts[0].startswith("**처음 확인**: 시기 ❌ 실패")
-    for t in texts:
-        assert not re.search(r"[A-Za-z_]{3,}", t), t  # 영어·필드 이름 없음
+    # 확인 과정은 "바뀐 점"과 한 타임라인으로 합쳤다 (따로 펼치는 칸 없음)
+    assert not any(e.label == "확인 과정 자세히 보기" for e in at.expander)
+    run = VerificationRun.model_validate(at.session_state["run"])
+    rows = [screen.round_status_row(rd) for rd in run.rounds]
+    assert rows[0]["label"] == "처음 확인" and rows[0]["items"][0] == ("시기", "fail")
+    from app import style
+
+    html = style.round_row_html(rows[-1], last=True)
+    assert "지금 결과" in html and "실패" not in html
+    for row in rows:
+        assert not re.search(r"[A-Za-z_]{3,}", row["label"] + "".join(n for n, _ in row["items"]))
 
 
 def test_interest_sentence_follows_basis():
@@ -1136,3 +1148,14 @@ def test_idea_summary_preserves_missing_data_and_budget(no_llm):
     card.budget.format_median_krw = None
     rows = screen.idea_summary(card)
     assert all(row[2] == "데이터 대기" for row in rows)
+
+
+def test_check_selection_and_plan_strip_html():
+    from app import style
+
+    head = style.check_selection_html(CARD)
+    assert "고른 아이디어" in head and CARD.title in head and CARD.material in head
+    strip = style.plan_strip_html("내가 고친 안", CARD, ready=False)
+    assert "진행 불가" in strip and screen.NO_VENUE in strip
+    assert screen.months_text(CARD.timing.recommended_months) in strip
+    assert "진행 가능" in style.plan_strip_html("에이전트 추천안", CARD, ready=True)
