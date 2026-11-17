@@ -32,7 +32,9 @@ SYSTEM_PROMPT = f"""\
 1. <candidates>에 있는 candidate_id만 고르세요. 목록에 없는 조합을 만들지 마세요.
 2. {IDEA_COUNT}개의 형식(format)은 서로 달라야 합니다. 계절과 주 대상도 되도록 겹치지 않게 고르세요.
 3. 점수가 높은 후보를 우선하되, 실제 축제로 어색한 조합은 건너뛰세요.
-4. title, concept, pick_reason에는 숫자를 쓰지 마세요. 수치는 코드가 따로 채웁니다.
+4. title, concept, pick_reason에는 수치를 쓰지 마세요. 일도2동 같은 지역 고유명의 숫자는 허용합니다.
+   희망 지역이 있으면 title과 concept에 다른 지역명을 넣지 마세요.
+   소규모 축제이므로 드론 쇼·불꽃 공연 대신 기존 조명, 산책, 지역 참여 프로그램을 제안하세요.
 5. hypotheses는 이 아이디어가 성립하려면 제주 데이터로 확인해야 할 조건을 1~{MAX_HYPOTHESES}개 쓰세요.
    다음 다섯 가지 중에서만 고르세요: 시기(그 달 외지인 방문), 장소(관광객이 모이고 버스로 오가기 쉬운 곳),
    대상(주 대상 연령대가 실제로 방문), 위험(주거지 소음·교통 정체·같은 재료 축제와 겹침), 규모(예산 안에서 운영).
@@ -111,12 +113,17 @@ def build_user_prompt(request: UserRequest, cset: CandidateSet, data: TrendData)
 
 
 def _has_number(text: str, allow_month_hour: bool = False) -> bool:
+    # 행정동 고유명에 포함된 숫자는 생성한 수치가 아니다.
+    text = re.sub(r"[가-힣]+\d+동", "", text)
     if allow_month_hour:
         text = _ALLOWED_NUMBER.sub("", text)
     return any(ch.isdigit() for ch in text)
 
 
-def parse_picks(raw: str, cset: CandidateSet) -> list[dict]:
+def parse_picks(
+    raw: str, cset: CandidateSet, request: UserRequest | None = None,
+    trend_data: TrendData | None = None,
+) -> list[dict]:
     """LLM 응답을 검사해 [{candidate, title, concept, pick_reason, hypotheses}]로 돌려준다."""
     try:
         data = json.loads(_strip_code_fence(raw))
@@ -156,6 +163,20 @@ def parse_picks(raw: str, cset: CandidateSet) -> list[dict]:
             raise CardResponseError(
                 f"{number}번 항목의 가설에 월·시각·연령대가 아닌 숫자가 있어요."
             )
+        if request is not None:
+            from agent.content_rules import check_request_text
+
+            candidate = by_id[cid]
+            median = trend_data.formats[candidate.format].budgets_krw if trend_data else ()
+            amounts = sorted(b for _, b in median)
+            typical = amounts[len(amounts) // 2] if amounts else None
+            constrained = request.budget_max_krw is None or typical is None or (
+                request.budget_max_krw < typical
+            )
+            if problem := check_request_text(
+                texts["title"] + " " + texts["concept"], request, constrained=constrained
+            ):
+                raise CardResponseError(f"{number}번 항목: {problem}")
         picks.append({
             "candidate": by_id[cid],
             **{k: v.strip() for k, v in texts.items()},
@@ -195,7 +216,10 @@ def generate_idea_cards(
     if max_attempts < 1:
         raise ValueError("max_attempts는 1 이상이어야 해요.")
     step(2, "형식과 제주 재료를 엮어 점수를 매기는 중")
-    cset = build_candidates(request, data, materials)
+    try:
+        cset = build_candidates(request, data, materials)
+    except ValueError as exc:
+        raise CardGenerationError(str(exc)) from exc
     formats = len({c.format for c in cset.candidates})
     if formats < IDEA_COUNT:
         raise CardGenerationError(
@@ -216,7 +240,7 @@ def generate_idea_cards(
         except LLMError as exc:
             raise CardGenerationError(f"아이디어 생성 중 AI 호출에 실패했어요. {exc}") from exc
         try:
-            picks = parse_picks(raw, cset)
+            picks = parse_picks(raw, cset, request, data)
             break
         except CardResponseError as exc:
             problem = str(exc)

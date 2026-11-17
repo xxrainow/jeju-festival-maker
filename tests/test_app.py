@@ -185,6 +185,12 @@ def click(at, label: str) -> AppTest:
     return at
 
 
+def pick(at, index=0) -> AppTest:
+    [b for b in at.button if b.label == "자세히 보기"][index].click().run()
+    click(at, "이 아이디어 고르기")
+    return at
+
+
 def choose(at, name: str) -> AppTest:
     next(r for r in at.radio if r.label == "진행할 안").set_value(name).run()
     return at
@@ -209,14 +215,12 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     at.text_input[2].input("방어")
     at.text_input[3].input("가족")
     at.number_input[0].set_value(10_000_000)
-    click(at, "이 조건으로 확정")
-    assert any("서귀포시 대정읍" in s for s in labels(at, "success"))
-
     click(at, "아이디어 보기")
+    assert at.session_state["request"]["region"] == "서귀포시 대정읍"
     assert any("데모 응답" in i for i in labels(at, "info"))  # notices
     assert len([h for h in at.subheader]) == 3
 
-    next(b for b in at.button if b.label == "이 아이디어 고르기").click().run()
+    pick(at)
     assert not at.exception
     run = VerificationRun.model_validate(at.session_state["run"])
     assert len(run.rounds[-1].results) == 5
@@ -446,12 +450,11 @@ def test_app_warns_summer_citrus_and_demo_cards(no_llm):
     at.selectbox[0].select("서귀포시 대정읍")
     at.selectbox[1].select("여름")
     at.text_input[2].input("감귤")
-    click(at, "이 조건으로 확정")
+    click(at, "아이디어 보기")
     warnings = labels(at, "warning")
     assert any(
         "감귤은 11·12·1월이 제철이라 여름과 맞지 않아요" in w for w in warnings
-    )  # ① 조건 입력
-    click(at, "아이디어 보기")
+    )  # 입력한 조건의 충돌 안내도 카드 화면에 유지
     warnings = labels(at, "warning")  # ② 아이디어
     demo = [w for w in warnings if screen.DEMO_WARNING in w]
     assert demo and f"이유: {screen.NO_KEY_REASON}" in demo[0]  # 예시 카드로 바뀐 이유
@@ -474,7 +477,6 @@ def confirm(region="서귀포시 대정읍", budget=None) -> AppTest:
     at.selectbox[0].select(region)
     if budget is not None:
         at.number_input[0].set_value(budget)
-    next(b for b in at.button if b.label == "이 조건으로 확정").click().run()
     return at
 
 
@@ -483,16 +485,17 @@ def test_budget_blank_is_undecided_and_number_is_used(no_llm):
 
     at = confirm()
     assert at.number_input[0].value is None  # 처음엔 빈칸
+    click(at, "아이디어 보기")
     assert UserRequest.model_validate(at.session_state["request"]).budget_max_krw is None
-    assert any("예산 미정" in s for s in labels(at, "success"))
     at = confirm(budget=10_000_000)
+    click(at, "아이디어 보기")
     assert UserRequest.model_validate(at.session_state["request"]).budget_max_krw == 10_000_000
 
 
 def to_results(region="서귀포시 대정읍") -> AppTest:
     at = confirm(region)
     click(at, "아이디어 보기")
-    next(b for b in at.button if b.label == "이 아이디어 고르기").click().run()
+    pick(at)
     assert at.session_state["step"] == 3
     return at
 
@@ -808,26 +811,26 @@ def test_steps_move_forward_and_back(no_llm):
     click(at, "아이디어 보기")
     assert at.session_state["step"] == 2
     # 아이디어 고르기 → ③, 돌아가서 같은 아이디어를 고르면 확인 결과 유지
-    picks = [b for b in at.button if b.label == "이 아이디어 고르기"]
-    picks[0].click().run()
+    pick(at)
     assert at.session_state["step"] == 3 and "run" in at.session_state
     title = demo_proposal().ideas[0].title  # 예시 카드 첫 장
     assert any(c.value.endswith(f"/ 고른 아이디어: {title}") for c in at.caption)
     run = at.session_state["run"]
     click(at, "← 이전 단계로")
-    next(b for b in at.button if b.label == "이 아이디어 고르기").click().run()
+    pick(at)
     assert at.session_state["run"] == run
     # 다른 아이디어를 고르면 확인 결과부터 다시
     click(at, "← 이전 단계로")
-    [b for b in at.button if b.label == "이 아이디어 고르기"][1].click().run()
+    pick(at, 1)
     assert at.session_state["run"] != run
     # ①로 돌아가 조건을 바꾸면 뒤 단계 결과가 지워진다
     click(at, "← 이전 단계로")
     click(at, "← 이전 단계로")
     assert at.session_state["step"] == 1
     at.selectbox[0].select("제주시 애월읍")
-    click(at, "이 조건으로 확정")
-    for key in ("proposal", "selected", "run"):
+    click(at, "아이디어 보기")
+    assert at.session_state["request"]["region"] == "제주시 애월읍"
+    for key in ("selected", "run"):
         assert key not in at.session_state
     assert not at.exception
 
@@ -966,7 +969,7 @@ def test_demo_toggle_is_in_options_and_explains_how_to_turn_off(no_llm):
     toggle = next(c for c in options.checkbox if c.label == screen.DEMO_TOGGLE_LABEL)
     assert screen.DEMO_TOGGLE_LABEL == "시연용 예시 카드 보기 (AI 없이)"
     assert toggle.value is False  # 기본은 꺼짐
-    toggle.check().run()
+    toggle.check()  # 입력 폼의 값은 아이디어 보기와 함께 제출
     click(at, "아이디어 보기")
     warnings = labels(at, "warning")
     chosen = [w for w in warnings if screen.CHOSEN_DEMO_WARNING in w]
@@ -983,3 +986,63 @@ def test_demo_warning_text_by_reason():
         screen.DEMO_WARNING in quota and f"이유: {screen.QUOTA_REASON}" in quota
     )  # AI 오류는 그대로
     assert screen.CHOSEN_DEMO_WARNING not in quota
+
+
+def test_sentence_fills_first_screen_without_second_confirmation(no_llm, monkeypatch):
+    from types import SimpleNamespace
+
+    from agent.draft_contracts import UserRequest
+
+    monkeypatch.setattr(
+        "agent.request_parser.parse_request",
+        lambda sentence: SimpleNamespace(
+            request=UserRequest(region="제주시 애월읍", interest="감귤"), notes=[]
+        ),
+    )
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.text_input[0].input("애월 감귤 축제")
+    click(at, "문장으로 조건 정리하기")
+    assert not at.exception
+    assert at.selectbox[0].value == "제주시 애월읍"
+    assert at.text_input[2].value == "감귤"
+    assert "request" not in at.session_state
+    assert not any(b.label == "이 조건으로 확정" for b in at.button)
+    assert len([b for b in at.button if b.label == "아이디어 보기"]) == 1
+    assert not any("이 조건이 맞나요?" in str(el.value) for el in at.get("html"))
+    at.text_input[2].input("방어")
+    click(at, "아이디어 보기")
+    assert at.session_state["step"] == 2
+    assert at.session_state["request"]["interest"] == "방어"
+    assert not at.exception
+
+
+def test_idea_details_can_close_without_selecting(no_llm):
+    at = click(confirm(), "아이디어 보기")
+    assert len([b for b in at.button if b.label == "자세히 보기"]) == 3
+    assert not any(b.label == "이 아이디어 고르기" for b in at.button)
+    assert "selected" not in at.session_state
+    [b for b in at.button if b.label == "자세히 보기"][1].click().run()
+    assert not at.exception
+    assert at.session_state["step"] == 2
+    assert "selected" not in at.session_state
+    assert not any(c.value.startswith("출처:") for c in at.caption)
+    assert any("데이터 출처" in c.value for c in at.caption)
+    click(at, "닫기")
+    assert not at.exception
+    assert at.session_state["step"] == 2
+    assert not any(b.label == "이 아이디어 고르기" for b in at.button)
+    assert "selected" not in at.session_state
+    pick(at, 1)
+    assert at.session_state["selected"] == demo_proposal().ideas[1].idea_id
+    assert at.session_state["step"] == 3
+
+
+def test_idea_summary_preserves_missing_data_and_budget(no_llm):
+    card = CARD.model_copy(deep=True)
+    rows = screen.idea_summary(card)
+    assert str(card.evidence.trend.new_count) in rows[0][1]
+    card.evidence.trend.status = "pending"
+    card.evidence.jeju_gap.status = "pending"
+    card.budget.format_median_krw = None
+    rows = screen.idea_summary(card)
+    assert all(row[2] == "데이터 대기" for row in rows)
