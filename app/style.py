@@ -179,11 +179,6 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
 .fl-format {{ display: inline-block; font-size: 12px; padding: 5px 12px; border-radius: 999px;
   border: 1px solid var(--fl-line); background: var(--fl-surface-2); margin-bottom: 4px; }}
 
-/* 확인 결과 요약 줄 */
-.fl-summary {{ display: flex; align-items: center; gap: 18px; flex-wrap: wrap; background: var(--fl-surface);
-  border: 1px solid var(--fl-line); border-radius: 24px; padding: 14px 20px; margin: 8px 0 4px; }}
-.fl-summary .count {{ font-size: 13px; color: var(--fl-ink-2); display: flex; gap: 6px; align-items: center; }}
-.fl-summary .count b {{ font-size: 16px; color: var(--fl-ink); }}
 .fl-check-head {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }}
 .fl-check-head b {{ font-size: 18px; }}
 .fl-section {{ font-family: {_PIXEL}; font-size: 11px; letter-spacing: .2em; color: var(--fl-ink-3);
@@ -388,11 +383,36 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-verification .fl-head {{ margin: 0; }}
 .st-key-verification .fl-h1 {{ font-size: 48px; }}
 .st-key-verification .fl-desc {{ font-size: 17px; max-width: none; line-height: 1.6; }}
-.fl-check-selection {{ margin: 0; font-size: 15px; line-height: 1.5; font-weight: 600; }}
+.fl-check-selection {{ position: relative; overflow: hidden; background: var(--fl-surface);
+  border-radius: 24px; padding: 24px 28px 24px 32px; display: flex; flex-direction: column; gap: 8px; }}
+.fl-check-selection::before {{ content: ""; position: absolute; inset: 0 auto 0 0; width: 6px;
+  background: var(--fl-accent); }}
+.fl-check-selection-label {{ font-size: 13px; font-weight: 600; color: #c4561a; }}
+.fl-check-selection-body {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }}
+.fl-check-selection h2 {{ margin: 0; padding: 0; font-size: 26px; font-weight: 700;
+  letter-spacing: -.03em; line-height: 1.3; }}
+.fl-check-selection .fl-format {{ margin: 0; }}
+.fl-check-selection p {{ margin: 0; font-size: 15px; line-height: 1.6; color: var(--fl-ink-2); }}
+.fl-plan-strip {{ display: grid; grid-template-columns: 1.1fr 1fr 1.4fr .8fr; align-items: stretch;
+  background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: 20px; overflow: hidden; }}
+.fl-plan-strip > div {{ display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  padding: 16px 24px; min-width: 0; }}
+.fl-plan-strip > div + div {{ border-left: 1px solid var(--fl-line); }}
+.fl-plan-strip small {{ font-size: 12px; color: var(--fl-ink-3); }}
+.fl-plan-strip b {{ font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }}
+.fl-plan-strip-name {{ background: var(--fl-surface-2); }}
+.fl-plan-strip-name .fl-badge {{ align-self: flex-start; }}
+@media (max-width: 700px) {{
+  .fl-check-selection {{ padding: 20px 20px 20px 26px; }}
+  .fl-check-selection h2 {{ font-size: 22px; }}
+  .fl-plan-strip {{ grid-template-columns: 1fr 1fr; }}
+  .fl-plan-strip > div + div {{ border-left: none; }}
+  .fl-plan-strip > div {{ border-top: 1px solid var(--fl-line); }}
+  .fl-plan-strip > div:nth-child(-n+2) {{ border-top: none; }}
+  .fl-plan-strip > div:nth-child(even) {{ border-left: 1px solid var(--fl-line); }}
+}}
 .st-key-verification [data-testid="stCaptionContainer"] p {{ color: var(--fl-ink-2); font-size: 14px; line-height: 1.6; }}
 .st-key-verification h3 {{ font-size: 24px; padding: 0; line-height: 1.5; }}
-.st-key-verification .fl-summary {{ margin: 0; padding: 14px 24px; gap: 16px; }}
-.fl-summary-note {{ margin-left: auto; font-size: 12px; color: var(--fl-ink-3); }}
 .st-key-verification [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ gap: 16px; }}
 .st-key-verification [class*="st-key-res-"] {{
   border: none; box-shadow: none; padding: 24px; gap: 16px;
@@ -441,6 +461,27 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 }}
 .st-key-verification [data-baseweb="tab-highlight"],
 .st-key-verification [data-baseweb="tab-border"] {{ display: none; }}
+/* 추천안·고친 안: 상단 단계 탭과 같은 검은 캡슐 (Streamlit 1.5x react-aria 탭) */
+.st-key-verification [data-testid="stTabs"] [role="tablist"] {{
+  display: inline-flex; width: fit-content; max-width: 100%; align-self: flex-start;
+  gap: 4px; padding: 6px; margin-bottom: 20px;
+  background: var(--fl-ink); border-radius: 999px; border: none; box-shadow: none;
+}}
+.st-key-verification [data-testid="stTabs"] [role="tablist"]::after,
+.st-key-verification [data-testid="stTabs"] [role="tablist"]::before {{ display: none; }}
+.st-key-verification [data-testid="stTab"] {{
+  padding: 10px 22px; border-radius: 999px; border: none; background: transparent;
+  color: rgba(255, 255, 255, .6); cursor: pointer; transition: background .15s, color .15s;
+}}
+.st-key-verification [data-testid="stTab"] p {{
+  font-size: 15px; font-weight: 500; color: inherit; margin: 0;
+}}
+.st-key-verification [data-testid="stTab"]:hover {{ color: #fff; }}
+.st-key-verification [data-testid="stTab"][data-selected="true"] {{
+  background: var(--fl-accent); color: var(--fl-ink);
+}}
+.st-key-verification [data-testid="stTab"][data-selected="true"] p {{ font-weight: 700; }}
+.st-key-verification [data-testid="stTabs"] .react-aria-SelectionIndicator {{ display: none; }}
 .st-key-verification [data-testid="stTabPanel"] {{ padding-top: 0; }}
 .st-key-verification [data-testid="stForm"] {{ border: none; padding: 0; }}
 .st-key-verification [class*="st-key-check-field-"] {{
@@ -470,16 +511,84 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   padding: 16px; border-radius: 16px; background: var(--fl-sea-soft); color: var(--fl-sea);
 }}
 .st-key-verification [data-testid="stAlert"] {{ font-size: 14px; }}
-.st-key-check-blocked [data-testid="stAlertContainer"] {{ background: var(--fl-fail-soft); color: var(--fl-fail); }}
-.st-key-check-blocked [data-testid="stAlertContent"] p {{ color: var(--fl-fail); }}
+/* 확인 과정과 바뀐 점: 회차 줄 → 바꾼 점 상자 → 다음 회차 줄 (세로 타임라인) */
+.st-key-verification [class*="st-key-timeline-"] {{
+  position: relative; gap: 14px; padding: 24px 28px; background: var(--fl-surface);
+  border-radius: 24px;
+}}
+.st-key-verification [class*="st-key-timeline-"]::before {{
+  content: ""; position: absolute; left: 33px; top: 40px; bottom: 40px; width: 2px;
+  background: var(--fl-line);
+}}
+.fl-round {{ position: relative; display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px 12px; padding-left: 28px; }}
+.fl-round-dot {{ position: absolute; left: 0; top: 50%; width: 12px; height: 12px; margin-top: -6px;
+  border-radius: 50%; background: var(--fl-surface); border: 2px solid var(--fl-ink-3); }}
+.fl-round.last .fl-round-dot {{ background: var(--fl-accent); border-color: var(--fl-accent); }}
+.fl-round > b {{ font-size: 15px; font-weight: 700; white-space: nowrap; }}
+.fl-round-now {{ font-size: 11px; font-weight: 600; color: #c4561a; background: var(--fl-accent-soft);
+  padding: 2px 8px; border-radius: 999px; }}
+.fl-round-items {{ display: flex; flex-wrap: wrap; gap: 6px 14px; margin-left: auto; }}
+.fl-round-item {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+  color: var(--fl-ink-2); }}
+.st-key-verification [class*="st-key-timeline-"] [class*="st-key-chg-"] {{ margin-left: 28px; }}
+.st-key-verification [class*="st-key-timeline-"] [data-testid="stMarkdownContainer"] {{ margin: 0; }}
+.st-key-verification [class*="st-key-timeline-"] [class*="st-key-chg-"] [data-testid="stMarkdownContainer"] p {{
+  margin: 0;
+}}
+@media (max-width: 700px) {{
+  .st-key-verification [class*="st-key-timeline-"] {{ padding: 20px 18px; }}
+  .st-key-verification [class*="st-key-timeline-"]::before {{ left: 23px; }}
+  .fl-round-items {{ margin-left: 0; }}
+  .st-key-verification [class*="st-key-timeline-"] [class*="st-key-chg-"] {{ margin-left: 20px; }}
+}}
+/* 직접 고쳐서 다시 확인: 제목 아래 안내 두 줄 */
+.st-key-verification .st-key-check-manual-intro {{ gap: 2px; margin-top: -2px; }}
+.st-key-check-manual-intro [data-testid="stCaptionContainer"],
+.st-key-verification .st-key-check-manual-intro [data-testid="stCaptionContainer"] p {{ margin: 0; }}
+/* 진행 막힘: 실패 이유·근거·수정 방법을 한 카드에 */
+.st-key-verification .st-key-check-blocked {{
+  position: relative; overflow: hidden; gap: 8px; padding: 24px 28px 24px 34px;
+  background: var(--fl-surface); border: 1px solid var(--fl-fail-soft); border-radius: 24px;
+}}
+.st-key-verification .st-key-check-blocked::before {{
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--fl-fail);
+}}
+.st-key-check-blocked [data-testid="stAlert"] {{ margin-bottom: 8px; }}
+.st-key-check-blocked [data-testid="stAlertContainer"] {{
+  background: var(--fl-fail-soft); color: var(--fl-fail); border-radius: 12px; padding: 12px 16px;
+}}
+.st-key-check-blocked [data-testid="stAlertContent"] p {{
+  color: var(--fl-fail); font-size: 15px; font-weight: 600;
+}}
+/* Streamlit 기본값(margin-bottom: -16px) 때문에 상자 높이가 글자보다 작아지는 것을 막는다 */
+.st-key-check-blocked [data-testid="stMarkdownContainer"],
+.st-key-check-blocked [data-testid="stCaptionContainer"] {{ margin: 0; }}
+.st-key-check-blocked [data-testid="stMarkdownContainer"] p {{
+  margin: 0; font-size: 14px; line-height: 1.7; color: var(--fl-ink-2);
+}}
+.st-key-check-blocked [data-testid="stMarkdownContainer"] p strong {{ color: var(--fl-ink); }}
+.st-key-verification [class*="st-key-check-blocked-fix-"] {{
+  padding: 14px 16px; border-radius: 12px; background: var(--fl-accent-soft); margin: 6px 0 4px;
+}}
+.st-key-verification [class*="st-key-check-blocked-fix-"] [data-testid="stMarkdownContainer"] p {{
+  color: var(--fl-ink);
+}}
+.st-key-verification [class*="st-key-check-blocked-fix-"] [data-testid="stMarkdownContainer"] p strong {{
+  color: #c4561a;
+}}
+.st-key-check-blocked [data-testid="stCaptionContainer"] p {{
+  font-size: 12px; color: var(--fl-ink-3); padding-top: 8px; border-top: 1px solid var(--fl-line);
+}}
+@media (max-width: 700px) {{
+  .st-key-verification .st-key-check-blocked {{ padding: 20px 18px 20px 24px; }}
+}}
 .st-key-verification [class*="st-key-check-field-"] .react-aria-ComboBox > div {{ background: transparent; border-color: transparent; }}
 
 @media (max-width: 700px) {{
   .st-key-verification .fl-h1 {{ font-size: 32px; }}
   .st-key-verification .fl-desc {{ font-size: 15px; }}
   .st-key-verification {{ gap: 20px; }}
-  .st-key-verification .fl-summary {{ gap: 12px; padding: 16px; }}
-  .fl-summary-note {{ margin-left: 0; }}
   .st-key-verification [data-testid="stTabs"] [data-baseweb="tab-list"] {{ gap: 8px; }}
   .st-key-verification [data-testid="stTabs"] [data-baseweb="tab"] {{ padding: 10px 14px; }}
 }}
@@ -795,17 +904,52 @@ def check_warning_html(warning: str) -> str:
     )
 
 
-def summary_html(results, note: str) -> str:
-    """확인 결과 요약 줄: 항목별 배지 + 통과·조건부·실패 개수."""
+def round_row_html(row: dict, last: bool) -> str:
+    """타임라인 회차 줄: 점 + "처음 확인" + 항목별 배지. 마지막(지금 결과)은 주황 점."""
     items = "".join(
-        f'<span class="count">{escape(screen.CHECK_LABELS[r.check])} {badge_html(r.status)}</span>'
-        for r in results
+        f'<span class="fl-round-item">{escape(label)} {badge_html(status)}</span>'
+        for label, status in row["items"]
     )
-    return f'<div class="fl-summary">{items}<span class="fl-summary-note">{escape(note)}</span></div>'
+    now = '<span class="fl-round-now">지금 결과</span>' if last else ""
+    return (
+        f'<div class="fl-round{" last" if last else ""}"><span class="fl-round-dot"></span>'
+        f'<b>{escape(row["label"])}</b>{now}<div class="fl-round-items">{items}</div></div>'
+    )
 
 
-def check_selection_html(title: str) -> str:
-    return f'<p class="fl-check-selection">고른 아이디어: {escape(title)}</p>'
+def check_selection_html(card) -> str:
+    """03 상단: 고른 아이디어 카드 (형식 × 재료, 제목, 한 줄 컨셉)."""
+    return (
+        '<section class="fl-check-selection" aria-label="고른 아이디어">'
+        '<div class="fl-check-selection-label">고른 아이디어</div>'
+        f'<div class="fl-check-selection-body"><h2>{escape(card.title)}</h2>'
+        f'{format_html(f"{card.format} × {card.material}")}</div>'
+        f'<p>{escape(card.concept)}</p></section>'
+    )
+
+
+def plan_strip_html(name: str, card, ready: bool) -> str:
+    """추천안·고친 안의 조건(개최 월·장소·규모)과 진행 가능 여부."""
+    venue = ", ".join(v.name for v in card.venue) or screen.NO_VENUE
+    scale = screen.SCALE_LABELS.get(card.budget.scale, card.budget.scale)
+    cells = (
+        ("개최 월", screen.months_text(card.timing.recommended_months)),
+        ("장소", venue),
+        ("규모", scale),
+    )
+    state = (
+        '<span class="fl-badge pass">진행 가능</span>' if ready
+        else '<span class="fl-badge fail">진행 불가</span>'
+    )
+    return (
+        f'<div class="fl-plan-strip" aria-label="{escape(name)} 조건">'
+        f'<div class="fl-plan-strip-name"><small>{escape(name)}</small>{state}</div>'
+        + "".join(
+            f'<div class="fl-plan-strip-cell"><small>{label}</small><b>{escape(value)}</b></div>'
+            for label, value in cells
+        )
+        + "</div>"
+    )
 
 
 def section_html(label: str) -> str:

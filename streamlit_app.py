@@ -410,9 +410,6 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
     if low_notes:
         ui.warning(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(low_notes) + ".")
     results = run.rounds[-1].results
-    st.html(style.summary_html(results, f"확인 {len(run.rounds)}회"))
-    for line in screen.round_summary(run):
-        ui.caption(line)
     for row_index, row in enumerate((results[:2], results[2:])):
         with st.container(key=f"check-row-{key}-{row_index}"):
             cols = st.columns(len(row))
@@ -426,11 +423,16 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
                     st.html(style.check_metric_html(summary))
                     if summary["warning"]:
                         st.html(style.check_warning_html(summary["warning"]))
-                    with st.expander("상세 결과와 근거 보기"):
+                    rows = screen.venue_table(r) if r.check == "check_venue" else []
+                    # 장소 후보 표는 펼쳐야 보이므로, 후보가 있다는 걸 문구에서 바로 알린다
+                    detail_label = (
+                        f"장소 후보 {len(rows)}곳 비교·근거 보기" if rows else "상세 결과와 근거 보기"
+                    )
+                    with st.expander(detail_label):
                         ui.write(r.reason)
                         for line in screen.key_numbers(r):
                             ui.caption(line)
-                        if r.check == "check_venue" and (rows := screen.venue_table(r)):
+                        if rows:
                             st.dataframe(pd.DataFrame(rows), hide_index=True)
                         if r.sources:
                             ui.caption("출처: " + " · ".join(r.sources))
@@ -441,39 +443,28 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
                                 ui.write(f"- {warning}")
     if not with_changes:
         return
-    st.subheader("바뀐 점")
+    # 확인 과정과 바뀐 점을 한 타임라인으로: 처음 확인 → 바꾼 점 → 다시 확인 …
+    st.subheader("확인 과정과 바뀐 점")
     changes = screen.friendly_changes(run)
-    if not changes:
-        ui.write("바뀐 점이 없어요.")
-    for j, ch in enumerate(changes):
-        with st.container(key=f"chg-{key}-{j}"):
-            ui.markdown(f"**{ch['title']}**")
-            ui.write(ch["reason"])
-            if ch["note"]:
-                ui.write(f"⚠️ {ch['note']}")
-            if ch["low_data"]:
-                ui.write(f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + ".")
-            for n in ch["numbers"]:
-                ui.caption(n)
-            if ch["season"]:
-                ui.caption(ch["season"])
-    with st.expander("확인 과정 자세히 보기"):
+    with st.container(key=f"timeline-{key}"):
         for rd in run.rounds:
-            ui.markdown(
-                f"**{screen.ORDINALS.get(rd.round, rd.round)} 확인**: "
-                + ", ".join(
-                    f"{screen.CHECK_LABELS[x.check]} {screen.STATUS_ICONS[x.status]}"
-                    for x in rd.results
-                )
-            )
-
-
-def card_summary(c) -> str:
-    venue = ", ".join(v.name for v in c.venue) or screen.NO_VENUE
-    scale = screen.SCALE_LABELS.get(c.budget.scale, c.budget.scale)
-    return (
-        f"개최 월 {screen.months_text(c.timing.recommended_months)} · 장소 {venue} · 규모 {scale}"
-    )
+            st.html(style.round_row_html(screen.round_status_row(rd), last=rd is run.rounds[-1]))
+            for j, ch in enumerate(c for c in changes if c["round"] == rd.round):
+                with st.container(key=f"chg-{key}-{rd.round}-{j}"):
+                    ui.markdown(f"**{ch['title']}**")
+                    ui.write(ch["reason"])
+                    if ch["note"]:
+                        ui.write(f"⚠️ {ch['note']}")
+                    if ch["low_data"]:
+                        ui.write(
+                            f"⚠️ {screen.LOW_DATA_NOTICE}. " + ", ".join(ch["low_data"]) + "."
+                        )
+                    for n in ch["numbers"]:
+                        ui.caption(n)
+                    if ch["season"]:
+                        ui.caption(ch["season"])
+        if not changes:
+            ui.caption("에이전트가 바꾼 점은 없어요.")
 
 
 def step_check(request: UserRequest, card) -> None:
@@ -483,7 +474,7 @@ def step_check(request: UserRequest, card) -> None:
 
 def verification_content(request: UserRequest, card) -> None:
     st.html(style.head_html(3))
-    st.html(style.check_selection_html(card.title))
+    st.html(style.check_selection_html(card))
     if "run" not in ss:
         from agent.verify import verify_idea
 
@@ -497,22 +488,26 @@ def verification_content(request: UserRequest, card) -> None:
     run = VerificationRun.model_validate(ss["run"])
     manual = VerificationRun.model_validate(ss["manual_run"]) if "manual_run" in ss else None
 
+    def strip(name: str, r: VerificationRun) -> None:
+        st.html(style.plan_strip_html(name, r.final, r.outcome == "ready_for_approval"))
+
     if manual is None:
-        ui.caption("에이전트 추천안: " + card_summary(run.final))
+        strip("에이전트 추천안", run)
         show_run(run, with_changes=True)
     else:
         agent_tab, manual_tab = st.tabs(["에이전트 추천안", "내가 고친 안"])
         with agent_tab:
-            ui.caption("에이전트 추천안: " + card_summary(run.final))
+            strip("에이전트 추천안", run)
             show_run(run, with_changes=True)
         with manual_tab:
-            ui.caption("내가 고친 안: " + card_summary(manual.final))
+            strip("내가 고친 안", manual)
             show_run(manual, with_changes=False, key="manual")
 
     # 직접 고쳐서 다시 확인
     st.subheader("직접 고쳐서 다시 확인")
-    ui.caption("개최 월·장소·규모를 바꿔서 확인만 다시 해요. 자동으로 고치지는 않아요.")
-    ui.caption("개최 월을 여러 개 고르면 각 달을 모두 확인해요. 하나라도 실패하면 그 안으로는 진행할 수 없어요.")
+    with st.container(key="check-manual-intro"):  # 안내 두 줄은 붙여서 한 덩어리로
+        ui.caption("개최 월·장소·규모를 바꿔서 확인만 다시 해요. 자동으로 고치지는 않아요.")
+        ui.caption("개최 월을 여러 개 고르면 각 달을 모두 확인해요. 하나라도 실패하면 그 안으로는 진행할 수 없어요.")
     base = (manual or run).final  # 처음 값은 지금 카드(가장 최근 안)의 값
     places = screen.venue_choices(run)
     place_names = [screen.NO_VENUE, *[p["name"] for p in places]]
@@ -529,7 +524,7 @@ def verification_content(request: UserRequest, card) -> None:
             )
         with m2, st.container(key="check-field-place"):
             place = st.selectbox(
-                "장소 (장소 후보 표에서)",
+                "장소 (위 장소 카드의 후보 중에서)",
                 place_names,
                 index=place_names.index(current_place) if current_place in place_names else 0,
             )
@@ -582,8 +577,12 @@ def verification_content(request: UserRequest, card) -> None:
                 "❌ " + "·".join(failed_labels) + " 확인을 통과하지 못해 진행을 멈췄어요. "
                 "아래 이유와 수정 방법을 확인해주세요."
             )
-            for line in screen.blocked_check_guidance(chosen):
-                ui.markdown(line)
+            for i, line in enumerate(screen.blocked_check_guidance(chosen)):
+                if line.startswith(("**이렇게 바꿔보세요:**", "**수정 제안:**")):
+                    with st.container(key=f"check-blocked-fix-{i}"):  # 수정 방법은 강조 상자
+                        ui.markdown(line)
+                else:
+                    ui.markdown(line)
             if chosen_name == "내가 고친 안" and run.outcome == "ready_for_approval":
                 ui.caption(
                     "다시 수정하지 않고 진행하려면 위 ‘진행할 안’에서 "
