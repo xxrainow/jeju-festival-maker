@@ -262,8 +262,10 @@ def resolve_interest(
         return named, None
     if text in CATEGORIES:
         return [m for m in materials if m.category == text], None
-    notice = f"'{text}'은(는) 아직 제주 소재 목록에 없어서 재료를 고정하지 않고 추천했어요."
-    return list(materials), notice
+    raise ValueError(
+        f"'{text}'은(는) 아직 제주 소재 사전에 없어요. 다른 재료로 바꾸지 않았어요. "
+        "등록된 소재를 입력하거나 관심 소재를 비워주세요."
+    )
 
 
 def _months(material: Material, fmt: str, season: str | None) -> list[int]:

@@ -32,8 +32,8 @@ def test_pairing_table_matches_design_document():
 def test_resolve_interest():
     assert [m.name for m in resolve_interest("감귤 디저트", SEED_MATERIALS)[0]] == ["감귤"]
     assert {m.category for m in resolve_interest("수산물", SEED_MATERIALS)[0]} == {"수산물"}
-    usable, notice = resolve_interest("한라봉", SEED_MATERIALS)
-    assert len(usable) == len(SEED_MATERIALS) and "한라봉" in notice
+    with pytest.raises(ValueError, match="한라봉"):
+        resolve_interest("한라봉", SEED_MATERIALS)
 
 
 def test_fixed_material_filters_pairing_and_season(trend_data):

@@ -135,7 +135,11 @@ def resolve_region(text: str | None, areas: list[str]) -> tuple[str | None, str 
     compact = t.replace(" ", "")
     hits = [a for a in areas if a.replace(" ", "") in compact or a.split(" ", 1)[-1] in t]
     if not hits:
-        hits = [a for a in areas if _core_in(_area_core(a), compact)]
+        # 일도동처럼 번호를 생략한 표현은 일도1동·일도2동 후보를 함께 안내한다.
+        hits = [
+            a for a in areas
+            if _core_in(re.sub(r"\d+", "", _area_core(a)), compact)
+        ]
     if len(hits) == 1:
         return hits[0], None
     if len(hits) > 1:
