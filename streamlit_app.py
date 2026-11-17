@@ -589,7 +589,7 @@ def step_plan(request: UserRequest) -> None:
     plan = current_plan()
     doc, rail = st.columns([3, 1], gap="large")
     with rail, st.container(key="card-rail"):
-        st.html(style.section_html("Before approve" if plan.status != "approved" else "Approved"))
+        st.html(style.section_html("승인 전 확인" if plan.status != "approved" else "승인 완료"))
         state = "승인" if plan.status == "approved" else "승인 전"
         st.html(
             style.chips_html(

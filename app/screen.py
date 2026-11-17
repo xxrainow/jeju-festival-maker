@@ -236,7 +236,7 @@ def idea_summary(card: IdeaCard) -> list[tuple[str, str, str]]:
         ("전국 트렌드", trend_text, "데이터 대기" if trend_text == "아직 확인 중" else "사실"),
         ("제주 현황", gap_text, "데이터 대기" if gap_text == "아직 확인 중" else "사실"),
         ("예산", budget_text, "데이터 대기" if budget.format_median_krw is None
-         else "Agent 해석" if budget.input_krw is not None else "사실"),
+         else "에이전트 해석" if budget.input_krw is not None else "사실"),
     ]
 
 
