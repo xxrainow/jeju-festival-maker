@@ -221,11 +221,8 @@ def promo_payload(plan: FestivalPlan) -> dict:
         "대상": plan.overview.target or "",
         "재료": plan.idea.material,
         "컨셉": _section(plan, "concept") or plan.idea.concept,
-        "프로그램": [
-            {"이름": p.name.strip(), "설명": p.description.strip()}
-            for p in plan.programs
-            if p.name.strip()
-        ],
+        # 이름만 넘긴다: 설명을 넘기면 긴 설명 문장을 그대로 옮긴다 (QA 2차)
+        "프로그램": [p.name.strip() for p in plan.programs if p.name.strip()],
     }
 
 
@@ -682,9 +679,9 @@ SNS_SYSTEM = """당신은 제주 마을 축제의 인스타그램 홍보 글을 
 1. 본문은 3~5문장, 친근한 말투.
 2. "축제 이름" 값을 한 글자도 바꾸지 말고 그대로 한 번 넣는다.
 3. 날짜·기간·장소 안내는 쓰지 않는다. "언제:", "어디:", "일시", "장소:" 같은 안내 줄도 만들지 않는다 (프로그램이 글 끝에 정확한 값을 붙인다).
-4. 프로그램은 "프로그램" 목록에 있는 것만 소개한다. 목록에 없는 행사(드론 쇼, 불꽃놀이, 공연, 경품 등)를 지어내지 않는다.
+4. 프로그램은 "프로그램" 목록에 있는 것만, 이름 위주로 짧게 소개한다. 컨셉 문장을 그대로 옮겨 붙이지 않는다. 목록에 없는 행사(드론 쇼, 불꽃놀이, 공연, 경품 등)를 지어내지 않는다.
 5. 입력에 없는 숫자(날짜, 시간, 가격, 인원, 연도 등)를 쓰지 않는다.
-6. 해시태그는 정확히 5개, 모두 #으로 시작하고 숫자를 넣지 않는다. 목록에 없는 프로그램 이름도 넣지 않는다.
+6. 해시태그는 정확히 5개, 모두 #으로 시작하고 띄어쓰기와 숫자를 넣지 않는다. 목록에 없는 프로그램 이름도 넣지 않는다.
 7. JSON으로만 답한다: {"text": "본문", "hashtags": ["#..", "#..", "#..", "#..", "#.."]}
 """
 
@@ -707,6 +704,12 @@ def unknown_numbers(text: str, allowed: set[str]) -> list[str]:
 INFO_LABEL = re.compile(r"(언제|어디|일시|장소|기간)\s*(및\s*장소\s*)?[:：]|언제\s*·\s*어디")
 
 
+# 컨셉 문장("…축제이다")을 붙여 생기는 비문: "축제이다랍니다", "제공한다를", "있다예요" 등
+AWKWARD_ENDING = re.compile(
+    r"[가-힣]*(?:이다|한다|된다|있다|없다|했다)(?:랍니다|답니다|를|을|예요|에요|이에요|요)"
+)
+
+
 def sns_problems(
     text: str, hashtags: list[str], plan: FestivalPlan, allowed: set[str]
 ) -> list[str]:
@@ -719,6 +722,10 @@ def sns_problems(
         problems.append(f"해시태그가 #으로 시작하는 {HASHTAG_COUNT}개가 아니에요")
     if extra := unknown_numbers(text + " " + " ".join(hashtags), allowed):
         problems.append(f"기획서에 없는 숫자가 있어요: {', '.join(extra)}")
+    if bad := AWKWARD_ENDING.search(text):
+        problems.append(f"어색한 문장이 있어요: '{bad.group()}' (문장을 자연스럽게 고쳐 쓰세요)")
+    if spaced := [t for t in hashtags if re.search(r"\s", t)]:
+        problems.append(f"해시태그에 띄어쓰기가 있어요: {', '.join(spaced)}")
     if INFO_LABEL.search(text):
         problems.append("언제·어디 안내 줄은 쓰지 마세요 (따로 붙여요)")
     if extra := unplanned_programs(text + " " + " ".join(hashtags), plan):

@@ -296,7 +296,9 @@ class MonthCheck:
 
     def fail_reason(self) -> str | None:
         low = self.index < LOW_INDEX
-        low_text = f"외지인 방문 지수({self.index:.2f})가 {LOW_INDEX}보다 낮"
+        low_text = (
+            f"외지인 방문 지수({precise_text(self.index, INDEX_THRESHOLDS)})가 {LOW_INDEX}보다 낮"
+        )
         weather = self.weather_text()
         if low and not self.good_weeks:
             text = f"{self.month}월은 {low_text}고, {weather}"
@@ -320,12 +322,33 @@ class MonthCheck:
         return text
 
 
+def _digits(value: float, thresholds: tuple[float, ...], digits: int = 2) -> int:
+    for d in range(digits, 5):
+        shown = round(value, d)
+        if all((shown >= t) == (value >= t) for t in thresholds):
+            return d
+    return 4
+
+
+def precise(value: float, thresholds: tuple[float, ...], digits: int = 2) -> float:
+    """기준값과 비교한 판정이 표시와 어긋나지 않을 만큼만 자릿수를 늘린다 (0.796 → 0.80이 아니라 0.796)."""
+    return round(value, _digits(value, thresholds, digits))
+
+
+def precise_text(value: float, thresholds: tuple[float, ...], digits: int = 2) -> str:
+    """precise와 같지만 문장용 문자열 (0.9 → "0.90", 0.796 → "0.796")."""
+    return f"{value:.{_digits(value, thresholds, digits)}f}"
+
+
+INDEX_THRESHOLDS = (LOW_INDEX, PASS_INDEX)
+
+
 def festival_place_text(f: dict) -> str:
     """ "같은 동네", "약 7km", "장소 미확인" 같은 짧은 표시."""
     if f["relation"] == SAME_AREA:
         return SAME_AREA
     if f["distance_km"] is not None:
-        return f"약 {f['distance_km']:.0f}km"
+        return f"약 {f['distance_km']:.1f}km"  # 10km 기준과 맞게 소수 첫째 자리까지
     return f["relation"]
 
 
@@ -408,7 +431,23 @@ def _pending(reason: str, evidence: dict, sources: list[str], warnings: list[str
     )
 
 
-def _suggest(card, checks, all_checks, data) -> Suggestion | None:
+SEASON_MONTHS = {"봄": (3, 4, 5), "여름": (6, 7, 8), "가을": (9, 10, 11), "겨울": (12, 1, 2)}
+
+
+def season_outside_sentence(input_season: str | None, months, material_season) -> str | None:
+    """추천 월이 모두 입력한 계절 밖이면 안내 문장 (예: 입력한 계절(겨울)에는 맞는 달이 없어 5월로 바꿨어요)."""
+    wanted = SEASON_MONTHS.get(input_season or "")
+    if not wanted or not months or any(m in wanted for m in months):
+        return None
+    in_season = bool(material_season) and all(m in material_season for m in months)
+    names = "·".join(str(m) for m in months)
+    return (
+        f"입력한 계절({input_season})에는 맞는 달이 없어 "
+        f"{'제철 안의 ' if in_season else ''}{names}월로 바꿨어요."
+    )
+
+
+def _suggest(card, checks, all_checks, data, input_season=None) -> Suggestion | None:
     months = card.timing.recommended_months
     failed = [c for c in checks if c.status == "fail"]
     if len(failed) < len(checks):
@@ -416,24 +455,32 @@ def _suggest(card, checks, all_checks, data) -> Suggestion | None:
         why = "; ".join(c.fail_reason() for c in failed) + ". 그 달을 빼요."
         return Suggestion(field="timing.recommended_months", value=keep, why=why)
     season, _basis = data.material_season.get(card.material, (None, None))
-    for wanted in ("pass", "conditional"):
-        options = [
-            c
-            for c in all_checks
-            if c.status == wanted and c.month not in months and (not season or c.month in season)
-        ]
-        if options:
-            best = max(options, key=lambda c: c.index)
-            why = (
-                f"추천 월이 모두 확인을 통과하지 못해, 다른 달 중 "
-                f"{'통과하고' if wanted == 'pass' else '조건부로 통과하고'} "
-                f"외지인 방문 지수가 가장 높은 "
-                f"{best.month}월({best.index:.2f})로 바꿔요."
-            )
-            if season:
-                # 제철 근거(내부 문서)는 evidence["material_season"]에만 남긴다
-                why += f" 재료 제철({'·'.join(map(str, season))}월) 안에서 골랐어요."
-            return Suggestion(field="timing.recommended_months", value=[best.month], why=why)
+    in_input = SEASON_MONTHS.get(input_season or "")
+    # 입력한 계절 안의 달을 먼저 찾고, 없을 때만 계절 밖 달로 간다
+    for pool in ([in_input] if in_input else []) + [None]:
+        for wanted in ("pass", "conditional"):
+            options = [
+                c
+                for c in all_checks
+                if c.status == wanted
+                and c.month not in months
+                and (not season or c.month in season)
+                and (pool is None or c.month in pool)
+            ]
+            if options:
+                best = max(options, key=lambda c: c.index)
+                why = (
+                    f"추천 월이 모두 확인을 통과하지 못해, 다른 달 중 "
+                    f"{'통과하고' if wanted == 'pass' else '조건부로 통과하고'} "
+                    f"외지인 방문 지수가 가장 높은 "
+                    f"{best.month}월({best.index:.2f})로 바꿔요."
+                )
+                if season:
+                    # 제철 근거(내부 문서)는 evidence["material_season"]에만 남긴다
+                    why += f" 재료 제철({'·'.join(map(str, season))}월) 안에서 골랐어요."
+                if outside := season_outside_sentence(input_season, [best.month], season):
+                    why += f" {outside}"
+                return Suggestion(field="timing.recommended_months", value=[best.month], why=why)
     return None
 
 
@@ -491,7 +538,9 @@ def check_timing(
         # 날씨 지점 거리 경고는 자료 부족 안내 한 문장으로 합친다
         warnings = [w for w in warnings if not w.startswith("날씨 지점(")]
         warnings.append(f"{LOW_DATA_NOTICE}: {', '.join(low_data)}.")
-    evidence["outsider_visitors_index"] = {m: round(float(index[m]), 2) for m in months}
+    evidence["outsider_visitors_index"] = {
+        m: precise(float(index[m]), INDEX_THRESHOLDS) for m in months
+    }
     evidence["outsider_index_source"] = source
     season = data.material_season.get(card.material)
     evidence["material_season"] = (
@@ -522,7 +571,9 @@ def check_timing(
     ]
     checks = [c for c in all_checks if c.month in months]
     status = max((c.status for c in checks), key=STATUS_ORDER.get)
-    suggestion = _suggest(card, checks, all_checks, data) if status == "fail" else None
+    suggestion = (
+        _suggest(card, checks, all_checks, data, request.season) if status == "fail" else None
+    )
     if status == "fail" and suggestion is None:
         # 가까운 같은 재료 축제만 이유인데 피할 다른 달이 없으면 conditional + 경고 (외지인·날씨 fail은 그대로)
         for c in checks:
@@ -554,7 +605,7 @@ def check_timing(
                 {
                     "month": c.month,
                     "status": c.status,
-                    "outsider_visitors_index": round(c.index, 2),
+                    "outsider_visitors_index": precise(c.index, INDEX_THRESHOLDS),
                     "good_weeks": [week_text(w) for w in c.good_weeks],
                     "bad_weeks": [{"week": week_text(w), "why": r} for w, r in c.bad_weeks],
                     "overlapping_festivals": [f["name"] for f in c.festivals],
@@ -572,7 +623,8 @@ def check_timing(
     for c in checks:
         if c.slightly_low:
             warnings.append(
-                f"{c.month}월은 외지인 방문이 평소보다 약간 적은 달이에요 (지수 {c.index:.2f})."
+                f"{c.month}월은 외지인 방문이 평소보다 약간 적은 달이에요 "
+                f"(지수 {precise_text(c.index, INDEX_THRESHOLDS)})."
             )
         if c.unavoidable:
             names = ", ".join(f["name"] for f in c.festivals if f["dates_known"])
@@ -621,6 +673,15 @@ def check_timing(
                 "추천 월의 외지인 방문이 연평균 이상이고, 같은 재료 제주 축제와 겹치지 않아요. "
                 f"날씨 괜찮은 주: {weeks}."
             )
+    material = data.material_season.get(card.material)
+    # 고친 달이 입력 계절 밖이면 안내. 화면은 이 제안이 실제로 적용됐을 때만 보여준다
+    # (처음부터 계절 밖 달을 고른 카드나 직접 고친 안에는 "바꿨어요"가 맞지 않는다)
+    if suggestion and (
+        moved := season_outside_sentence(
+            request.season, suggestion.value, material[0] if material else None
+        )
+    ):
+        evidence["season_outside_suggestion"] = moved  # 화면 "바뀐 점" 안내
     return CheckResult(
         check="check_timing",
         status=status,
