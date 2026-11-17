@@ -162,7 +162,7 @@ def test_key_numbers_and_venue_table():
     assert "반경 500m" in screen.key_numbers(venue)[0]
     venue.evidence["night_return"] = {"hours": "21~23시", "is_synthetic": True, "data_label": "가상 데이터",
                                       "stops": [{"stop_name": "하모3리", "daily_boarding": 1.7}]}  # fmt: skip
-    assert "야간 귀가(21~23시) 하루 승차: 하모3리 1.7명 [가상 데이터]" in screen.key_numbers(venue)
+    assert "야간 귀가(21~23시) 하루 승차: 하모3리 1.7명 (가상 데이터)" in screen.key_numbers(venue)
     timing = CheckResult(
         check="check_timing", status="pass", reason="r",
         evidence={"outsider_visitors_index": {11: 1.04}, "recommended_weeks": ["11월 2주차"]},
@@ -331,6 +331,71 @@ def test_reason_numbers_come_first_and_low_data_is_shown():
     assert ch["numbers"][1].startswith("12월 관광객 지표 0.9")
     assert ch["low_data"] == ["날씨 지점(제주)이 53km 떨어져 있어요"]
     assert screen.low_data_notes(first.results) == ["날씨 지점(제주)이 53km 떨어져 있어요"]
+
+
+def test_near_festival_month_reason_place_and_distance():
+    """대정 11·12월: 11월은 같은 동네 방어 축제, 12월은 바람 → 바뀐 점에 두 이유 모두 (QA 보고서 2번)."""
+    from agent.draft_contracts import IdeaChange, Suggestion
+
+    near = {"name": "제26회 최남단 방어 축제", "admin_area": "서귀포시 대정읍",
+            "relation": "같은 동네", "distance_km": 0.0}  # fmt: skip
+    why = "11월에는 … 12월은 … 그 달을 빼요."
+    sug = Suggestion(field="timing.recommended_months", value=[1], why=why)
+    first = _round(1, "fail", {
+        "low_months": [],
+        "overlapping_festivals": [near | {"month": 11, "months": [11]}],
+        "month_checks": [
+            {"month": 11, "status": "fail", "outsider_visitors_index": 1.04, "good_weeks": ["11월 2주차"],
+             "bad_weeks": [], "near_festivals": [near], "near_downgraded": False},
+            {"month": 12, "status": "fail", "outsider_visitors_index": 0.9, "good_weeks": [],
+             "bad_weeks": [{"week": "12월 1주차", "why": ["바람 1.8배, 9년 중 9년"]}]},
+        ],
+    }, sug, [IdeaChange(field="timing.recommended_months", before=[11, 12], after=[1], why=why)])  # fmt: skip
+    second = _round(2, "pass", {"month_checks": [{"month": 1, "status": "pass"}]})
+    card = CARD.model_copy(
+        update={"timing": CARD.timing.model_copy(update={"recommended_months": [11, 12]})}
+    )
+    final = card.model_copy(
+        update={"timing": card.timing.model_copy(update={"recommended_months": [1]})}
+    )
+    run = VerificationRun(
+        original=card, final=final, rounds=[first, second], outcome="ready_for_approval"
+    )
+    [ch] = screen.friendly_changes(run)
+    assert ch["reason"] == (
+        "11월에는 같은 동네(서귀포시 대정읍)에서 같은 재료 축제(제26회 최남단 방어 축제)가 열려요. "
+        "12월은 바람이 강한 주가 많아요."
+    )
+    assert "같은 재료 축제: 제26회 최남단 방어 축제(11월, 서귀포시 대정읍, 같은 동네)" in (
+        screen.key_numbers(first.results[0])
+    )
+    # 가까운 동네(10km 이내)는 거리, 장소를 모르면 "장소 미확인"
+    seohong = {"name": "서홍동 벚꽃구경", "admin_area": "서귀포시 서홍동",
+               "relation": "가까운 동네", "distance_km": 6.1, "month": 4}  # fmt: skip
+    assert screen.near_festival_sentence(4, [seohong]) == (
+        "4월에는 약 6km 떨어진 서귀포시 서홍동에서 같은 재료 축제(서홍동 벚꽃구경)가 열려요."
+    )
+    unknown = {"name": "어느 축제", "admin_area": None, "relation": "장소 미확인",
+               "distance_km": None, "month": 3}  # fmt: skip
+    assert screen.festivals_text([seohong, unknown]) == (
+        "서홍동 벚꽃구경(4월, 서귀포시 서홍동, 약 6km), 어느 축제(3월, 장소 미확인)"
+    )
+
+
+def test_synthetic_labels_are_unified():
+    """화면 표시는 모두 "(가상 데이터)" (가짜 데이터, [가상 데이터] 없음)."""
+    from analytics.flow_source import SYNTHETIC_WARNING, FlowData
+
+    risk = CheckResult(check="check_risk", status="conditional", reason="r", evidence={
+        "residential": {"is_synthetic": True, "areas": [{"admin_area": "제주시 애월읍", "ratio": 1.1}]},
+        "congestion": {"links_checked": 3, "min_ratio": 0.9, "is_synthetic": True},
+    })  # fmt: skip
+    lines = screen.key_numbers(risk)
+    assert all(line.endswith("(가상 데이터)") for line in lines)
+    assert "가짜" not in SYNTHETIC_WARNING
+    flow = FlowData(data=None, is_synthetic=True, path=None, period=("2025-05-12", "2025-05-25"))
+    assert flow.label.endswith("2025-05-12~2025-05-25 (가상 데이터)")
+    assert "[가상" not in " ".join(lines)
 
 
 def test_app_warns_summer_citrus_and_demo_cards(no_llm):
@@ -610,10 +675,14 @@ def test_ai_failure_reason_by_cause():
         screen.ai_failure_reason(wrapped("무료 사용 한도를 넘었어요. (HTTP 429)"))
         == screen.QUOTA_REASON
     )
-    assert (
-        screen.ai_failure_reason(wrapped("API 키가 올바르지 않아요. (HTTP 401)"))
-        == screen.CALL_FAIL_REASON
+    for network in ("AI 응답이 너무 오래 걸려요.", "AI 서버 오류예요. (HTTP 503)"):
+        assert screen.ai_failure_reason(wrapped(network)) == screen.CALL_FAIL_REASON
+    # 키·모델 설정 오류는 예시 카드로 넘어가지 않고 원래 안내 (① 조건 입력)
+    assert screen.ai_failure_reason(wrapped("API 키가 올바르지 않아요. (HTTP 401)")) is None
+    rejected = CardGenerationError(
+        "AI 응답이 형식에 맞지 않아 아이디어를 만들지 못했어요 (2회 시도). 마지막 문제: …"
     )
+    assert screen.ai_failure_reason(rejected) is None and screen.cards_rejected(rejected)
     assert (
         screen.ai_failure_reason(CardGenerationError("AI 설정이 없어요. .env에 …"))
         == screen.NO_KEY_REASON
@@ -668,7 +737,11 @@ def test_steps_move_forward_and_back(no_llm):
             "무료 사용 한도를 넘었거나 요청이 너무 많아요. (HTTP 429)",
             "오늘 AI 사용 한도를 넘었어요",
         ),
-        ("API 키가 올바르지 않아요. (HTTP 401)", "AI 호출이 실패했어요"),
+        ("AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해주세요.", "AI 서버에 연결하지 못했어요"),
+        (
+            "AI 서버 오류예요. 잠시 뒤에 다시 시도해주세요. (HTTP 503)",
+            "AI 서버에 연결하지 못했어요",
+        ),
     ],
 )
 def test_demo_cards_show_reason_on_ai_failure(monkeypatch, message, reason):
@@ -694,6 +767,60 @@ def test_demo_cards_show_reason_on_ai_failure(monkeypatch, message, reason):
     demo = [w for w in labels(at, "warning") if screen.DEMO_WARNING in w]
     assert demo and reason in demo[0]
     assert "HTTP" not in demo[0] and "test-key" not in demo[0]  # 오류 원문·키는 보여주지 않음
+
+
+def test_rejected_cards_show_retry_not_demo(monkeypatch):
+    """AI 카드가 규칙 검사에 걸리면 예시 카드 대신 ①에서 "다시 받기" (QA 보고서 1번)."""
+    import agent.proposals
+    from agent.idea_cards import CardGenerationError
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("LLM_API_KEY", "test-key-not-real")
+    real = agent.proposals.propose_idea_cards
+    calls = []
+
+    def flaky(request, *, demo=True, **kw):
+        calls.append(demo)
+        if demo:
+            raise AssertionError("예시 카드로 넘어가면 안 돼요")
+        if len(calls) == 1:
+            raise CardGenerationError(
+                "AI 응답이 형식에 맞지 않아 아이디어를 만들지 못했어요 (2회 시도). "
+                "마지막 문제: 후보를 3개가 아니라 2개 골랐어요."
+            )
+        return real(request, demo=True)  # 두 번째는 성공했다고 치고 카드 3장
+
+    monkeypatch.setattr(agent.proposals, "propose_idea_cards", flaky)
+    at = click(confirm(), "아이디어 보기")
+    assert at.session_state["step"] == 1 and "proposal" not in at.session_state
+    assert screen.CARDS_REJECTED_MESSAGE in labels(at, "warning")
+    assert not any("예시 카드" in w for w in labels(at, "warning"))
+    at = click(at, screen.RETRY_CARDS_LABEL)
+    assert calls == [False, False] and at.session_state["step"] == 2
+    assert "proposal" in at.session_state and "demo_reason" not in at.session_state
+    assert screen.CARDS_REJECTED_MESSAGE not in labels(at, "warning")
+
+
+def test_key_setting_error_is_shown_on_step_one(monkeypatch):
+    import agent.proposals
+    from agent.idea_cards import CardGenerationError
+    from agent.llm import LLMError
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("LLM_API_KEY", "test-key-not-real")
+
+    def bad_key(request, *, demo=True, **kw):
+        try:
+            raise LLMError(
+                "API 키가 올바르지 않아요. .env의 LLM_API_KEY를 확인해주세요. (HTTP 401)"
+            )
+        except LLMError as cause:
+            raise CardGenerationError(f"아이디어 생성 중 AI 호출에 실패했어요. {cause}") from cause
+
+    monkeypatch.setattr(agent.proposals, "propose_idea_cards", bad_key)
+    at = click(confirm(), "아이디어 보기")
+    assert at.session_state["step"] == 1 and "proposal" not in at.session_state
+    assert any("API 키가 올바르지 않아요" in w for w in labels(at, "warning"))
 
 
 def test_non_ai_card_error_stays_on_step_one(monkeypatch):
