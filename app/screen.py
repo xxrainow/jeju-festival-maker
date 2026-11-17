@@ -18,6 +18,18 @@ STATUS_ICONS = {
     "pending": "⏳ 데이터 대기",
 }
 WAITING = "데이터 대기"
+
+
+def md(text):
+    """화면 출력용: Streamlit 마크다운에서 "~"가 두 번 나오면 취소선이 되므로 "\\~"로 바꾼다.
+
+    이미 "\\~"인 곳은 그대로 둔다. 문자열이 아니면 그대로 돌려준다 (표 값 등은 쓰지 않는다).
+    """
+    if not isinstance(text, str):
+        return text
+    return re.sub(r"(?<!\\)~", r"\\~", text)
+
+
 SEASONS = ["봄", "여름", "가을", "겨울"]
 PURPOSES = ["지역 상권 활성화", "관광객 유치", "주민 참여"]
 
@@ -628,3 +640,126 @@ def demo_differences(proposal, request) -> list[str]:
     if request.interest and request.interest not in materials:
         diffs.append(f"재료: 입력 {request.interest} · 카드 {', '.join(materials)}")
     return diffs
+
+
+# ---------- 확인 과정 요약, 직접 고친 안 ----------
+
+ORDINALS = {1: "처음", 2: "두 번째", 3: "세 번째", 4: "네 번째"}
+SCALE_LABELS = {"기본": "기본", "소규모 버전": "작게"}  # 화면 이름 (계약 값 → 화면)
+NO_VENUE = "(정하지 않음)"
+
+
+def _ro(word: str) -> str:
+    """조사 (으)로: 받침이 없거나 ㄹ 받침이면 "로"."""
+    ch = word.strip()[-1:]
+    if not ch or not ("가" <= ch <= "힣"):
+        return word + "로"
+    jong = (ord(ch) - 0xAC00) % 28
+    return word + ("로" if jong in (0, 8) else "으로")
+
+
+def round_summary(run) -> list[str]:
+    """확인 과정을 쉬운 말로. 고친 게 없으면 "5가지를 확인했어요."."""
+    lines = []
+    for rd in run.rounds:
+        merged: list[dict] = []  # 같은 변경을 여러 확인이 제안하면 한 줄로
+        for change in rd.changes:
+            r = _source_check(rd.results, change)
+            label = CHECK_LABELS.get(r.check, "확인") if r is not None else "확인"
+            same = next(
+                (m for m in merged
+                 if (m["change"].field, m["change"].before, m["change"].after)
+                 == (change.field, change.before, change.after)),
+                None,
+            )  # fmt: skip
+            if same is None:
+                merged.append({"change": change, "labels": [label]})
+            elif label not in same["labels"]:
+                same["labels"].append(label)
+        for m in merged:
+            c = m["change"]
+            before, after = value_text(c.field, c.before), value_text(c.field, c.after)
+            what = josa("·".join(m["labels"]), "이", "가")
+            lines.append(
+                f"{ORDINALS.get(rd.round, f'{rd.round}번째')} 확인에서 {what} 맞지 않아 "
+                f"{before} → {_ro(after)} 바꾼 뒤 다시 확인했어요."
+            )
+    return lines or [f"{len(run.rounds[-1].results)}가지를 확인했어요."]
+
+
+def edited_card(card, months: list[int], venue: dict | None, scale: str):
+    """사용자가 직접 고른 개최 월·장소·규모로 바꾼 카드 (형식·재료는 그대로)."""
+    from agent.draft_contracts import IdeaCard
+
+    data = card.model_dump(mode="json")
+    new_months = sorted(set(months))
+    if new_months != data["timing"]["recommended_months"]:
+        data["timing"]["recommended_months"] = new_months
+        data["timing"]["jeju_festivals_in_month"] = None  # 달이 바뀌면 다시 세야 함
+    data["venue"] = (
+        [{"name": venue["name"], "admin_area": venue["admin_area"], "reason": "직접 고른 장소"}]
+        if venue
+        else []
+    )
+    data["budget"]["scale"] = scale
+    return IdeaCard.model_validate(data)
+
+
+def venue_choices(run) -> list[dict]:
+    """직접 고르기용 장소 후보 (마지막 확인의 장소 후보 표)."""
+    venue = next((r for r in run.rounds[-1].results if r.check == "check_venue"), None)
+    if venue is None:
+        return []
+    return [
+        {"name": c["name"], "admin_area": c["admin_area"]}
+        for c in (venue.evidence or {}).get("candidate_places") or []
+    ]
+
+
+# ---------- 단계별 화면, 예시 카드 이유 ----------
+
+STEPS = ["조건 입력", "아이디어", "데이터로 확인", "기획서", "홍보물"]
+CIRCLED = "①②③④⑤"
+NO_KEY_REASON = "AI 키가 설정되지 않았어요."
+QUOTA_REASON = "오늘 AI 사용 한도를 넘었어요. 잠시 뒤 다시 해보세요."
+CALL_FAIL_REASON = "AI 호출이 실패했어요."
+CHOSEN_DEMO_REASON = "예시 카드 보기를 골랐어요."
+
+
+def progress_text(step: int) -> str:
+    """맨 위 진행 표시. 지금 단계만 굵게."""
+    parts = []
+    for i, name in enumerate(STEPS, start=1):
+        label = f"{CIRCLED[i - 1]} {name}"
+        parts.append(f"**{label}**" if i == step else label)
+    return " → ".join(parts)
+
+
+def selection_summary(request, card=None) -> str:
+    """지금까지 고른 것 한 줄. 예: "서귀포시 대정읍 · 겨울 · 방어 · 예산 1,000만 원 / 고른 아이디어: …"."""
+    parts = [
+        request.region or "제주 전역",
+        request.season or "계절 미정",
+        request.interest or "소재 미정",
+        f"예산 {won(request.budget_max_krw)}",
+    ]
+    text = " · ".join(parts)
+    return text + (f" / 고른 아이디어: {card.title}" if card is not None else "")
+
+
+def ai_failure_reason(exc) -> str | None:
+    """카드 생성 오류가 AI 연결 문제면 쉬운 이유 문장, 아니면 None (조건 문제 등은 원래 안내를 쓴다).
+
+    오류 원문(HTTP 코드 등)은 화면에 보여주지 않는다.
+    """
+    from agent.llm import LLMError
+
+    msg = str(exc)
+    cause = exc.__cause__
+    if "AI 설정이 없어요" in msg:
+        return NO_KEY_REASON
+    if isinstance(cause, LLMError):
+        return QUOTA_REASON if "(HTTP 429)" in str(cause) else CALL_FAIL_REASON
+    if "AI 응답이 형식에 맞지 않아" in msg:
+        return CALL_FAIL_REASON
+    return None
