@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from agent.demo_cards import DEMO_REQUEST
 from agent.fake_checks import FAKE_TOOLS
@@ -67,8 +67,8 @@ def png_b64(size) -> str:
 
 def good_sns(plan, **override):
     t = promo.fixed_texts(plan)
-    data = {
-        "text": f"{t['title']}에 놀러 오세요! 기간은 {t['period']}이에요. 장소는 {t['place']}예요. "
+    data = {  # 기간·장소는 본문에 쓰지 않는다 (코드가 "언제: … · 어디: …" 줄을 붙인다)
+        "text": f"{t['title']}에 놀러 오세요! 감귤 직거래 장터와 감귤 디저트 부스가 열려요. "
         "감귤과 지역 가게가 함께하는 주말 마켓이에요.",
         "hashtags": ["#제주축제", "#애월", "#감귤", "#로컬마켓", "#가족나들이"],
     }
@@ -314,12 +314,89 @@ def test_long_texts_are_shortened(plan):
             [plan.programs[0]] * 4, ["감귤 직거래 장터", "감귤 디저트 만들기 체험 부스", "골목 먹거리", "음악 공연"])],
     })  # fmt: skip
     lines = promo.poster_lines(long)
-    assert len(lines["title"]) <= promo.TITLE_MAX and long.overview.name.startswith(lines["title"])
-    assert all(len(v) <= promo.LINE_MAX for k, v in lines.items() if k not in ("period", "place"))
+    assert lines["title"] == long.overview.name  # 제목은 줄이지 않는다
+    assert all(
+        len(v) <= promo.LINE_MAX for k, v in lines.items() if k not in ("title", "period", "place")
+    )
     assert all(name in ["감귤 직거래 장터", "감귤 디저트 만들기 체험 부스", "골목 먹거리"]
                for name in lines["box"].split(" · "))  # 이름 중간을 자르지 않고 뒤에서 뺌  # fmt: skip
     assert promo.shorten("가나다 라마바 사아자", 7) == "가나다"
     assert promo.shorten("가나다라마바사아자", 5) == "가나다라마"
+
+
+def with_concept(plan, card_concept, section_concept, programs=None):
+    sections = [
+        s.model_copy(update={"body": section_concept}) if s.key == "concept" else s
+        for s in plan.sections
+    ]
+    update = {"idea": plan.idea.model_copy(update={"concept": card_concept}), "sections": sections}
+    if programs is not None:
+        update["programs"] = [
+            plan.programs[0].model_copy(update={"name": n, "description": d}) for n, d in programs
+        ]
+    return plan.model_copy(update=update)
+
+
+def test_poster_top_line_is_never_cut_mid_sentence(plan):
+    # 카드 컨셉이 한 줄에 들어가면 그대로
+    ok = with_concept(plan, "겨울 바다와 방어를 즐기는 작은 축제", "아주 긴 기획서 컨셉 문장이다.")
+    assert promo.poster_lines(ok)["top"] == "겨울 바다와 방어를 즐기는 작은 축제"
+    # 둘 다 길면 중간에서 자르지 않고 "재료와 함께하는 계절 축제"
+    long = "겨울 밤바다를 배경으로 방어와 빛을 결합한 야간 축제인 '대정 방어 축제'를 개최하여 볼거리를 준다"
+    cut = with_concept(plan, long, long)
+    assert promo.poster_lines(cut)["top"] == "감귤과 함께하는 가을 축제"  # 11월
+    # 기획서 프로그램에 없는 드론이 들어간 컨셉은 쓰지 않는다
+    drone = with_concept(plan, "밤바다 드론 빛 축제", "밤바다 드론 빛 축제다.")
+    assert "드론" not in promo.poster_lines(drone)["top"]
+
+
+def test_long_title_shrinks_or_wraps_instead_of_cut():
+    draw = ImageDraw.Draw(
+        promo.render_poster({"title": "가", "period": "6월 중", "place": "삼양동"}, None)
+    )
+    width = 1200 - 160
+    two = "삼양검은모래 야간 빛 바다 축제"  # 큰 글자로 두 줄
+    font, lines = promo._title_lines(draw, two, width)
+    assert font.size == promo.TITLE_FONT_SIZES[0] and " ".join(lines) == two  # 띄어쓰기에서 줄바꿈
+    long = "제주 애월 감귤과 바다가 함께하는 겨울 로컬 마켓 대축제와 골목 야시장 한마당"
+    font, lines = promo._title_lines(draw, long, width)
+    assert len(lines) <= 2 and font.size < promo.TITLE_FONT_SIZES[0]  # 글자 크기를 줄임
+    assert " ".join(lines) == long  # 글자를 버리지 않음
+
+
+def test_sns_ends_with_natural_when_where_line(plan, tmp_path):
+    result = promo.make_promo(plan, llm=FakeLLM(good_sns(plan)), out_dir=tmp_path)
+    line = "언제: 11월 중 (날짜는 추후 공지) · 어디: 제주시 애월읍 (장소는 추후 공지)"
+    assert result.sns_text.endswith(line)
+    assert all(c.ok for c in result.checks), result.checks
+    prompt = FakeLLM(good_sns(plan))
+    promo.write_sns(plan, prompt)
+    assert "날짜 추후 공지" not in prompt.calls[0] and "야간·빛·드론" not in prompt.calls[0]
+    assert "감귤 직거래 장터" in prompt.calls[0]  # 기획서 프로그램은 넘긴다
+
+
+def test_sns_with_unplanned_program_is_regenerated(plan, tmp_path):
+    drone = good_sns(plan, text=good_sns(plan)["text"] + " 밤에는 드론 쇼도 열려요!")
+    tag = good_sns(plan, hashtags=["#제주축제", "#애월", "#감귤", "#불꽃놀이", "#가족나들이"])
+    llm = FakeLLM(drone, tag, good_sns(plan))
+    result = promo.make_promo(plan, llm=llm, out_dir=tmp_path)
+    assert len(llm.calls) == 3 and "드론" in llm.calls[1] and "불꽃" in llm.calls[2]
+    assert "드론" not in result.sns_text and result.sns_notice is None
+    check = next(c for c in result.checks if c.item.startswith("SNS 프로그램"))
+    assert check.ok
+    # 끝까지 나오면 경고와 함께 보여주고 정보 일치 검사에서 걸린다
+    result = promo.make_promo(plan, llm=FakeLLM(drone, drone, drone), out_dir=tmp_path)
+    assert "확인 필요" in result.sns_notice
+    assert not next(c for c in result.checks if c.item.startswith("SNS 프로그램")).ok
+
+
+def test_sns_body_with_own_when_where_line_is_regenerated(plan, tmp_path):
+    for own in ("언제·어디: 겨울, 제주시 애월읍", "일시 및 장소: 언제·어디", "장소: 애월 바닷가"):
+        bad = good_sns(plan, text=good_sns(plan)["text"] + "\n\n" + own)
+        llm = FakeLLM(bad, good_sns(plan))
+        result = promo.make_promo(plan, llm=llm, out_dir=tmp_path)
+        assert len(llm.calls) == 2 and "언제·어디 안내 줄" in llm.calls[1], own
+        assert own not in result.sns_text and result.sns_text.count("언제:") == 1
 
 
 def test_sns_with_unknown_number_is_regenerated(plan, tmp_path):

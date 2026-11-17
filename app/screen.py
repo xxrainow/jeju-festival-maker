@@ -282,6 +282,45 @@ def _fmt_index(index: dict | None) -> str | None:
     return ", ".join(f"{m}월 {v}" for m, v in index.items())
 
 
+SYNTHETIC_TAG = " (가상 데이터)"  # 화면의 가상 데이터 표시는 모두 이 모양
+
+
+def festival_place(f: dict) -> str:
+    """같은 재료 축제의 장소·거리: "서귀포시 대정읍, 같은 동네", "서귀포시 서홍동, 약 6km", "장소 미확인"."""
+    area, relation, km = f.get("admin_area"), f.get("relation"), f.get("distance_km")
+    if not area:
+        return "장소 미확인"
+    if relation == "같은 동네":
+        return f"{area}, 같은 동네"
+    if km is not None:
+        return f"{area}, 약 {km:.0f}km"
+    return area
+
+
+def festivals_text(festivals: list[dict]) -> str:
+    """ "제26회 최남단 방어 축제(11월, 서귀포시 대정읍, 같은 동네)" 목록. 같은 축제·같은 달은 한 번만."""
+    seen = {}
+    for f in festivals:
+        where = festival_place(f)
+        label = f"{f['month']}월, {where}" if f.get("month") else where
+        seen.setdefault((f["name"], f.get("month")), f"{f['name']}({label})")
+    return ", ".join(seen.values())
+
+
+def near_festival_sentence(month: int, festivals: list[dict]) -> str:
+    """바뀐 점: 같은 동네·10km 이내 같은 재료 축제 때문에 뺀 달의 이유."""
+    parts = []
+    for f in festivals:
+        if f.get("relation") == "같은 동네":
+            where = f"같은 동네({f['admin_area']})"
+        elif f.get("distance_km") is not None:
+            where = f"약 {f['distance_km']:.0f}km 떨어진 {f['admin_area']}"
+        else:
+            where = f.get("admin_area") or "가까운 곳"
+        parts.append(f"{where}에서 같은 재료 축제({f['name']})가 열려요")
+    return f"{month}월에는 " + ", ".join(parts) + "."
+
+
 def key_numbers(r: CheckResult) -> list[str]:
     """확인 결과마다 화면에 보여줄 주요 숫자 문장."""
     e = r.evidence or {}
@@ -296,10 +335,7 @@ def key_numbers(r: CheckResult) -> list[str]:
         if e.get("recommended_weeks"):
             out.append("추천 주: " + ", ".join(e["recommended_weeks"]))
         if e.get("overlapping_festivals"):
-            out.append(
-                "같은 재료 축제: "
-                + ", ".join(dict.fromkeys(f["name"] for f in e["overlapping_festivals"]))
-            )
+            out.append("같은 재료 축제: " + festivals_text(e["overlapping_festivals"]))
     elif r.check == "check_venue":
         if e.get("low_usage_daily") is not None:
             out.append(
@@ -310,7 +346,7 @@ def key_numbers(r: CheckResult) -> list[str]:
             if h.get("status") == "pending":
                 out.append(f"{label} 버스: {WAITING}")
             elif h.get("stops"):
-                tag = f" [{h['data_label']}]" if h.get("is_synthetic") else ""
+                tag = f" ({h['data_label']})" if h.get("is_synthetic") else ""
                 stops = ", ".join(
                     f"{x['stop_name']} {x['daily_boarding']:,.1f}명" for x in h["stops"]
                 )
@@ -326,19 +362,16 @@ def key_numbers(r: CheckResult) -> list[str]:
             )
         if f := e.get("flow"):
             out.append(
-                f"참고 4-11 방문인구 대상 비중 {f['dong_share_pct']}% / 제주 {f['jeju_share_pct']}% [{f.get('data_label', '')}]"
+                f"참고 4-11 방문인구 대상 비중 {f['dong_share_pct']}% / 제주 {f['jeju_share_pct']}% ({f.get('data_label', '')})"
             )
     elif r.check == "check_risk":
         if e.get("same_material_festivals"):
-            out.append(
-                "같은 재료 축제: "
-                + ", ".join(dict.fromkeys(f["name"] for f in e["same_material_festivals"]))
-            )
+            out.append("같은 재료 축제: " + festivals_text(e["same_material_festivals"]))
         if res := e.get("residential"):
             for a in res["areas"]:
                 out.append(
                     f"{a['admin_area']} 야간 거주인구 제주 동네 평균의 {a['ratio']}배"
-                    + (" [가상 데이터]" if res["is_synthetic"] else "")
+                    + (SYNTHETIC_TAG if res["is_synthetic"] else "")
                 )
         c = e.get("congestion") or {}
         if c.get("status") == "pending":
@@ -351,7 +384,7 @@ def key_numbers(r: CheckResult) -> list[str]:
             )
             out.append(
                 f"정체: 도로 {c['links_checked']}구간 확인{ratio}"
-                + (" [가상 데이터]" if c.get("is_synthetic") else "")
+                + (SYNTHETIC_TAG if c.get("is_synthetic") else "")
             )
     elif r.check == "check_budget":
         if e.get("format_median_krw") is not None:
@@ -443,6 +476,8 @@ def _timing_reason(r, change) -> tuple[str, list[str]]:
         index = mc.get("outsider_visitors_index")
         low = index is not None and m in e.get("low_months", [])
         weather = _weather_words(mc) if not mc.get("good_weeks") else None
+        if mc.get("near_festivals") and not mc.get("near_downgraded"):
+            sentences.append(near_festival_sentence(m, mc["near_festivals"]))
         if low and weather:
             sentences.append(f"{m}월은 관광객이 평소보다 적고 {weather}.")
         elif low:
@@ -585,7 +620,7 @@ def friendly_changes(run) -> list[dict]:
 # ---------- 입력·데모 카드 안내 ----------
 
 DEMO_WARNING = (
-    "AI 연결 전이라 입력과 상관없는 예시 카드예요. 입력한 지역·계절·재료가 반영되지 않았어요."
+    "AI를 쓸 수 없어 입력과 상관없는 예시 카드예요. 입력한 지역·계절·재료가 반영되지 않았어요."
 )
 # 사용자가 직접 예시 카드 보기를 켠 경우 (AI 오류로 예시 카드가 나온 경우는 DEMO_WARNING)
 DEMO_TOGGLE_LABEL = "시연용 예시 카드 보기 (AI 없이)"
@@ -737,7 +772,10 @@ STEPS = ["조건 입력", "아이디어", "데이터로 확인", "기획서", "�
 CIRCLED = "①②③④⑤"
 NO_KEY_REASON = "AI 키가 설정되지 않았어요."
 QUOTA_REASON = "오늘 AI 사용 한도를 넘었어요. 잠시 뒤 다시 해보세요."
-CALL_FAIL_REASON = "AI 호출이 실패했어요."
+CALL_FAIL_REASON = "AI 서버에 연결하지 못했어요."
+# AI는 답했지만 카드 규칙 검사(후보 3개, 가설 숫자 등)를 통과하지 못함: 예시 카드 대신 다시 받기
+CARDS_REJECTED_MESSAGE = "AI가 조건에 맞는 카드를 만들지 못했어요. 다시 시도해 주세요."
+RETRY_CARDS_LABEL = "다시 받기"
 CHOSEN_DEMO_REASON = "예시 카드 보기를 골랐어요."
 
 
@@ -763,9 +801,12 @@ def selection_summary(request, card=None) -> str:
 
 
 def ai_failure_reason(exc) -> str | None:
-    """카드 생성 오류가 AI 연결 문제면 쉬운 이유 문장, 아니면 None (조건 문제 등은 원래 안내를 쓴다).
+    """예시 카드로 대신할 오류면 쉬운 이유 문장, 아니면 None.
 
-    오류 원문(HTTP 코드 등)은 화면에 보여주지 않는다.
+    예시 카드는 AI를 쓸 수 없을 때만: 키 없음, 사용 한도(429), 연결·서버 오류(시간 초과, 5xx).
+    키·모델 설정 오류(401·403·404 등)와 조건 문제는 None (원래 안내를 ① 조건 입력에 보여준다).
+    카드 규칙 검사 실패는 None이고 cards_rejected로 따로 본다 (다시 받기).
+    오류 원문(HTTP 코드 등)은 예시 카드 경고에 보여주지 않는다.
     """
     from agent.llm import LLMError
 
@@ -774,7 +815,15 @@ def ai_failure_reason(exc) -> str | None:
     if "AI 설정이 없어요" in msg:
         return NO_KEY_REASON
     if isinstance(cause, LLMError):
-        return QUOTA_REASON if "(HTTP 429)" in str(cause) else CALL_FAIL_REASON
-    if "AI 응답이 형식에 맞지 않아" in msg:
-        return CALL_FAIL_REASON
+        text = str(cause)
+        if "(HTTP 429)" in text:
+            return QUOTA_REASON
+        code = re.search(r"\(HTTP (\d{3})\)", text)
+        if code is None or code.group(1).startswith("5"):
+            return CALL_FAIL_REASON  # 연결 실패·시간 초과·서버 오류
     return None
+
+
+def cards_rejected(exc) -> bool:
+    """AI는 답했지만 카드 규칙 검사를 두 번 다 통과하지 못했는지 (agent.idea_cards)."""
+    return "AI 응답이 형식에 맞지 않아" in str(exc)

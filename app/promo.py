@@ -4,8 +4,10 @@
 - 미확인 칸은 지어내지 않고 "날짜 추후 공지", "장소 추후 공지"로 쓴다 (fixed_texts)
 - 포스터: Gemini 이미지 모델로 글자 없는 배경 그림을 받고(그림 설명은 영어, 이름·기간·장소·숫자 없음),
   Pillow로 한글 문구를 얹어 1200×1600(3:4) PNG로 저장한다. 그림을 못 받으면 단색 기본 포스터
-- SNS 글: A의 LLM 연결(agent.proposals.default_llm)로 인스타그램 글 3~5문장 + 해시태그 5개
-- 정보 일치 검사: 고정 문구(이름·기간·장소)가 그대로 들어갔는지, 기획서에 없는 숫자가 없는지
+- SNS 글: A의 LLM 연결(agent.proposals.default_llm)로 인스타그램 글 3~5문장 + 해시태그 5개.
+  기간·장소는 AI에게 맡기지 않고 코드가 끝에 "언제: … · 어디: …" 줄로 붙인다 (sns_info)
+- 프로그램: 포스터·SNS에는 기획서 programs에 있는 프로그램만 쓴다. 없는 행사(드론 쇼 등)가 나오면 다시 생성
+- 정보 일치 검사: 이름·기간·장소가 기획서와 같은지, 기획서에 없는 숫자·프로그램이 없는지
   (숫자 규칙은 agent.plan.allowed_numbers와 같음, 월 표기는 허용)
 
 이미지 API (Gemini 공식 문서 2026-11 확인, https://ai.google.dev/gemini-api/docs/image-generation):
@@ -37,7 +39,19 @@ POSTER_SIZE = (1200, 1600)
 FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NotoSansKR-Bold.otf"
 OUTPUT_DIR = Path("outputs/promo")
 AI_CREDIT = "이미지: AI 생성 (Gemini)"  # AI 그림을 쓴 포스터에만 Pillow로 작게 넣는다 (글자 검사에서는 뺀다)
-TITLE_MAX, LINE_MAX, MAX_PROGRAMS = 15, 30, 3  # 포스터 문구 길이 (제목 15자, 나머지 한 줄 30자)
+# 포스터 문구 한 줄 30자. 제목은 줄이지 않고 글자 크기·줄바꿈으로 맞춘다
+LINE_MAX, MAX_PROGRAMS = 30, 3
+TITLE_FONT_SIZES = (84, 72, 62, 54)  # 제목이 두 줄 안에 들어갈 때까지 줄인다
+# 프로그램처럼 읽히는 말. 기획서 programs(이름·설명)나 축제 이름에 없으면 지어낸 프로그램으로 본다
+PROGRAM_WORDS = (
+    "드론", "불꽃", "폭죽", "레이저", "라이트쇼", "미디어아트", "퍼레이드", "콘서트", "버스킹",
+    "공연", "노래자랑", "마술", "경품", "추첨", "푸드트럭", "플리마켓", "포토존", "쿠킹", "클래스",
+    "시식", "야시장", "전시", "체험", "만들기", "투어", "대회", "경연",
+)  # fmt: skip
+SEASON_KO = {
+    **dict.fromkeys((3, 4, 5), "봄"), **dict.fromkeys((6, 7, 8), "여름"),
+    **dict.fromkeys((9, 10, 11), "가을"), **dict.fromkeys((12, 1, 2), "겨울"),
+}  # fmt: skip
 POSTER_ATTEMPTS = 3  # 글자 넣은 포스터: 처음 1번 + 다시 생성 2번
 EXTRA_TOLERANCE = 2  # 글자 검사에서 정하지 않은 글자를 몇 자까지 봐줄지 (읽기 오차)
 TEXT_FALLBACK_NOTICE = "AI가 글자를 정확히 그리지 못해 글자를 따로 얹었어요."
@@ -169,18 +183,63 @@ def fixed_texts(plan: FestivalPlan) -> dict[str, str]:
     return {"title": o.name, "period": period_text, "place": place_text}
 
 
+def sns_info(plan: FestivalPlan) -> dict[str, str]:
+    """SNS 글 끝에 코드가 붙이는 언제·어디. 미확인은 "추후 공지"로 자연스럽게 쓴다."""
+    o = plan.overview
+    period = (o.period or "").strip()
+    known = period.replace(f"({UNCONFIRMED})", "").replace("(날짜 미확인)", "").strip()
+    if not known or known == UNCONFIRMED:
+        when = "추후 공지"
+    elif "미확인" in period:
+        when = f"{known} (날짜는 추후 공지)"
+    else:
+        when = period
+    if o.venue and o.venue != UNCONFIRMED:
+        where = f"{o.region} {o.venue}".strip() if o.region else o.venue
+    elif o.region:
+        where = f"{o.region} (장소는 추후 공지)"
+    else:
+        where = "추후 공지"
+    return {"when": when, "where": where, "line": f"언제: {when} · 어디: {where}"}
+
+
+def season_text(plan: FestivalPlan) -> str:
+    """추천 월의 계절 (첫 달 기준). 월이 없으면 빈 문자열."""
+    months = plan.idea.timing.recommended_months
+    return SEASON_KO.get(months[0], "") if months else ""
+
+
 def promo_payload(plan: FestivalPlan) -> dict:
-    """SNS 글에 넘기는 기획서 값. 숫자 허용 목록도 여기서 만든다."""
-    texts = fixed_texts(plan)
+    """SNS 글에 넘기는 기획서 값. 숫자 허용 목록도 여기서 만든다.
+
+    형식 태그(예: "야간·빛·드론")는 넘기지 않는다: 기획서에 없는 프로그램(드론 쇼 등)을 약속하게 된다.
+    """
     return {
-        "축제 이름": texts["title"],
-        "기간": texts["period"],
-        "장소": texts["place"],
+        "축제 이름": plan.overview.name,
+        "지역": plan.overview.region or "",
+        "계절": season_text(plan),
         "대상": plan.overview.target or "",
         "재료": plan.idea.material,
-        "형식": plan.idea.format,
         "컨셉": _section(plan, "concept") or plan.idea.concept,
+        "프로그램": [
+            {"이름": p.name.strip(), "설명": p.description.strip()}
+            for p in plan.programs
+            if p.name.strip()
+        ],
     }
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"\s+", "", text or "")
+
+
+def unplanned_programs(text: str, plan: FestivalPlan) -> list[str]:
+    """기획서 programs(이름·설명)와 축제 이름에 없는 프로그램 말 (예: 기획서에 없는 "드론")."""
+    planned = _squash(
+        " ".join([plan.overview.name, *(f"{p.name} {p.description}" for p in plan.programs)])
+    )
+    found = _squash(text)
+    return [w for w in PROGRAM_WORDS if w in found and w not in planned]
 
 
 def shorten(text: str, limit: int) -> str:
@@ -192,14 +251,34 @@ def shorten(text: str, limit: int) -> str:
     return cut[: cut.rfind(" ")] if " " in cut[1:] else cut
 
 
-def _concept_line(plan: FestivalPlan) -> str:
-    concept = _section(plan, "concept") or plan.idea.concept or ""
-    first = re.split(r"(?<=[.!?])\s", concept.strip())[0].rstrip(".!? ")
+def _josa_wa(word: str) -> str:
+    last = word[-1] if word else ""
+    has_final = "가" <= last <= "힣" and (ord(last) - 0xAC00) % 28 != 0
+    return "과" if has_final else "와"
+
+
+def _clean_sentence(text: str) -> str:
+    first = re.split(r"(?<=[.!?])\s", " ".join((text or "").split()))[0].rstrip(".!? ")
     for end in ("이다", "입니다", "이에요", "예요"):
         if first.endswith(end):
-            first = first[: -len(end)]
-            break
-    return shorten(first, LINE_MAX)
+            return first[: -len(end)].rstrip()
+    return first
+
+
+def _concept_line(plan: FestivalPlan) -> str:
+    """포스터 맨 위 한 줄. 문장 중간에서 자르지 않는다.
+
+    카드 컨셉 → 기획서 컨셉 첫 문장 → 그 앞 구절(쉼표 앞) 순서로, 한 줄(30자)에 통째로 들어가고
+    기획서에 없는 프로그램 말이 없는 것을 쓴다. 없으면 "방어와 함께하는 겨울 축제"처럼 짧게 만든다.
+    """
+    sentences = [_clean_sentence(plan.idea.concept), _clean_sentence(_section(plan, "concept"))]
+    candidates = [*sentences, *(s.split(",")[0].strip() for s in sentences if "," in s)]
+    for text in candidates:
+        if 8 <= len(text) <= LINE_MAX and not unplanned_programs(text, plan):
+            return text
+    material = plan.idea.material
+    season = season_text(plan)
+    return f"{material}{_josa_wa(material)} 함께하는 {season + ' ' if season else ''}축제"
 
 
 def _closing_line(plan: FestivalPlan) -> str:
@@ -219,7 +298,7 @@ def poster_lines(plan: FestivalPlan) -> dict[str, str]:
         names.pop()  # 이름 중간을 자르지 않고 뒤 프로그램을 뺀다
     lines = {
         "top": _concept_line(plan),
-        "title": shorten(texts["title"], TITLE_MAX),
+        "title": texts["title"],  # 줄이지 않는다 (render_poster가 글자 크기·줄바꿈으로 맞춘다)
         "period": texts["period"],
         "place": texts["place"],
         "box": " · ".join(names),
@@ -537,14 +616,33 @@ def add_credit(img: Image.Image) -> Image.Image:
 
 
 def _wrap(draw, text: str, font, width: int) -> list[str]:
+    """띄어쓰기에서 줄을 바꾼다. 한 낱말이 한 줄보다 길 때만 글자에서 끊는다."""
     lines, line = [], ""
-    for ch in text:
-        if draw.textlength(line + ch, font=font) > width and line:
+    for word in text.split():
+        trial = f"{line} {word}" if line else word
+        if draw.textlength(trial, font=font) <= width:
+            line = trial
+            continue
+        if line:
             lines.append(line)
-            line = ch
-        else:
-            line += ch
+        line = ""
+        for ch in word:  # 낱말 하나가 너무 길면 글자에서 끊는다
+            if draw.textlength(line + ch, font=font) > width and line:
+                lines.append(line)
+                line = ch
+            else:
+                line += ch
     return [*lines, line] if line else lines
+
+
+def _title_lines(draw, title: str, width: int) -> tuple[ImageFont.FreeTypeFont, list[str]]:
+    """제목이 두 줄 안에 들어가는 가장 큰 글자 크기. 가장 작은 크기로도 넘치면 세 줄까지."""
+    for size in TITLE_FONT_SIZES:
+        font = _font(size)
+        lines = _wrap(draw, title, font, width)
+        if len(lines) <= 2:
+            return font, lines
+    return font, lines[:3]
 
 
 def render_poster(
@@ -561,10 +659,11 @@ def render_poster(
     poster = Image.alpha_composite(poster, band)
     draw = ImageDraw.Draw(poster)
     margin, y = 80, top + 60
-    title_font, sub_font, small = _font(84), _font(46), _font(24)
-    for line in _wrap(draw, texts["title"], title_font, w - margin * 2)[:3]:
+    sub_font, small = _font(46), _font(24)
+    title_font, title_lines = _title_lines(draw, texts["title"], w - margin * 2)
+    for line in title_lines:
         draw.text((margin, y), line, font=title_font, fill="white")
-        y += 108
+        y += round(title_font.size * 1.28)
     y += 24
     for key in ("period", "place"):
         for line in _wrap(draw, texts[key], sub_font, w - margin * 2)[:2]:
@@ -581,10 +680,12 @@ def render_poster(
 SNS_SYSTEM = """당신은 제주 마을 축제의 인스타그램 홍보 글을 쓰는 사람이다.
 입력 JSON의 값만 써서 한국어 글을 쓴다. 규칙:
 1. 본문은 3~5문장, 친근한 말투.
-2. "축제 이름", "기간", "장소" 값을 한 글자도 바꾸지 말고 그대로 넣는다.
-3. 입력에 없는 숫자(날짜, 시간, 가격, 인원, 연도 등)를 쓰지 않는다. 정해지지 않은 것은 "추후 공지"라고 쓴다.
-4. 해시태그는 정확히 5개, 모두 #으로 시작하고 숫자를 넣지 않는다.
-5. JSON으로만 답한다: {"text": "본문", "hashtags": ["#..", "#..", "#..", "#..", "#.."]}
+2. "축제 이름" 값을 한 글자도 바꾸지 말고 그대로 한 번 넣는다.
+3. 날짜·기간·장소 안내는 쓰지 않는다. "언제:", "어디:", "일시", "장소:" 같은 안내 줄도 만들지 않는다 (프로그램이 글 끝에 정확한 값을 붙인다).
+4. 프로그램은 "프로그램" 목록에 있는 것만 소개한다. 목록에 없는 행사(드론 쇼, 불꽃놀이, 공연, 경품 등)를 지어내지 않는다.
+5. 입력에 없는 숫자(날짜, 시간, 가격, 인원, 연도 등)를 쓰지 않는다.
+6. 해시태그는 정확히 5개, 모두 #으로 시작하고 숫자를 넣지 않는다. 목록에 없는 프로그램 이름도 넣지 않는다.
+7. JSON으로만 답한다: {"text": "본문", "hashtags": ["#..", "#..", "#..", "#..", "#.."]}
 """
 
 
@@ -602,17 +703,26 @@ def unknown_numbers(text: str, allowed: set[str]) -> list[str]:
     return sorted(found - allowed, key=len)
 
 
+# 본문에 AI가 직접 쓴 기간·장소 안내 줄 (코드가 붙이는 줄과 겹친다)
+INFO_LABEL = re.compile(r"(언제|어디|일시|장소|기간)\s*(및\s*장소\s*)?[:：]|언제\s*·\s*어디")
+
+
 def sns_problems(
-    text: str, hashtags: list[str], texts: dict[str, str], allowed: set[str]
+    text: str, hashtags: list[str], plan: FestivalPlan, allowed: set[str]
 ) -> list[str]:
+    """SNS 본문(언제·어디 줄을 붙이기 전) 검사. 문제 목록."""
     problems = []
-    for key, label in (("title", "축제 이름"), ("period", "기간"), ("place", "장소")):
-        if texts[key] not in text:
-            problems.append(f"{label} '{texts[key]}'이(가) 그대로 들어가지 않았어요")
+    title = plan.overview.name
+    if title not in text:
+        problems.append(f"축제 이름 '{title}'이(가) 그대로 들어가지 않았어요")
     if len(hashtags) != HASHTAG_COUNT or not all(t.startswith("#") for t in hashtags):
         problems.append(f"해시태그가 #으로 시작하는 {HASHTAG_COUNT}개가 아니에요")
     if extra := unknown_numbers(text + " " + " ".join(hashtags), allowed):
         problems.append(f"기획서에 없는 숫자가 있어요: {', '.join(extra)}")
+    if INFO_LABEL.search(text):
+        problems.append("언제·어디 안내 줄은 쓰지 마세요 (따로 붙여요)")
+    if extra := unplanned_programs(text + " " + " ".join(hashtags), plan):
+        problems.append(f"기획서 프로그램에 없는 내용이 있어요: {', '.join(extra)}")
     return problems
 
 
@@ -621,7 +731,7 @@ def write_sns(plan: FestivalPlan, llm) -> tuple[str | None, list[str], str | Non
     from agent.plan import allowed_numbers
 
     payload = promo_payload(plan)
-    texts = fixed_texts(plan)
+    info = sns_info(plan)
     allowed = allowed_numbers(payload)
     user = "<input>\n" + json.dumps(payload, ensure_ascii=False, indent=2) + "\n</input>"
     problem, last = "", (None, [])
@@ -637,10 +747,10 @@ def write_sns(plan: FestivalPlan, llm) -> tuple[str | None, list[str], str | Non
         except Exception as exc:  # noqa: BLE001 - LLM 오류·형식 오류는 다시 시도
             problem = "JSON 형식이 맞지 않았어요" if isinstance(exc, ValueError) else str(exc)
             continue
-        last = (text, tags)
-        problems = sns_problems(text, tags, texts, allowed)
+        last = (f"{text}\n\n{info['line']}", tags)  # 언제·어디는 코드가 붙인다
+        problems = sns_problems(text, tags, plan, allowed)
         if not problems:
-            return text, tags, None
+            return last[0], tags, None
         problem = "; ".join(problems)
     if last[0] is None:
         return None, [], f"SNS 글을 만들지 못했어요. {problem}"
@@ -670,14 +780,24 @@ def consistency_checks(plan: FestivalPlan, result: "PromoResult") -> list[PromoC
     if result.poster_mode == "ai_text":
         checks.append(PromoCheck(item="포스터 글자 검사", ok=not result.text_problems,
                                  detail="정한 문구만 그대로 들어갔어요"))  # fmt: skip
+    extra = unplanned_programs(" ".join(result.poster_lines.values()), plan)
+    checks.append(PromoCheck(item="포스터 프로그램 (기획서에 있는 것만)", ok=not extra,
+                             detail=", ".join(extra) or "기획서 프로그램만 썼어요"))  # fmt: skip
     if result.sns_text is None:
         checks.append(PromoCheck(item="SNS 글", ok=False, detail="만들지 못했어요"))
         return checks
-    for key, label in (("title", "축제 이름"), ("period", "기간"), ("place", "장소")):
-        checks.append(
-            PromoCheck(item=f"SNS {label}", ok=texts[key] in result.sns_text, detail=texts[key])
-        )
-    extra = unknown_numbers(result.sns_text + " " + " ".join(result.hashtags), allowed)
+    info = sns_info(plan)
+    for label, value in (
+        ("축제 이름", texts["title"]),
+        ("기간", info["when"]),
+        ("장소", info["where"]),
+    ):
+        checks.append(PromoCheck(item=f"SNS {label}", ok=value in result.sns_text, detail=value))
+    sns_all = result.sns_text + " " + " ".join(result.hashtags)
+    extra = unplanned_programs(sns_all, plan)
+    checks.append(PromoCheck(item="SNS 프로그램 (기획서에 있는 것만)", ok=not extra,
+                             detail=", ".join(extra) or "기획서 프로그램만 썼어요"))  # fmt: skip
+    extra = unknown_numbers(sns_all, allowed)
     checks.append(
         PromoCheck(item="기획서에 없는 숫자", ok=not extra, detail=", ".join(extra) or "없음")
     )

@@ -141,7 +141,7 @@ def hourly_evidence(top: list[dict], hourly=...) -> tuple[dict, dict, list[str]]
             "data_label": label["data_label"]}  # fmt: skip
     event = {"hours": f"{EVENT_HOURS[0]}~{EVENT_HOURS[-1]}시", "stops": rows_e, **meta}
     night = {"hours": f"{NIGHT_HOURS[0]}~{NIGHT_HOURS[-1]}시", "stops": rows_n, **meta}
-    tag = f" [{label['data_label']}]" if label["is_synthetic"] else ""
+    tag = f" ({label['data_label']})" if label["is_synthetic"] else ""
     few = [r for r in rows_n if r["daily_boarding"] < NIGHT_FEW]
     if few:
         names = ", ".join(f"{r['name']}({r['stop_name']})" for r in few)

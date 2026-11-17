@@ -53,6 +53,7 @@ def reset_after(step: str) -> None:
     """앞 단계가 바뀌면 뒤 단계 결과를 지운다."""
     order = [
         "request",
+        "idea_retry",
         "proposal",
         "demo_reason",
         "selected",
@@ -189,6 +190,12 @@ def step_request() -> None:
     if idea_error := ss.pop("idea_error", None):  # 아이디어 만들기에서 돌아온 조건 문제
         kind, message = idea_error
         (ui.warning if kind == "warning" else ui.error)(message)
+    if ss.get("idea_retry") and current_request() is not None:
+        # AI 카드가 규칙 검사에 걸림: 예시 카드로 넘어가지 않고 다시 받게 한다
+        ui.warning(screen.CARDS_REJECTED_MESSAGE)
+        if st.button(screen.RETRY_CARDS_LABEL, type="primary", key="retry_ideas"):
+            ss["idea_job"] = {"demo": False}
+            goto(2)
 
     draft = ss.get("draft") or ss.get("request") or {}
     from_ai = bool(ss.get("draft_from_ai"))
@@ -289,6 +296,7 @@ def make_ideas(request: UserRequest) -> None:
     from agent.proposals import propose_idea_cards
 
     job = ss.pop("idea_job")
+    ss.pop("idea_retry", None)
     st.html(
         style.head_html(
             2,
@@ -315,11 +323,15 @@ def make_ideas(request: UserRequest) -> None:
     try:
         proposal = propose_idea_cards(request, demo=reason is not None, progress=progress)
     except CardGenerationError as e:
+        if screen.cards_rejected(e):  # AI가 규칙에 맞는 카드를 못 만듦: ①에서 "다시 받기"
+            ss["idea_retry"] = True
+            goto(1)
         reason = screen.ai_failure_reason(e)
-        if reason is None:  # 조건 문제 등: 원래 안내를 보여주고 ① 조건 입력에 머문다
+        if reason is None:  # 조건 문제·키 설정 오류 등: 원래 안내를 보여주고 ① 조건 입력에 머문다
             ss["idea_error"] = ("warning", str(e))
             goto(1)
-        proposal = propose_idea_cards(request, demo=True)  # AI 문제면 예시 카드로 대신
+        # 키 없음·429·연결 오류면 예시 카드로 대신
+        proposal = propose_idea_cards(request, demo=True)
     except Exception as e:  # noqa: BLE001
         ss["idea_error"] = ("error", str(e))
         goto(1)

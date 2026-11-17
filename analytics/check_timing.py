@@ -50,6 +50,10 @@ FESTIVAL_DATES_PATH = PROCESSED / "jeju_festival_dates.csv"
 FESTIVAL_PLAN_JEJU_PATH = PROCESSED / "festival_plan_2026_jeju.csv"
 
 BAD_RATIO = 1.5
+# 같은 재료·같은 달 축제가 같은 행정동이거나 동네 중심 거리 이 안이면 fail (그보다 멀면 conditional)
+NEAR_FESTIVAL_KM = 10
+SAME_AREA, NEAR_AREA, FAR_AREA = "같은 동네", "가까운 동네", "먼 동네"
+UNKNOWN_AREA, UNKNOWN_DISTANCE = "장소 미확인", "거리 미확인"
 MIN_BAD_YEARS = 2
 JUDGED_RISKS = ("heavy_rain", "strong_wind")
 REFERENCE_RISKS = ("rainy", "heat")
@@ -269,45 +273,117 @@ class MonthCheck:
     festivals: list[dict]
     recommended_weeks: list[int]
     unavoidable: bool  # 날짜가 확인된 같은 재료 축제를 피할 날씨 괜찮은 주가 없음
+    near_festivals: list[dict] = field(default_factory=list)  # 같은 동네·10km 이내 같은 재료 축제
+    near_downgraded: bool = False  # 가까운 축제만 이유인데 고를 다른 달이 없어 conditional로 둠
+
+    @property
+    def only_near(self) -> bool:
+        """fail 이유가 가까운 같은 재료 축제뿐인지 (외지인·날씨는 통과)."""
+        return bool(self.near_festivals) and self.index >= LOW_INDEX and bool(self.good_weeks)
 
     @property
     def slightly_low(self) -> bool:
         return LOW_INDEX <= self.index < PASS_INDEX
 
+    def weather_text(self) -> str:
+        """모든 주가 나쁜 달의 이유. 나쁜 주의 실제 원인(바람·폭우)에 맞춘다."""
+        kinds = {why.split()[0] for _, reasons in self.bad_weeks for why in reasons}
+        if kinds == {"바람"}:
+            return "바람이 강한 주가 많아요"
+        if kinds == {"폭우"}:
+            return "폭우가 잦은 주가 많아요"
+        return "모든 주가 평소보다 폭우·바람이 잦아요"
+
     def fail_reason(self) -> str | None:
         low = self.index < LOW_INDEX
         low_text = f"외지인 방문 지수({self.index:.2f})가 {LOW_INDEX}보다 낮"
-        weather = "모든 주가 평소보다 폭우·바람이 잦아요"
+        weather = self.weather_text()
         if low and not self.good_weeks:
-            return f"{self.month}월은 {low_text}고, {weather}"
-        if low:
-            return f"{self.month}월은 {low_text}아요"
-        return f"{self.month}월은 {weather}" if not self.good_weeks else None
+            text = f"{self.month}월은 {low_text}고, {weather}"
+        elif low:
+            text = f"{self.month}월은 {low_text}아요"
+        elif not self.good_weeks:
+            text = f"{self.month}월은 {weather}"
+        else:
+            text = None
+        if self.near_festivals and not self.near_downgraded:
+            near = ", ".join(
+                f"{f['name']}({f['admin_area']}, {festival_place_text(f)})"
+                for f in self.near_festivals
+            )
+            near_text = f"가까운 곳에서 같은 재료 축제가 열려요: {near}"
+            text = (
+                f"{text}. {self.month}월에는 {near_text}"
+                if text
+                else f"{self.month}월에는 {near_text}"
+            )
+        return text
 
 
-def _month_check(month, index, station_weeks, fests) -> MonthCheck:
+def festival_place_text(f: dict) -> str:
+    """ "같은 동네", "약 7km", "장소 미확인" 같은 짧은 표시."""
+    if f["relation"] == SAME_AREA:
+        return SAME_AREA
+    if f["distance_km"] is not None:
+        return f"약 {f['distance_km']:.0f}km"
+    return f["relation"]
+
+
+def _centroids(station_by_dong) -> dict[str, tuple[float, float]]:
+    """행정동 → 경계 중심 좌표 (weather_station_by_dong.csv의 centroid_lat·centroid_lon)."""
+    if station_by_dong is None or not {"centroid_lat", "centroid_lon"} <= set(station_by_dong):
+        return {}
+    return {
+        r.admin_area: (float(r.centroid_lat), float(r.centroid_lon))
+        for r in station_by_dong.itertuples()
+    }
+
+
+def festival_relation(area, region: str | None, centroids: dict) -> tuple[str, float | None]:
+    """축제 행정동과 입력 지역의 관계와 동네 중심 거리(km)."""
+    from analytics.weather import _km
+
+    if not isinstance(area, str) or not area:
+        return UNKNOWN_AREA, None
+    if area == region:
+        return SAME_AREA, 0.0
+    if area not in centroids or region not in centroids:
+        return UNKNOWN_DISTANCE, None
+    km = round(_km(*centroids[area], *centroids[region]), 1)
+    return (NEAR_AREA if km <= NEAR_FESTIVAL_KM else FAR_AREA), km
+
+
+def _month_check(month, index, station_weeks, fests, region=None, centroids=None) -> MonthCheck:
     weeks = station_weeks[station_weeks["month"] == month]
     good = weeks.loc[~weeks["bad"], "week"].astype(int).tolist()
     bad = [(int(r.week), r.bad_reasons) for r in weeks[weeks["bad"]].itertuples()]
     in_month = [f for _, f in fests.iterrows() if str(month) in f["months"].split("|")]
     free = [w for w in good if not any(_festival_overlaps_week(f, w) for f in in_month)]
     unavoidable = bool(in_month and good and not free)
-    if index < LOW_INDEX or not good:
+    festivals = []
+    for f in in_month:
+        area = f.get("admin_area") if hasattr(f, "get") else None
+        relation, km = festival_relation(area, region, centroids or {})
+        festivals.append(
+            {
+                "name": f["name"],
+                "months": [int(m) for m in str(f["months"]).split("|") if m],
+                "start": f["start"].date().isoformat() if f["dates_known"] else None,
+                "end": f["end"].date().isoformat() if f["dates_known"] else None,
+                "dates_known": bool(f["dates_known"]),
+                "admin_area": area if isinstance(area, str) and area else None,
+                "distance_km": km,
+                "relation": relation,
+                "source": f["source"],
+            }
+        )
+    near = [f for f in festivals if f["relation"] in (SAME_AREA, NEAR_AREA)]
+    if index < LOW_INDEX or not good or near:
         status = "fail"
     elif index < PASS_INDEX or in_month:
         status = "conditional"
     else:
         status = "pass"
-    festivals = [
-        {
-            "name": f["name"],
-            "start": f["start"].date().isoformat() if f["dates_known"] else None,
-            "end": f["end"].date().isoformat() if f["dates_known"] else None,
-            "dates_known": bool(f["dates_known"]),
-            "source": f["source"],
-        }
-        for f in in_month
-    ]
     return MonthCheck(
         month=month,
         status=status,
@@ -317,6 +393,7 @@ def _month_check(month, index, station_weeks, fests) -> MonthCheck:
         festivals=festivals,
         recommended_weeks=free or good,
         unavoidable=unavoidable,
+        near_festivals=near,
     )
 
 
@@ -438,9 +515,26 @@ def check_timing(
         sources.append(FESTIVAL_SOURCE)
 
     station_weeks = data.weekly[data.weekly["station"] == weather["weather_station"]]
-    all_checks = [_month_check(m, float(index[m]), station_weeks, fests) for m in range(1, 13)]
+    centroids = _centroids(data.station_by_dong)
+    all_checks = [
+        _month_check(m, float(index[m]), station_weeks, fests, region, centroids)
+        for m in range(1, 13)
+    ]
     checks = [c for c in all_checks if c.month in months]
     status = max((c.status for c in checks), key=STATUS_ORDER.get)
+    suggestion = _suggest(card, checks, all_checks, data) if status == "fail" else None
+    if status == "fail" and suggestion is None:
+        # 가까운 같은 재료 축제만 이유인데 피할 다른 달이 없으면 conditional + 경고 (외지인·날씨 fail은 그대로)
+        for c in checks:
+            if c.status == "fail" and c.only_near:
+                c.status, c.near_downgraded = "conditional", True
+                names = ", ".join(f"{f['name']}({f['admin_area']})" for f in c.near_festivals)
+                warnings.append(
+                    f"{c.month}월에는 가까운 곳에서 같은 재료 축제({names})가 열리지만, "
+                    "제철 안에서 외지인·날씨 기준을 통과하는 다른 달이 없어요. "
+                    "날짜를 겹치지 않게 잡고 차별점을 분명히 해 주세요."
+                )
+        status = max((c.status for c in checks), key=STATUS_ORDER.get)
 
     evidence.update(
         {
@@ -451,6 +545,10 @@ def check_timing(
             "bad_weather_months": [c.month for c in checks if not c.good_weeks],
             "recommended_weeks": [week_text(w) for c in checks for w in c.recommended_weeks],
             "recommended_week_numbers": [w for c in checks for w in c.recommended_weeks],
+            "near_festival_rule": (
+                f"같은 재료·같은 달 축제가 같은 행정동이거나 동네 중심 거리 {NEAR_FESTIVAL_KM}km 이내면 "
+                "그 달은 fail, 더 멀면 conditional"
+            ),
             "overlapping_festivals": [f | {"month": c.month} for c in checks for f in c.festivals],
             "month_checks": [
                 {
@@ -460,6 +558,12 @@ def check_timing(
                     "good_weeks": [week_text(w) for w in c.good_weeks],
                     "bad_weeks": [{"week": week_text(w), "why": r} for w, r in c.bad_weeks],
                     "overlapping_festivals": [f["name"] for f in c.festivals],
+                    # 같은 동네·10km 이내 같은 재료 축제 (fail 이유. 화면 "바뀐 점"에서 쓴다)
+                    "near_festivals": [
+                        {k: f[k] for k in ("name", "admin_area", "relation", "distance_km")}
+                        for f in c.near_festivals
+                    ],
+                    "near_downgraded": c.near_downgraded,
                 }
                 for c in checks
             ],
@@ -494,7 +598,6 @@ def check_timing(
 
     if status == "fail":
         reason = "; ".join(c.fail_reason() for c in checks if c.status == "fail") + "."
-        suggestion = _suggest(card, checks, all_checks, data)
         if suggestion is None:
             warnings.append("통과하는 다른 달이 없어 추천 월을 고치는 제안을 하지 못했어요.")
     else:

@@ -322,7 +322,7 @@ def test_risk_warns_other_festival_same_area_same_week():
 def test_risk_residential_density_with_synthetic_flag():
     r = risk(flow=fake_flow(True))
     assert r.status == "conditional" and "소음 민원 주의" in r.reason
-    assert r.is_synthetic and any("가짜 데이터" in w for w in r.warnings)
+    assert r.is_synthetic and any("가상 데이터" in w for w in r.warnings)
     assert r.evidence["residential"]["areas"][0]["ratio"] == 1.5
     r = risk(flow=fake_flow(False), areas=(OTHER,))
     assert r.status == "pass" and not r.is_synthetic
