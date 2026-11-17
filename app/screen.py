@@ -53,8 +53,19 @@ def won(krw: int | None) -> str:
     return f"{krw / 10_000:,.0f}만 원"
 
 
+def ordered_months(months: list[int]) -> list[int]:
+    """이어지는 순서로: [1, 2, 11, 12] → [11, 12, 1, 2]. 가장 크게 비는 곳 다음 달부터 센다."""
+    ms = sorted(set(months))
+    if len(ms) < 2:
+        return ms
+    gaps = [((ms[(i + 1) % len(ms)] - m) % 12, i) for i, m in enumerate(ms)]
+    _, i = max(gaps, key=lambda g: g[0])  # 같으면 앞쪽 (연초부터)
+    start = (i + 1) % len(ms)
+    return ms[start:] + ms[:start]
+
+
 def months_text(months: list[int]) -> str:
-    return "·".join(str(m) for m in months) + "월"
+    return "·".join(str(m) for m in ordered_months(months)) + "월"
 
 
 VERDICT_TITLES = {
@@ -293,7 +304,7 @@ def festival_place(f: dict) -> str:
     if relation == "같은 동네":
         return f"{area}, 같은 동네"
     if km is not None:
-        return f"{area}, 약 {km:.0f}km"
+        return f"{area}, 약 {km:.1f}km"  # 10km 기준과 맞게 소수 첫째 자리까지
     return area
 
 
@@ -314,7 +325,7 @@ def near_festival_sentence(month: int, festivals: list[dict]) -> str:
         if f.get("relation") == "같은 동네":
             where = f"같은 동네({f['admin_area']})"
         elif f.get("distance_km") is not None:
-            where = f"약 {f['distance_km']:.0f}km 떨어진 {f['admin_area']}"
+            where = f"약 {f['distance_km']:.1f}km 떨어진 {f['admin_area']}"
         else:
             where = f.get("admin_area") or "가까운 곳"
         parts.append(f"{where}에서 같은 재료 축제({f['name']})가 열려요")
@@ -560,6 +571,15 @@ def _after_note(next_results, change) -> str | None:
     return " ".join(notes) or None
 
 
+def _change_note(source, next_results, change) -> str | None:
+    """바뀐 점 ⚠️ 안내: 입력 계절 밖으로 바꿨으면 그 사실 + 바꾼 달이 조건부인 이유."""
+    outside = None
+    if source is not None and source.check == "check_timing":
+        outside = (source.evidence or {}).get("season_outside_suggestion")
+    notes = [n for n in (outside, _after_note(next_results, change)) if n]
+    return " ".join(notes) or None
+
+
 LOW_DATA_NOTICE = "이 지역은 자료가 적어 결과가 불안정할 수 있어요"
 
 
@@ -571,6 +591,19 @@ def low_data_notes(results) -> list[str]:
             if note not in notes:
                 notes.append(note)
     return notes
+
+
+def season_notice(run) -> str | None:
+    """에이전트가 추천 월을 입력 계절 밖으로 바꿨으면 안내 문장 (check_timing evidence)."""
+    notice = None
+    for rd in run.rounds:
+        for change in rd.changes:
+            if change.field != "timing.recommended_months":
+                continue
+            r = _source_check(rd.results, change)
+            if r is not None and r.check == "check_timing":
+                notice = (r.evidence or {}).get("season_outside_suggestion") or None
+    return notice
 
 
 def friendly_changes(run) -> list[dict]:
@@ -609,7 +642,7 @@ def friendly_changes(run) -> list[dict]:
                     "title": title,
                     "reason": reason,
                     "numbers": numbers,
-                    "note": _after_note(nxt, change),
+                    "note": _change_note(r, nxt, change),
                     "season": season,
                     "low_data": low_data_notes([r]) if r is not None else [],
                 }
@@ -822,6 +855,29 @@ def ai_failure_reason(exc) -> str | None:
         if code is None or code.group(1).startswith("5"):
             return CALL_FAIL_REASON  # 연결 실패·시간 초과·서버 오류
     return None
+
+
+RETRY_PLAN_LABEL = "다시 만들기"
+
+
+def plan_failure_reason(exc) -> str:
+    """기획서 생성 실패 이유를 쉬운 말 한 줄로 (오류 원문·HTTP 코드는 보여주지 않는다)."""
+    from agent.llm import LLMError
+
+    msg, cause = str(exc), exc.__cause__
+    if "AI 설정이 없어요" in msg:
+        return "AI 설정이 없어 기획서를 만들 수 없어요."
+    if isinstance(cause, LLMError):
+        if "(HTTP 429)" in str(cause):
+            return "오늘 AI 사용 한도를 넘었어요. 잠시 뒤 다시 만들어 보세요."
+        return "AI 서버에 연결하지 못했어요. 잠시 뒤 다시 만들어 보세요."
+    if "규칙에 맞지 않아" in msg:
+        if "정하지 않은 장소" in msg:
+            return "AI가 정하지 않은 장소를 정한 것처럼 써서 기획서를 쓰지 않았어요. 다시 만들어 보세요."
+        if "입력에 없는 숫자" in msg:
+            return "AI가 근거에 없는 숫자를 써서 기획서를 쓰지 않았어요. 다시 만들어 보세요."
+        return "AI가 쓴 기획서가 형식에 맞지 않았어요. 다시 만들어 보세요."
+    return msg
 
 
 def cards_rejected(exc) -> bool:

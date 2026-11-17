@@ -62,6 +62,7 @@ def reset_after(step: str) -> None:
         "approved",
         "promo",
         "plan",
+        "plan_error",
         "plan_path",
     ]
     for key in order[order.index(step) :]:
@@ -402,6 +403,8 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
         with cols[i % 3], st.container(key=f"res-{r.status}-{key}-{i}"):
             st.html(style.check_head_html(screen.CHECK_LABELS[r.check], r.status, r.is_synthetic))
             ui.write(r.reason)
+            if r.check == "check_timing" and with_changes and (notice := screen.season_notice(run)):
+                ui.write(f"⚠️ {notice}")  # 에이전트가 입력 계절 밖 달로 바꿨을 때
             for line in screen.key_numbers(r):
                 ui.caption(line)
             if r.check == "check_venue" and (rows := screen.venue_table(r)):
@@ -533,7 +536,7 @@ def step_check(request: UserRequest, card) -> None:
     chosen = options[chosen_name]
     if ss.get("approved") and ss["approved"] != chosen_name:
         # 진행할 안을 바꾸면 예전 안으로 만든 기획서·홍보물을 지운다 (다시 확인할 때는 reset_after)
-        for key in ("approved", "plan", "plan_path", "promo"):
+        for key in ("approved", "plan", "plan_error", "plan_path", "promo"):
             ss.pop(key, None)
     ready = chosen.outcome == "ready_for_approval"
     if not ready:
@@ -548,6 +551,7 @@ def step_check(request: UserRequest, card) -> None:
     if st.button("이대로 진행", type="primary", disabled=not ready):
         if ss.get("approved") != chosen_name or "plan" not in ss:
             ss.pop("plan", None)
+            ss.pop("plan_error", None)
             ss.pop("promo", None)  # 기획서를 다시 만들면 홍보물도 지운다
         ss["approved"] = chosen_name
         goto(4)
@@ -573,13 +577,17 @@ def step_plan(request: UserRequest) -> None:
         return
     approved_run = run_options()[ss["approved"]]
     if "plan" not in ss:
+        if error := ss.get("plan_error"):  # 지난번에 실패: 쉬운 이유 한 줄 + 다시 만들기
+            ui.warning(error)
+            if not st.button(screen.RETRY_PLAN_LABEL, type="primary", key="retry_plan"):
+                return
         # 장소 후보를 기획서에 넘기는 방식은 A와 정할 예정. 지금은 고른 안의 확인 결과 그대로 넘긴다
         try:
             with st.spinner("기획서를 쓰는 중이에요…"):
                 plan = generate_plan(approved_run, request, approved=True)
         except PlanGenerationError as e:
-            ui.warning(str(e))
-            return
+            ss["plan_error"] = screen.plan_failure_reason(e)
+            st.rerun()  # 이유와 "다시 만들기" 버튼을 보여준다
         except Exception as e:  # noqa: BLE001
             ui.error(str(e))
             return
@@ -587,6 +595,8 @@ def step_plan(request: UserRequest) -> None:
         ss["plan"] = plan.model_dump(mode="json")
         ss["plan_path"] = str(md_path)
         ss.pop("promo", None)
+        if ss.pop("plan_error", None):
+            st.rerun()  # 다시 만들기에 성공하면 지난 실패 안내와 버튼을 지우고 다시 그린다
     plan = current_plan()
     doc, rail = st.columns([3, 1], gap="large")
     with rail, st.container(key="card-rail"):

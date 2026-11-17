@@ -399,6 +399,27 @@ def test_sns_body_with_own_when_where_line_is_regenerated(plan, tmp_path):
         assert own not in result.sns_text and result.sns_text.count("언제:") == 1
 
 
+def test_sns_awkward_ending_and_spaced_hashtag_are_regenerated(plan, tmp_path):
+    """ "…축제이다랍니다" 같은 비문, 띄어쓰기 있는 해시태그는 다시 쓴다 (QA 2차 #15·#5)."""
+    awkward = good_sns(plan, text=good_sns(plan)["text"] + " 밤을 밝히는 야간 축제이다랍니다.")
+    spaced = good_sns(
+        plan, hashtags=["#애월 감귤", "#제주축제", "#감귤", "#로컬마켓", "#가족나들이"]
+    )
+    llm = FakeLLM(awkward, spaced, good_sns(plan))
+    result = promo.make_promo(plan, llm=llm, out_dir=tmp_path)
+    assert len(llm.calls) == 3
+    assert "어색한 문장" in llm.calls[1] and "축제이다랍니다" in llm.calls[1]
+    assert "해시태그에 띄어쓰기" in llm.calls[2] and result.sns_notice is None
+    for ok in ("함께해요!", "열려요. 놀러 오세요.", "다양한 체험이 있다고 해요"):
+        assert not promo.AWKWARD_ENDING.search(ok), ok
+
+
+def test_sns_gets_program_names_only(plan):
+    payload = promo.promo_payload(plan)
+    assert payload["프로그램"] == ["감귤 직거래 장터", "감귤 디저트 부스"]  # 설명은 넘기지 않음
+    assert "농가가 직접 파는 장터" not in json.dumps(payload, ensure_ascii=False)
+
+
 def test_sns_with_unknown_number_is_regenerated(plan, tmp_path):
     bad = good_sns(plan, text=good_sns(plan)["text"] + " 입장료 5000원, 2027년에도 열려요.")
     llm = FakeLLM(bad, good_sns(plan))
