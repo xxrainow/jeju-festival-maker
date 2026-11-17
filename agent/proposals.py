@@ -5,7 +5,7 @@
 
 from agent import draft_contracts as v2
 from agent.demo_cards import demo_proposal
-from agent.idea_cards import CardGenerationError, generate_idea_cards
+from agent.idea_cards import CardGenerationError, Progress, generate_idea_cards
 from agent.idea_gen import SEED_MATERIALS, Material, TrendData, load_materials
 from agent.llm import LLMClient
 
@@ -17,6 +17,7 @@ def propose_idea_cards(
     llm: LLMClient | None = None,
     data: TrendData | None = None,
     materials: tuple[Material, ...] | None = None,
+    progress: Progress | None = None,
 ) -> v2.IdeaProposal:
     """사용자 조건으로 아이디어 카드 3장을 제안한다.
 
@@ -25,6 +26,7 @@ def propose_idea_cards(
     llm을 넘기지 않으면 .env 설정(LLM_PROVIDER=gemini, LLM_API_KEY)으로 만든다. 설정도 없으면 CardGenerationError.
     data, materials를 넘기지 않으면 data/processed/의 축제 패널과 제주 소재 사전을 읽는다.
     소재 사전이 없으면 임시 재료 목록을 쓰고 카드 안내 문장에 그 사실을 적는다.
+    progress(단계, 설명)를 넘기면 단계가 시작될 때마다 알려준다 (1 트렌드 계산 ~ 4 가설 정리).
     """
     if demo:
         return demo_proposal()
@@ -34,6 +36,8 @@ def propose_idea_cards(
         raise CardGenerationError(
             "AI 설정이 없어요. .env에 LLM_PROVIDER=gemini와 LLM_API_KEY를 넣거나 데모로 확인해주세요."
         )
+    if progress:
+        progress(1, "문체부 2024–2026 개최계획에서 형식별 신설 수를 세는 중")
     if data is None:
         from research.trends import load_panel
 
@@ -46,7 +50,7 @@ def propose_idea_cards(
             materials = load_materials()
         except FileNotFoundError:
             materials = SEED_MATERIALS
-    return generate_idea_cards(request, data, llm, materials=materials)
+    return generate_idea_cards(request, data, llm, materials=materials, progress=progress)
 
 
 def default_llm() -> LLMClient | None:
