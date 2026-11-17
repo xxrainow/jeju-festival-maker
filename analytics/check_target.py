@@ -34,7 +34,13 @@ CONDITIONAL_RATIO = 0.9
 MIN_USERS_SHARE = 0.1  # 동네 사용자 수가 동네 중앙값의 10% 미만이면 자료 적음 (추자면 3%)
 MIN_TARGET_USERS = 100
 STRONG_RATIO = 1.1  # 이 동네에서 비중이 높은 연령대로 알려줄 기준
-ELDERLY_WARNING = "와이파이 사용자 기준이라 고령층(60대 이상)이 실제보다 적게 잡힐 수 있어요."
+ELDERLY_WARNING = (
+    "와이파이 자료는 2020년 7월 이후 60대 이상·10대 미만이 거의 집계되지 않아요 "
+    "(50대로 합쳐진 것으로 보여요). 이 연령대는 판정에서 빼요."
+)
+# 원본에 거의 집계되지 않는 연령대 (2023~2025 제주 전체 비중 60대 이상 0.1%, 10대 미만 0.005%).
+# 2020-07부터 60대 이상이 급감하고 50대가 늘었다 (docs/data-check.md 2-2)
+UNMEASURED_AGES = ("10대 미만", "60대 이상")
 COUNT_WARNING = (
     "와이파이 사용자 수는 장소·월마다 따로 센 값이라 같은 사람이 여러 번 들어갈 수 있어요. "
     "사람 수가 아니라 비중으로만 봐요."
@@ -42,7 +48,8 @@ COUNT_WARNING = (
 
 # (문구 정규식, 연령대, 규칙 이름). 여러 개가 걸리면 연령대를 합친다
 TARGET_RULES: list[tuple[str, set[str], str]] = [
-    (r"가족|아이|어린이|키즈|유아|부모|자녀", {"10대 미만", "30대", "40대"}, "가족: 30~40대 + 10대 미만"),
+    (r"가족|부모|자녀|엄마|아빠", {"10대 미만", "30대", "40대"}, "가족: 30~40대 + 10대 미만"),
+    (r"영유아|유아|어린이|키즈|아이", {"10대 미만"}, "영유아·어린이: 10대 미만"),
     (r"청소년|중학생|고등학생|10대(?! ?미만)", {"10대"}, "청소년: 10대"),
     (r"청년|대학생|MZ|젊은|2030", {"20대", "30대"}, "청년: 20~30대"),
     (r"중장년|중년|장년|4050", {"40대", "50대"}, "중장년: 40~50대"),
@@ -184,8 +191,15 @@ def check_target(
     demo = load_demographics() if demographics is None else demographics
     months = sorted(set(card.timing.recommended_months))
     ages, sex, rules = parse_target(request.target)
+    # 자료가 거의 없는 연령대는 판정에서 뺀다 (가족 → 30·40대만)
+    excluded = [a for a in UNMEASURED_AGES if a in ages]
+    target_ages = sorted(ages, key=AGE_BANDS.index)
+    ages = ages - set(excluded)
     evidence: dict = {"target": request.target, "age_groups": sorted(ages, key=AGE_BANDS.index),
+                      "target_age_groups": target_ages, "excluded_age_groups": excluded,
                       "sex": sex, "target_rules": rules, "months": months}  # fmt: skip
+    if excluded and ages:
+        evidence["excluded_note"] = f"{'·'.join(excluded)}은 자료가 거의 없어 제외"
 
     def pending(why: str, *extra: str) -> CheckResult:
         return CheckResult(check="check_target", status="pending", reason=why,
@@ -193,6 +207,10 @@ def check_target(
 
     if not request.target:
         return pending("대상이 입력되지 않아 확인하지 않았어요.")
+    if excluded and not ages:  # 어르신, 영유아처럼 자료가 거의 없는 연령대뿐
+        return pending(
+            f"와이파이 자료에 {'·'.join(excluded)}이 거의 집계되지 않아 확인할 수 없어요."
+        )
     if not ages and not sex:
         return pending(
             f"대상 '{request.target}'을(를) 연령대로 바꾸지 못했어요. "
@@ -267,6 +285,8 @@ def check_target(
         for k, p in parts.items()
         if p
     )
+    if note := evidence.get("excluded_note"):
+        detail += f" ({note})"
     suggestion = None  # 대상은 사용자가 정한 값이라 고치는 제안을 하지 않는다
     low = any(_is_low(p["ratio"]) for p in parts.values() if p)
     if status == "pass":

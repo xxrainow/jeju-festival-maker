@@ -47,6 +47,8 @@ def request(region=REGION, target="가족"):
         ("중장년", {"40대", "50대"}, None),
         ("어르신", {"60대 이상"}, None),
         ("엄마와 아이", {"10대 미만", "30대", "40대"}, "여성"),
+        ("영유아", {"10대 미만"}, None),
+        ("어린이", {"10대 미만"}, None),
         ("40대", {"40대"}, None),
         ("10대 미만 자녀", {"10대 미만", "30대", "40대"}, None),
         ("관광객", set(), None),
@@ -111,6 +113,38 @@ def test_share_numbers_never_look_contradictory():
     assert share_numbers(0.2, 0.4)["dong_share_pct"] == 20.0  # 보통은 소수 첫째 자리
     assert share_numbers(0.8975, 1.0)["ratio"] == 0.897  # 0.90으로 반올림하면 0.9 기준과 어긋남
     assert share_numbers(0.5, 1.0)["ratio"] == 0.5
+
+
+def test_family_is_judged_by_30s_40s_only():
+    """가족: 10대 미만은 와이파이 자료에 거의 없어 빼고 30·40대로만 판정, 근거에 적는다."""
+    r = target(0.4)
+    assert r.evidence["age_groups"] == ["30대", "40대"]
+    assert r.evidence["excluded_age_groups"] == ["10대 미만"]
+    assert r.evidence["target_age_groups"] == ["10대 미만", "30대", "40대"]
+    assert r.evidence["excluded_note"] == "10대 미만은 자료가 거의 없어 제외"
+    assert r.reason.endswith("(10대 미만은 자료가 거의 없어 제외).")
+    assert "10대 미만" not in r.reason.split(":")[0]  # 대상 이름 칸에는 30·40대만
+    from app.screen import key_numbers
+
+    assert any(line.endswith("· 10대 미만은 자료가 거의 없어 제외") for line in key_numbers(r))
+
+
+@pytest.mark.parametrize(
+    ("who", "bands"),
+    [("어르신", "60대 이상"), ("영유아", "10대 미만"), ("어르신과 어린이", "10대 미만·60대 이상"),
+     ("70대 여성", "60대 이상")],
+)  # fmt: skip
+def test_unmeasured_ages_are_pending(who, bands):
+    """60대 이상·10대 미만은 2020-07 이후 거의 집계되지 않아 판정하지 않는다 (데이터 대기)."""
+    r = target(0.4, req=request(target=who))
+    assert r.status == "pending" and r.suggestion is None
+    assert r.reason == f"와이파이 자료에 {bands}이 거의 집계되지 않아 확인할 수 없어요."
+    # 어르신이 섞여 있어도 잴 수 있는 연령대가 있으면 그것으로 판정
+    mixed = target(0.4, req=request(target="청년과 어르신"))
+    assert (
+        mixed.status != "pending"
+        and mixed.evidence["excluded_note"] == "60대 이상은 자료가 거의 없어 제외"
+    )
 
 
 def test_target_checks_sex_too():

@@ -397,6 +397,7 @@ def key_numbers(r: CheckResult) -> list[str]:
         if a := e.get("age_share"):
             out.append(
                 f"대상 연령({', '.join(e['age_groups'])}) {a['dong_share_pct']}% / 제주 평균 {a['jeju_share_pct']}% ({a['ratio']}배)"
+                + (f" · {e['excluded_note']}" if e.get("excluded_note") else "")
             )
         if s := e.get("sex_share"):
             out.append(
