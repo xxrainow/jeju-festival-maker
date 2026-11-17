@@ -8,6 +8,7 @@ from agent.fake_checks import FAKE_TOOLS
 from agent.fake_checks import check_timing as fake_check_timing
 from agent.verify import verify_idea
 from analytics.check_timing import (
+    NEAR_FESTIVAL_KM,
     REAL_TOOLS,
     TimingData,
     check_timing,
@@ -343,3 +344,91 @@ def test_low_data_region_gets_notice():
     assert sum("53km" in w for w in r.warnings) == 1  # 거리 경고는 한 번만
     assert r.evidence["station_distance_km"] == 53.0
     assert check_timing(card([5]), request(), data()).evidence["low_data"] == []
+
+
+# ---------- 같은 재료 축제의 장소와 거리 ----------
+
+NEAR, FAR = "제주시 한림읍", "서귀포시 성산읍"
+# 동네 중심 좌표: 한림읍은 애월읍에서 약 6km, 성산읍은 약 50km
+CENTROIDS = pd.DataFrame(
+    {
+        "admin_area": [REGION, NEAR, FAR],
+        "station": ["제주", "제주", "제주"],
+        "centroid_lat": [33.45, 33.45, 33.40],
+        "centroid_lon": [126.37, 126.305, 126.90],
+    }
+)
+
+
+def located(name, month, area, start=None, end=None):
+    """같은 재료 축제 한 줄 (행정동 포함). start가 없으면 날짜 미확인."""
+    t = festival_table((name, start, end) if start else (name, None, month))
+    return t.assign(admin_area=area)
+
+
+def area_data(fests, season=(5, 6), index=None):
+    d = data(festivals=fests, season=list(season), outsider=outsider_table(index or {}))
+    d.station_by_dong = CENTROIDS
+    return d
+
+
+def test_same_area_festival_fails_and_suggests_other_month():
+    fests = located("애월 감귤 축제", 5, REGION, "2026-05-14", "2026-05-15")
+    r = check_timing(card([5]), request(), area_data(fests, index={6: 1.3}))
+    assert r.status == "fail"
+    assert r.suggestion.value == [6]  # 제철 안, 가까운 같은 재료 축제가 없고 통과하는 달
+    f = r.evidence["overlapping_festivals"][0]
+    assert (f["name"], f["months"], f["admin_area"], f["distance_km"], f["relation"]) == (
+        "애월 감귤 축제",
+        [5],
+        REGION,
+        0.0,
+        "같은 동네",
+    )
+    assert f["start"] == "2026-05-14" and f["end"] == "2026-05-15"
+    assert "가까운 곳에서 같은 재료 축제가 열려요" in r.reason and "같은 동네" in r.reason
+
+
+def test_near_festival_within_10km_fails():
+    fests = located("한림 감귤 축제", 5, NEAR)
+    r = check_timing(card([5]), request(), area_data(fests, index={6: 1.3}))
+    f = r.evidence["overlapping_festivals"][0]
+    assert f["relation"] == "가까운 동네" and 0 < f["distance_km"] <= NEAR_FESTIVAL_KM == 10
+    assert r.status == "fail" and r.suggestion.value == [6]
+
+
+def test_far_festival_stays_conditional():
+    fests = located("성산 감귤 축제", 5, FAR)
+    r = check_timing(card([5]), request(), area_data(fests))
+    f = r.evidence["overlapping_festivals"][0]
+    assert f["relation"] == "먼 동네" and f["distance_km"] > NEAR_FESTIVAL_KM
+    assert r.status == "conditional" and r.suggestion is None
+
+
+def test_unknown_area_stays_conditional():
+    fests = located("어딘가 감귤 축제", 5, None)
+    r = check_timing(card([5]), request(), area_data(fests))
+    f = r.evidence["overlapping_festivals"][0]
+    assert f["relation"] == "장소 미확인" and f["admin_area"] is None and f["distance_km"] is None
+    assert r.status == "conditional"
+
+
+def test_near_festival_without_other_month_is_conditional_with_warning():
+    fests = located("애월 감귤 축제", 5, REGION)
+    r = check_timing(card([5]), request(), area_data(fests, season=(5,)))  # 제철이 5월뿐
+    assert r.status == "conditional" and r.suggestion is None
+    assert any("다른 달이 없어요" in w and "애월 감귤 축제" in w for w in r.warnings)
+    assert r.evidence["month_checks"][0]["status"] == "conditional"
+
+
+def test_near_festival_only_removes_that_month():
+    fests = located("애월 감귤 축제", 5, REGION)
+    r = check_timing(card([5, 6]), request(), area_data(fests))
+    assert r.status == "fail" and r.suggestion.value == [6]  # 그 달만 빼요
+    assert "그 달을 빼요" in r.suggestion.why
+
+
+def test_low_outsider_fail_is_not_downgraded_by_festival_rule():
+    fests = located("애월 감귤 축제", 5, REGION)
+    r = check_timing(card([5]), request(), area_data(fests, season=(5,), index={5: 0.5}))
+    assert r.status == "fail"  # 외지인 fail은 그대로
