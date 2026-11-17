@@ -530,6 +530,7 @@ def step_promo() -> None:
                     plan,
                     api_key=settings.llm_api_key.get_secret_value() or None,
                     image_model=settings.image_model or None,
+                    text_model=settings.llm_model or None,  # 포스터 글자 검사에 쓰는 모델
                     llm=default_llm(),
                 )
         except PlanNotApprovedError as e:
@@ -550,15 +551,17 @@ def step_promo() -> None:
             st.download_button(
                 "포스터 내려받기", f.read(), file_name="poster.png", mime="image/png"
             )
+        if result.poster_mode == "ai_text":
+            ui.caption("AI가 정한 문구만 포스터에 그렸는지 글자를 읽어 확인했어요.")
         if result.image_cropped:
-            ui.caption("받은 그림이 세로 3:4가 아니어서 1200×1600에 맞춰 잘라 썼어요.")
+            ui.caption("받은 그림이 세로 3:4가 아니어서 1200×1600에 맞췄어요.")
     with right:
         if result.image_notice:
             ui.warning(result.image_notice)
             ui.caption("그림 설명 (그대로 복사해 쓰세요)")
             st.code(result.image_prompt, language=None)
             ui.caption("포스터 문구")
-            st.code("\n".join(result.poster_text.values()), language=None)
+            st.code("\n".join((result.poster_lines or result.poster_text).values()), language=None)
         ui.markdown("**SNS 글 (인스타그램)**")
         if result.sns_text:
             st.code(result.sns_text + "\n\n" + " ".join(result.hashtags), language=None)

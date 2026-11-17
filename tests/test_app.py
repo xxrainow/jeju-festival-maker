@@ -558,7 +558,7 @@ def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
     result = promo.PromoResult.model_validate(at.session_state["promo"])
     assert Path(result.poster_path).exists() and not result.used_ai_image
     assert any("기본 포스터" in w for w in labels(at, "warning"))  # 키 없음 안내
-    assert any(c.value == "\n".join(result.poster_text.values()) for c in at.code)  # 포스터 문구
+    assert any(c.value == "\n".join(result.poster_lines.values()) for c in at.code)  # 포스터 문구 6줄
     # ③으로 돌아가서 같은 안이면 그대로, 다시 확인하면 홍보물도 지워진다
     click(at, "← 이전 단계로")
     click(at, "← 이전 단계로")
