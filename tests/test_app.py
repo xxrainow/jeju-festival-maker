@@ -694,7 +694,9 @@ def test_old_plan_is_cleared_when_choice_or_recheck_changes(no_llm, monkeypatch,
         agent.plan, "save_plan", lambda plan: (tmp_path / "p.md", tmp_path / "p.json")
     )
     at = recheck(to_results(), [11])
-    assert next(r for r in at.radio if r.label == "진행할 안").value == "에이전트 추천안"
+    # 직접 고쳐서 다시 확인하면 그 안(내가 고친 안)이 바로 선택된다
+    assert next(r for r in at.radio if r.label == "진행할 안").value == "내가 고친 안"
+    choose(at, "에이전트 추천안")
     click(at, "이대로 진행")
     assert at.session_state["step"] == 4 and "plan" in at.session_state
     # ③으로 돌아가 진행할 안을 바꾸면 예전 기획서가 사라진다

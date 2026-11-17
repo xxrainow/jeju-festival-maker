@@ -65,6 +65,7 @@ def reset_after(step: str) -> None:
         "selected",
         "run",
         "manual_run",
+        "check_choice",
         "approved",
         "promo",
         "plan",
@@ -113,6 +114,15 @@ def run_options() -> dict[str, VerificationRun]:
     if "manual_run" in ss:
         options["내가 고친 안"] = VerificationRun.model_validate(ss["manual_run"])
     return options
+
+
+def current_choice() -> str:
+    """지금 보여주고 고를 안: 마지막으로 고른 안 → 진행한 안 → 에이전트 추천안 순서."""
+    options = run_options()
+    for name in (ss.get("check_choice"), ss.get("approved")):
+        if name in options:
+            return name
+    return "에이전트 추천안"
 
 
 def current_plan():
@@ -495,7 +505,10 @@ def verification_content(request: UserRequest, card) -> None:
         strip("에이전트 추천안", run)
         show_run(run, with_changes=True)
     else:
-        agent_tab, manual_tab = st.tabs(["에이전트 추천안", "내가 고친 안"])
+        # 방금 직접 고쳐서 다시 확인했으면 그 결과 탭을 먼저 연다
+        agent_tab, manual_tab = st.tabs(
+            ["에이전트 추천안", "내가 고친 안"], default=current_choice()
+        )
         with agent_tab:
             strip("에이전트 추천안", run)
             show_run(run, with_changes=True)
@@ -553,14 +566,19 @@ def verification_content(request: UserRequest, card) -> None:
             else:
                 reset_after("manual_run")  # 예전 기획서·홍보물도 지운다
                 ss["manual_run"] = manual.model_dump(mode="json")
+                ss["check_choice"] = "내가 고친 안"  # 다시 확인한 안을 바로 보여주고 고른 상태로
                 st.rerun()
 
     # 어느 안으로 진행할지
     st.subheader("어느 안으로 진행할까요?")
     options = run_options()
+    names = list(options)
+    # key 없이 index로만 정한다: 단계를 오가도 check_choice 기준으로 다시 그려진다
     chosen_name = st.radio(
-        "진행할 안", list(options), horizontal=True, label_visibility="collapsed"
+        "진행할 안", names, index=names.index(current_choice()),
+        horizontal=True, label_visibility="collapsed",
     )
+    ss["check_choice"] = chosen_name
     chosen = options[chosen_name]
     if ss.get("approved") and ss["approved"] != chosen_name:
         # 진행할 안을 바꾸면 예전 안으로 만든 기획서·홍보물을 지운다 (다시 확인할 때는 reset_after)
