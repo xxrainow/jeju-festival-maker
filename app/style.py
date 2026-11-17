@@ -376,6 +376,110 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 @media (max-width: 640px) {{
   [role="dialog"]:has(.fl-idea-detail) {{ border-radius: 0; }}
 }}
+/* 03·04 개정안: 한 화면에서 확인 → 수정 → 재확인 */
+[data-testid="stMainBlockContainer"]:has(.st-key-verification) {{
+  max-width: 1184px;
+}}
+.st-key-verification {{ gap: 28px; }}
+.st-key-verification .fl-head {{ margin: 0; }}
+.st-key-verification .fl-h1 {{ font-size: 48px; }}
+.st-key-verification .fl-desc {{ font-size: 17px; max-width: none; line-height: 1.6; }}
+.fl-check-selection {{ margin: 0; font-size: 15px; line-height: 1.5; font-weight: 600; }}
+.st-key-verification [data-testid="stCaptionContainer"] p {{ color: var(--fl-ink-2); font-size: 14px; line-height: 1.6; }}
+.st-key-verification h3 {{ font-size: 24px; padding: 0; line-height: 1.5; }}
+.st-key-verification .fl-summary {{ margin: 0; padding: 14px 24px; gap: 16px; }}
+.fl-summary-note {{ margin-left: auto; font-size: 12px; color: var(--fl-ink-3); }}
+.st-key-verification [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ gap: 16px; }}
+.st-key-verification [class*="st-key-res-"] {{
+  border: none; box-shadow: none; padding: 24px; gap: 16px;
+}}
+.st-key-verification [class*="st-key-res-"] p {{
+  font-size: 14px; line-height: 1.6; overflow-wrap: anywhere;
+}}
+.st-key-verification .fl-check-head {{ gap: 12px; align-items: center; margin: 0; }}
+.st-key-verification .fl-check-head > span {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+.st-key-verification .fl-check-head b {{ font-size: 18px; font-weight: 600; }}
+.st-key-verification [class*="st-key-check-numbers-"] {{ gap: 6px; }}
+.st-key-verification [class*="st-key-check-numbers-"] p {{
+  font-size: 12px; line-height: 1.5; color: var(--fl-ink-2);
+}}
+.st-key-verification [class*="st-key-check-source-"] p {{
+  font-size: 10px; line-height: 1.6; color: var(--fl-ink-3);
+}}
+.st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] details {{
+  border: none; border-radius: 0; background: transparent;
+}}
+.st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] summary {{
+  padding: 8px 0 0; color: var(--fl-ink-2);
+}}
+.st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] summary p {{
+  font-size: 12px;
+}}
+.st-key-verification [class*="st-key-chg-"] {{
+  border: none; border-radius: 16px; background: var(--fl-sea-soft);
+  box-shadow: none; padding: 16px; gap: 6px;
+}}
+.st-key-verification [class*="st-key-chg-"] p {{
+  color: var(--fl-sea); font-size: 14px; line-height: 1.6;
+}}
+.st-key-verification [class*="st-key-chg-"] [data-testid="stCaptionContainer"] p {{
+  font-size: 12px;
+}}
+.st-key-verification [data-testid="stTabs"] [data-baseweb="tab-list"] {{
+  gap: 16px; background: transparent; margin-bottom: 28px;
+}}
+.st-key-verification [data-testid="stTabs"] [data-baseweb="tab"] {{
+  border: 1px solid var(--fl-ink); background: transparent; border-radius: 8px;
+  padding: 10px 20px; height: auto; color: var(--fl-ink);
+}}
+.st-key-verification [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {{
+  background: var(--fl-accent); border-color: var(--fl-accent);
+}}
+.st-key-verification [data-baseweb="tab-highlight"],
+.st-key-verification [data-baseweb="tab-border"] {{ display: none; }}
+.st-key-verification [data-testid="stTabPanel"] {{ padding-top: 0; }}
+.st-key-verification [data-testid="stForm"] {{ border: none; padding: 0; }}
+.st-key-verification [class*="st-key-check-field-"] {{
+  border: 1px solid var(--fl-line); border-radius: 16px;
+  background: var(--fl-surface); padding: 18px 20px; min-height: 108px;
+}}
+.st-key-verification [class*="st-key-check-field-"] [data-testid="stWidgetLabel"] p {{
+  font-size: 12px; color: var(--fl-ink-3);
+}}
+.st-key-verification [class*="st-key-check-field-"] [data-baseweb="select"] > div {{
+  border: none; background: transparent; padding-left: 0;
+}}
+.st-key-verification [class*="st-key-check-field-"] [data-baseweb="select"] {{
+  font-size: 18px; font-weight: 600;
+}}
+.st-key-verification [data-testid="stFormSubmitButton"] button {{
+  background: transparent; border: 1px solid var(--fl-ink); color: var(--fl-ink);
+}}
+.st-key-verification button[data-testid^="stBaseButton"] {{
+  border-radius: 8px; min-height: 40px; font-size: 13px; font-weight: 400;
+}}
+.st-key-verification .st-key-check-proceed button {{
+  background: var(--fl-accent); border-color: var(--fl-accent); color: var(--fl-ink);
+}}
+.st-key-verification .st-key-check-proceed button:disabled {{ opacity: .35; }}
+.st-key-verification [data-testid="stSpinner"] {{
+  padding: 16px; border-radius: 16px; background: var(--fl-sea-soft); color: var(--fl-sea);
+}}
+.st-key-verification [data-testid="stAlert"] {{ font-size: 14px; }}
+.st-key-check-blocked [data-testid="stAlertContainer"] {{ background: var(--fl-fail-soft); color: var(--fl-fail); }}
+.st-key-check-blocked [data-testid="stAlertContent"] p {{ color: var(--fl-fail); }}
+.st-key-verification [class*="st-key-check-field-"] .react-aria-ComboBox > div {{ background: transparent; border-color: transparent; }}
+
+@media (max-width: 700px) {{
+  .st-key-verification .fl-h1 {{ font-size: 32px; }}
+  .st-key-verification .fl-desc {{ font-size: 15px; }}
+  .st-key-verification {{ gap: 20px; }}
+  .st-key-verification .fl-summary {{ gap: 12px; padding: 16px; }}
+  .fl-summary-note {{ margin-left: 0; }}
+  .st-key-verification [data-testid="stTabs"] [data-baseweb="tab-list"] {{ gap: 8px; }}
+  .st-key-verification [data-testid="stTabs"] [data-baseweb="tab"] {{ padding: 10px 14px; }}
+}}
+
 </style>
 """
 
@@ -620,7 +724,11 @@ def summary_html(results, note: str) -> str:
         f'<span class="count">{escape(screen.CHECK_LABELS[r.check])} {badge_html(r.status)}</span>'
         for r in results
     )
-    return f'<div class="fl-summary">{items}<span class="count">{escape(note)}</span></div>'
+    return f'<div class="fl-summary">{items}<span class="fl-summary-note">{escape(note)}</span></div>'
+
+
+def check_selection_html(title: str) -> str:
+    return f'<p class="fl-check-selection">고른 아이디어: {escape(title)}</p>'
 
 
 def section_html(label: str) -> str:
