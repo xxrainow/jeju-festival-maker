@@ -165,7 +165,7 @@ uv run streamlit run streamlit_app.py
 uv run pytest
 ```
 
-마지막 줄에 `442 passed`처럼 `passed`만 나오면 정상입니다. 인터넷과 AI 키 없이 돌아갑니다.
+마지막 줄에 `444 passed`처럼 `passed`만 나오면 정상입니다. 인터넷과 AI 키 없이 돌아갑니다.
 
 ## 7. 의존성 목록
 
