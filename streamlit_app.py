@@ -215,7 +215,8 @@ def step_request() -> None:
     )
     if conflict := screen.season_conflict(request):
         ui.warning(f"⚠️ {conflict}")  # 막지 않고 안내만
-    use_demo = st.checkbox("예시 카드로 보기 (입력과 상관없이 같은 예시 카드)", value=False)
+    with st.expander("시연 옵션"):  # 다른 칸보다 눈에 덜 띄게
+        use_demo = st.checkbox(screen.DEMO_TOGGLE_LABEL, value=False)
     if st.button("아이디어 보기", type="primary"):
         if "proposal" in ss and not use_demo and not ss.get("demo_reason"):
             goto(2)  # 같은 조건이면 받아 둔 카드를 다시 보여준다
@@ -254,12 +255,7 @@ def step_ideas(request: UserRequest) -> None:
     proposal = IdeaProposal.model_validate(ss["proposal"])
     if proposal.is_demo:
         diffs = screen.demo_differences(proposal, request)
-        reason = ss.get("demo_reason")
-        ui.warning(
-            f"### ⚠️ 예시 카드예요\n**{screen.DEMO_WARNING}**"
-            + (f"\n\n이유: {reason}" if reason else "")
-            + ("\n\n입력과 다른 점: " + " / ".join(diffs) if diffs else "")
-        )
+        ui.warning(screen.demo_warning_text(ss.get("demo_reason"), diffs))
     for notice in proposal.notices:
         ui.info(notice)
 
