@@ -43,10 +43,10 @@ ss = st.session_state
 
 
 def footer() -> None:
+    st.html(style.evidence_legend_html())
     with st.container(key="foot"):
         ui.caption("데이터 출처")
-        for s in screen.DATA_SOURCES:
-            ui.caption(f"- {s}")
+        ui.caption(" · ".join(screen.DATA_SOURCES))
 
 
 def reset_after(step: str) -> None:
@@ -55,6 +55,7 @@ def reset_after(step: str) -> None:
         "request",
         "proposal",
         "demo_reason",
+        "detail_idea",
         "selected",
         "run",
         "manual_run",
@@ -131,7 +132,7 @@ def reachable_step() -> int:
 
 
 def parse_sentence() -> None:
-    """'문장으로 조건 정리하기' 콜백: 화면을 그리기 전에 결과를 넣어 01-2 머리글로 바로 바뀌게 한다."""
+    """문장에서 뽑은 조건을 첫 화면의 입력 칸에 채운다."""
     from agent.request_parser import RequestParseError, parse_request
 
     sentence = ss.get("sentence", "")
@@ -150,21 +151,7 @@ def parse_sentence() -> None:
 
 def step_request() -> None:
     error = ss.pop("parse_error", None)
-    if ss.get("draft") or ss.get("request"):
-        st.html(
-            style.head_html(
-                1,
-                "이 조건이 맞나요?",
-                "AI가 문장에서 조건을 채웠어요. 틀린 칸만 고치면 돼요. "
-                "모든 조건은 선택이라 비워둬도 괜찮아요."
-                if ss.get("draft_from_ai")
-                else None,
-            )
-        )
-        if ss.get("parsed_sentence"):
-            st.html(style.quote_html(ss["parsed_sentence"]))
-    else:
-        st.html(style.HERO)
+    st.html(style.HERO)
     with st.container(key="pill"):
         left, right = st.columns([5, 1.4], vertical_alignment="center")
         left.text_input(
@@ -246,7 +233,9 @@ def step_request() -> None:
             "대상을 비우면 ‘대상’ 확인은 데이터 대기로 남아요. "
             "계절과 소재가 맞지 않으면 막지 않고 알려만 드려요."
         )
-        confirmed = st.form_submit_button("이 조건으로 확정")
+        with st.expander("시연 옵션"):
+            use_demo = st.checkbox(screen.DEMO_TOGGLE_LABEL, value=False)
+        confirmed = st.form_submit_button("아이디어 보기", type="primary")
     if confirmed:
         try:
             request = UserRequest(
@@ -263,24 +252,11 @@ def step_request() -> None:
             if ss.get("request") != request.model_dump(mode="json"):
                 reset_after("request")  # 조건이 바뀌면 뒤 단계 결과를 지운다
             ss["request"] = request.model_dump(mode="json")
-
-    request = current_request()
-    if request is None:
-        return
-    ui.success(
-        f"확정한 조건: 지역 {request.region or '제주 전역'}, 목적 {request.purpose or '미정'}, "
-        f"소재 {request.interest or '미정'}, 계절 {request.season or '미정'}, "
-        f"대상 {request.target or '미정'}, 예산 {screen.won(request.budget_max_krw)}"
-    )
-    if conflict := screen.season_conflict(request):
-        ui.warning(f"⚠️ {conflict}")  # 막지 않고 안내만
-    with st.expander("시연 옵션"):  # 다른 칸보다 눈에 덜 띄게
-        use_demo = st.checkbox(screen.DEMO_TOGGLE_LABEL, value=False)
-    if st.button("아이디어 보기", type="primary"):
-        if "proposal" in ss and not use_demo and not ss.get("demo_reason"):
-            goto(2)  # 같은 조건이면 받아 둔 카드를 다시 보여준다
-        ss["idea_job"] = {"demo": use_demo}  # 02-1 아이디어 만드는 중 화면에서 만든다
-        goto(2)
+            ss["draft"] = ss["request"]
+            if "proposal" in ss and not use_demo and not ss.get("demo_reason"):
+                goto(2)  # 같은 조건이면 받아 둔 카드를 다시 보여준다
+            ss["idea_job"] = {"demo": use_demo}
+            goto(2)
 
 
 def make_ideas(request: UserRequest) -> None:
@@ -337,6 +313,8 @@ def make_ideas(request: UserRequest) -> None:
 def step_ideas(request: UserRequest) -> None:
     st.html(style.head_html(2))
     st.html(style.request_chips(request))
+    if conflict := screen.season_conflict(request):
+        ui.warning(f"⚠️ {conflict}")
     proposal = IdeaProposal.model_validate(ss["proposal"])
     if proposal.is_demo:
         diffs = screen.demo_differences(proposal, request)
@@ -350,27 +328,38 @@ def step_ideas(request: UserRequest) -> None:
             st.html(style.format_html(f"{card.format} × {card.material}"))
             st.subheader(card.title)
             ui.write(card.concept)
-            for title, body, source in screen.evidence_lines(card):
-                st.html(style.tag_html("사실" if body else "데이터 대기"))
-                ui.markdown(f"**{title}**")
-                if body:
-                    ui.write(body)
-                ui.caption(f"출처: {source}")
-            ui.markdown(f"**{screen.reference_text(card)}**")
-            ui.markdown(f"**{screen.timing_text(card)}**")
-            st.html(style.tag_html("Agent 해석"))
-            ui.markdown("**예산**")
-            for line in screen.budget_lines(card):
-                ui.caption(line)
+            st.html(style.idea_summary_html(screen.idea_summary(card)))
             with st.container(key=f"soft-hyp-{card.idea_id}"):
-                ui.markdown("**고르면 확인할 것**")
-                for h in card.hypotheses:
+                ui.caption("고르면 확인할 것")
+                for h in card.hypotheses[:2]:
                     ui.write(f"- {screen.check_phrase(h)}")
-            if st.button("이 아이디어 고르기", key=f"pick_{card.idea_id}"):
-                if ss.get("selected") != card.idea_id:
-                    reset_after("selected")  # 다른 아이디어를 고르면 확인 결과부터 다시
-                ss["selected"] = card.idea_id
-                goto(3)
+            if st.button("자세히 보기", key=f"detail_{card.idea_id}", use_container_width=True):
+                ss["detail_idea"] = card.idea_id
+    detail = next((c for c in proposal.ideas if c.idea_id == ss.get("detail_idea")), None)
+    if detail is not None:
+        idea_details(detail)
+
+
+def dismiss_idea_details() -> None:
+    ss.pop("detail_idea", None)
+
+
+@st.dialog("아이디어 자세히 보기", width="large", on_dismiss=dismiss_idea_details)
+def idea_details(card) -> None:
+    """근거는 상세 패널에서 읽고, 확인한 아이디어만 고른다."""
+    st.html(style.idea_detail_html(card))
+    with st.container(key="idea-detail-actions"):
+        choose, close = st.columns([4, 1])
+        if choose.button("이 아이디어 고르기", key=f"pick_{card.idea_id}",
+                         type="primary", use_container_width=True):
+            if ss.get("selected") != card.idea_id:
+                reset_after("selected")
+            ss["selected"] = card.idea_id
+            dismiss_idea_details()
+            goto(3)
+        if close.button("닫기", use_container_width=True):
+            dismiss_idea_details()
+            st.rerun()
 
 
 # ---------- ③ 데이터로 확인 ----------
@@ -688,19 +677,13 @@ if ss.pop("scroll_top", False):  # 단계가 바뀌면 맨 위부터 보이게
 
 st.html(style.CSS)
 with st.sidebar:
-    st.header("설정")
-    ui.write("AI(LLM) 설정:", "있음" if has_llm else "없음")
-    if not has_llm:
-        ui.caption(
-            "AI 설정이 없으면 한 문장 입력·새 카드·기획서는 안내 문구로 대신해요. 예시 카드로 흐름을 볼 수 있어요."
-        )
-    ui.caption("API Key는 화면에 표시하지 않아요.")
+    st.html(style.sidebar_html(has_llm))
 
 making = "idea_job" in ss and current_request() is not None
 step = 2 if making else min(ss.get("step", 1), reachable_step())  # 갈 수 없는 단계면 앞으로 돌린다
 ss["step"] = step
 request = current_request()
-st.html(style.nav_html(step, has_llm))
+st.html(style.nav_html(step))
 with st.container(key="sr-only"):  # 화면 읽기 프로그램용 (눈에는 위 단계 탭과 칩으로 보인다)
     ui.write(
         "전국 축제 트렌드와 제주 데이터로 우리 동네 축제 아이디어를 만들고, 제주 데이터로 확인해요."
