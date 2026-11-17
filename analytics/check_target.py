@@ -6,10 +6,11 @@
   가짜 데이터면 evidence flow에만 "가상 데이터"로 표시한다. 판정은 와이파이 실데이터라 결과 is_synthetic=False
 - 비중 = 그 동네 와이파이 장소 사용자 중 대상 연령대(성별) 비율, 카드 추천 월만.
   제주 평균 = 행정동·읍면 표에 들어간 모든 장소의 같은 비율
-- 배수 = 동네 비중 ÷ 제주 평균. 1.0 이상 pass, 0.9 이상 conditional, 그 미만 fail
+- 배수 = 동네 비중 ÷ 제주 평균. 1.0 이상 pass, 그 미만 conditional (fail은 쓰지 않는다)
+  - 대상은 사용자가 정한 값이라 Agent가 고칠 수 없다. 0.9 미만이면 "홍보 대상을 넓히거나 장소를 바꿔보세요" 경고만
+  - 이 동네에서 비중이 높은 연령대는 evidence와 경고로 알린다
 - 성별 대상(여성, 엄마 등)이 있으면 성별 비중도 같은 기준으로 보고, 나쁜 쪽을 결과로 쓴다
-- fail 제안: 같은 동네에서 대상 배수가 1.0 이상인 다른 달 중 가장 높은 달 (재료 제철 안에서).
-  대상은 고칠 수 있는 칸이 아니라서, 이 동네에서 비중이 높은 연령대는 evidence와 경고로만 알린다
+- 표시 자릿수: 비중이 같아 보이거나(0.1% vs 0.1%) 배수가 기준과 어긋나 보이면 자릿수를 늘린다
 - pending: 대상이 없거나 연령대로 바꿀 수 없는 문구, 지역 없음, 그 동네 자료 없음
 
 대상 문구 → 연령대 규칙은 TARGET_RULES (문서: docs/b-guide.md 9절).
@@ -21,8 +22,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from agent.draft_contracts import CheckResult, IdeaCard, Suggestion, UserRequest
-from analytics.check_timing import ADMIN_BUILD_NOTE, LOW_DATA_NOTICE
+from agent.draft_contracts import CheckResult, IdeaCard, UserRequest
+from analytics.check_timing import ADMIN_BUILD_NOTE, LOW_DATA_NOTICE, precise
 from analytics.periods import CANDIDATE_PERIOD
 
 DEMOGRAPHICS_PATH = Path("data/processed/wifi_users_demographics.csv")
@@ -115,11 +116,14 @@ def _share(df: pd.DataFrame, ages: set[str], sex: str | None) -> float | None:
 
 
 def _status(ratio: float | None) -> str:
+    """대상은 사용자가 정한 값이라 낮아도 fail이 아니라 conditional (Agent가 고칠 수 없다)."""
     if ratio is None:
         return "pending"
-    if ratio >= PASS_RATIO:
-        return "pass"
-    return "conditional" if ratio >= CONDITIONAL_RATIO else "fail"
+    return "pass" if ratio >= PASS_RATIO else "conditional"
+
+
+def _is_low(ratio: float | None) -> bool:
+    return ratio is not None and ratio < CONDITIONAL_RATIO
 
 
 def _compare(demo, region, months, ages, sex) -> dict | None:
@@ -127,10 +131,25 @@ def _compare(demo, region, months, ages, sex) -> dict | None:
     dong, jeju = _share(d[d["admin_area"] == region], ages, sex), _share(d, ages, sex)
     if dong is None or not jeju:
         return None
+    return share_numbers(dong, jeju)
+
+
+def _pct_pair(dong: float, jeju: float) -> tuple[float, float]:
+    """두 비중(%)이 반올림으로 같아 보이지 않을 만큼 자릿수를 늘린다 (최대 소수 셋째 자리)."""
+    a, b = dong * 100, jeju * 100
+    for d in (1, 2, 3):
+        if round(a, d) != round(b, d) or a == b:
+            return round(a, d), round(b, d)
+    return round(a, 3), round(b, 3)
+
+
+def share_numbers(dong: float, jeju: float) -> dict:
+    """동네·제주 비중(%)과 배수. 표시가 판정 기준(1.0·0.9배)과 어긋나지 않게 자릿수를 맞춘다."""
+    dong_pct, jeju_pct = _pct_pair(dong, jeju)
     return {
-        "dong_share_pct": round(dong * 100, 1),
-        "jeju_share_pct": round(jeju * 100, 1),
-        "ratio": round(dong / jeju, 2),
+        "dong_share_pct": dong_pct,
+        "jeju_share_pct": jeju_pct,
+        "ratio": precise(dong / jeju, (PASS_RATIO, CONDITIONAL_RATIO)),
     }
 
 
@@ -156,18 +175,10 @@ def flow_evidence(region: str, ages: set[str], sex: str | None) -> dict | None:
     }
 
 
-def _season(material: str) -> list[int] | None:
-    from analytics.check_timing import load_timing_data
-
-    season = load_timing_data().material_season.get(material)
-    return season[0] if season else None
-
-
 def check_target(
     card: IdeaCard,
     request: UserRequest,
     demographics: pd.DataFrame | None = None,
-    season: list[int] | None = None,
     use_flow: bool = True,
 ) -> CheckResult:
     demo = load_demographics() if demographics is None else demographics
@@ -256,30 +267,18 @@ def check_target(
         for k, p in parts.items()
         if p
     )
-    suggestion = None
+    suggestion = None  # 대상은 사용자가 정한 값이라 고치는 제안을 하지 않는다
+    low = any(_is_low(p["ratio"]) for p in parts.values() if p)
     if status == "pass":
         reason = f"{request.region}의 대상({label}) 비중이 제주 평균 이상이에요: {detail}."
-    elif status == "conditional":
+    elif not low:
         reason = f"{request.region}의 대상({label}) 비중이 제주 평균보다 조금 낮아요: {detail}."
     else:
         reason = f"{request.region}의 대상({label}) 비중이 제주 평균보다 낮아요: {detail}."
-        season = _season(card.material) if season is None else season
-        options = [
-            x for x in by_month
-            if x["ratio"] is not None and x["ratio"] >= PASS_RATIO and x["month"] not in months
-            and (not season or x["month"] in season)
-        ]  # fmt: skip
-        if options:
-            best = max(options, key=lambda x: x["ratio"])
-            suggestion = Suggestion(
-                field="timing.recommended_months",
-                value=[best["month"]],
-                why=f"{request.region}에서 대상 비중이 제주 평균의 {best['ratio']}배인 {best['month']}월로 바꿔요.",
-            )
-        else:
-            warnings.append(
-                "대상 비중이 평균 이상인 다른 달이 없어 추천 월을 고치는 제안을 하지 못했어요."
-            )
+        warnings.append(
+            f"이 동네는 {request.target} 비중이 제주 평균보다 낮아요. "
+            "홍보 대상을 넓히거나 장소를 바꿔보세요."
+        )
         if strong:
             text = ", ".join(
                 f"{s['age_group']}({s['ratio']}배)" for s in evidence["strong_age_groups"]

@@ -71,13 +71,9 @@ def demographics(dong_family: float, months=range(1, 13), may_family=None) -> pd
     return df.assign(source="와이파이 장소별 사용자 현황 (성·연령) 테스트")
 
 
-def target(dong_family, req=None, c=None, season=(), **kw):  # season=(): 제철 제한 없음
+def target(dong_family, req=None, c=None, **kw):
     return check_target(
-        c or card(),
-        req or request(),
-        demographics(dong_family, **kw),
-        season=season,
-        use_flow=False,
+        c or card(), req or request(), demographics(dong_family, **kw), use_flow=False
     )
 
 
@@ -85,18 +81,36 @@ def test_target_levels_and_warning():
     # 제주 평균 = (애월 + 한림) / 2000
     assert target(0.4).status == "pass"  # 0.4 / 0.35 = 1.14
     assert target(0.28).status == "conditional"  # 0.28 / 0.29 = 0.97
-    r = target(0.1)  # 0.1 / 0.2 = 0.5
-    assert r.status == "fail" and r.check == "check_target"
+    r = target(0.1)  # 0.1 / 0.2 = 0.5: 낮아도 fail이 아니라 conditional (대상은 사용자가 정한 값)
+    assert r.status == "conditional" and r.check == "check_target"
     assert ELDERLY_WARNING in r.warnings and not r.is_synthetic
     assert r.evidence["age_share"]["ratio"] == 0.5
 
 
-def test_target_fail_suggests_better_month_in_season():
+def test_low_target_only_warns_without_suggestion():
+    """대상 비중이 많이 낮아도 Agent가 고칠 수 없으니 경고만 (QA #7·#13)."""
     r = target(0.1, may_family=0.6)
-    assert r.suggestion.field == "timing.recommended_months" and r.suggestion.value == [7]
-    r = target(0.1, may_family=0.6, season=[11, 12])
-    assert r.suggestion is None and any("다른 달이 없어" in w for w in r.warnings)
+    assert r.status == "conditional" and r.suggestion is None
+    assert "제주 평균보다 낮아요" in r.reason
+    assert (
+        "이 동네는 가족 비중이 제주 평균보다 낮아요. 홍보 대상을 넓히거나 장소를 바꿔보세요."
+        in r.warnings
+    )
     assert any("20대" in w for w in r.warnings)  # 이 동네에서 비중 높은 연령대
+    slightly = target(0.28)  # 0.97배: 조금 낮음, 경고 없음
+    assert "조금 낮아요" in slightly.reason
+    assert not any("홍보 대상을 넓히" in w for w in slightly.warnings)
+
+
+def test_share_numbers_never_look_contradictory():
+    """0.1% vs 0.1%, 0.80배처럼 판정과 어긋나 보이는 표시를 막는다 (QA 2차 #13)."""
+    from analytics.check_target import share_numbers
+
+    n = share_numbers(0.00068, 0.001)
+    assert n["dong_share_pct"] != n["jeju_share_pct"]  # 0.07% / 0.1%
+    assert share_numbers(0.2, 0.4)["dong_share_pct"] == 20.0  # 보통은 소수 첫째 자리
+    assert share_numbers(0.8975, 1.0)["ratio"] == 0.897  # 0.90으로 반올림하면 0.9 기준과 어긋남
+    assert share_numbers(0.5, 1.0)["ratio"] == 0.5
 
 
 def test_target_checks_sex_too():
@@ -109,7 +123,7 @@ def test_target_low_data_notice():
     small = pd.concat([small, small.assign(admin_area="제주시 연동", users=small["users"] * 100),
                        small.assign(admin_area="제주시 노형동", users=small["users"] * 100)])  # fmt: skip
     small.loc[small["admin_area"] == REGION, "users"] //= 100  # 애월읍만 아주 적게
-    r = check_target(card(), request(), small, season=(), use_flow=False)
+    r = check_target(card(), request(), small, use_flow=False)
     assert any("동네 중앙값" in n for n in r.evidence["low_data"])
     assert any("대상 연령대 사용자가" in n for n in r.evidence["low_data"])
     assert any("자료가 적어 결과가 불안정" in w for w in r.warnings)

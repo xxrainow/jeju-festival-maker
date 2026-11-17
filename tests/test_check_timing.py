@@ -236,6 +236,50 @@ def test_all_fail_moves_to_best_passing_month_in_season():
     assert r.suggestion is None and any("통과하는 다른 달이 없어" in w for w in r.warnings)
 
 
+def test_input_season_first_then_notice_when_moving_outside():
+    """입력 계절(겨울) 안에서 먼저 고르고, 없을 때만 계절 밖으로 + 안내 (QA 2차 #8·#12)."""
+    assert request().season == "겨울"
+    # 11월(가을)이 지수가 더 높아도 겨울인 1월을 먼저 고른다
+    index = {12: 0.7, 11: 1.6, 1: 1.2}
+    r = check_timing(
+        card([12]), request(), data(outsider=outsider_table(index), season=[11, 12, 1])
+    )
+    assert r.suggestion.value == [1] and "입력한 계절" not in r.suggestion.why
+    assert "season_outside_suggestion" not in r.evidence
+    # 겨울이 모두 안 되면 제철 안의 11월로 + 안내
+    jan_bad = weekly_table({w: (2.0, 3) for w in weeks_of(1)})
+    r = check_timing(
+        card([12]), request(), data(jan_bad, outsider_table(index), season=[11, 12, 1])
+    )
+    sentence = "입력한 계절(겨울)에는 맞는 달이 없어 제철 안의 11월로 바꿨어요."
+    assert r.suggestion.value == [11] and r.suggestion.why.endswith(sentence)
+    assert r.evidence["season_outside_suggestion"] == sentence
+    # 제철이 없는 재료는 "제철 안의" 없이
+    winter_low = outsider_table({12: 0.5, 1: 0.5, 2: 0.5, 5: 1.8})
+    r = check_timing(card([12, 1, 2]), request(), data(outsider=winter_low))
+    assert r.suggestion.value == [5]
+    assert (
+        r.evidence["season_outside_suggestion"]
+        == "입력한 계절(겨울)에는 맞는 달이 없어 5월로 바꿨어요."
+    )
+    # 처음부터 계절 밖 달인 카드(바꾼 적 없음)에는 "바꿨어요"를 붙이지 않는다
+    r = check_timing(card([5]), request(), data())
+    assert "입력한 계절" not in r.reason and "season_outside_suggestion" not in r.evidence
+
+
+def test_numbers_shown_never_contradict_thresholds():
+    """0.796을 0.80으로 보여주고 "0.8보다 낮아요"라고 하지 않는다 (QA 2차 #6)."""
+    from analytics.check_timing import INDEX_THRESHOLDS, precise, precise_text
+
+    assert precise_text(0.796, INDEX_THRESHOLDS) == "0.796"
+    assert precise_text(0.9, INDEX_THRESHOLDS) == "0.90"
+    assert precise_text(0.996, INDEX_THRESHOLDS) == "0.996"  # 1.00으로 보이면 연평균 이상처럼 보임
+    assert precise(0.8049, INDEX_THRESHOLDS) == 0.8
+    r = check_timing(card([5, 6]), request(), data(outsider=outsider_table({5: 0.796})))
+    assert "5월은 외지인 방문 지수(0.796)가 0.8보다 낮아요" in r.reason
+    assert r.evidence["outsider_visitors_index"][5] == 0.796
+
+
 def test_same_material_festival_is_conditional():
     may = weeks_of(5)
     fests = festival_table(
