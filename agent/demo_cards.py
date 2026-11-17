@@ -1,7 +1,7 @@
 """B 화면 연결용 데모 아이디어 카드 (설계 기획서 9-2절 "애월 감귤" 예시).
 
 숫자(신설 수, 신설리프트, 제주 축제 수, 예산 중앙값, 소규모 사례)는 문체부 2024~2026 실데이터 값이다.
-이름·컨셉·가설 문장과 추천 월은 예시로 쓴 값이고, 관광객 관심 지표는 데이터 대기(pending)다.
+이름·컨셉·가설 문장과 추천 월은 예시로 쓴 값이고 (1번 카드는 시연용으로 1월: 시기 확인에서 실패 후 12월로 고쳐진다), 관광객 관심 지표는 데이터 대기(pending)다.
 API 키, 네트워크, 문체부 원자료 없이 동작한다.
 """
 
@@ -32,7 +32,22 @@ def _interpretation(ref: dict) -> dict:
     return {"interpretation": "신흥·선점 기회", "strategy": "먼저 자리 잡기"}
 
 
-def _card(rank, title, concept, fmt, match, reason, new_count, lift, ref, median, examples, hyps):
+def _card(
+    rank,
+    title,
+    concept,
+    fmt,
+    match,
+    reason,
+    new_count,
+    lift,
+    ref,
+    median,
+    examples,
+    hyps,
+    months=(12,),
+    festivals_in_month=1,
+):
     return {
         "idea_id": f"idea_{rank:03d}",
         "rank": rank,
@@ -57,8 +72,8 @@ def _card(rank, title, concept, fmt, match, reason, new_count, lift, ref, median
         },
         "reference": ref,
         "timing": {
-            "recommended_months": [12],
-            "jeju_festivals_in_month": 1,
+            "recommended_months": list(months),
+            "jeju_festivals_in_month": festivals_in_month,
             "sources": [_JEJU_SOURCE],
         },
         "budget": {
@@ -89,7 +104,8 @@ _DEMO = {
               "일치", "상권 활성화 목적과 가장 직접 맞고, 제주에 같은 형식 축제가 없어요",
               16, 3.6, {"type": "선점 기회"}, 60_000_000,
               [{"name": "제3회 나전역 야시장 야밤바 행사", "budget_krw": 5_000_000}],
-              ["12월 애월읍 외지인 방문이 충분하다", "후보 장소 근처에 버스 접근성이 있다"]),
+              ["1월 애월읍 외지인 방문이 충분하다", "후보 장소 근처에 버스 접근성이 있다"],
+              months=(1,), festivals_in_month=0),  # 시연: 1월 시기 실패 → 제철 안 12월로 수정
         _card(2, "감귤 디저트 페스타", "애월 카페·베이커리가 감귤 메뉴로 참여하는 디저트 축제",
               "푸드·디저트", "일치", "마켓과 달리 카페·베이커리가 주체라 참여 방식이 달라요",
               22, 2.82,

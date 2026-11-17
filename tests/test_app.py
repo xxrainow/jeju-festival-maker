@@ -82,7 +82,7 @@ def test_card_other_fields_in_plain_words():
     cards = demo_proposal().ideas
     assert screen.reference_text(cards[0]) == "아직 전국에 대표 축제가 없어요. 먼저 시작할 기회예요"
     assert screen.reference_text(cards[1]) == "비슷한 성공 축제: 강릉커피축제, 김천김밥축제"
-    assert screen.timing_text(cards[0]) == "추천 시기: 12월 · 이 달 제주 축제 1개"
+    assert screen.timing_text(cards[0]) == "추천 시기: 1월 · 이 달 제주 축제 0개"
     assert screen.budget_lines(cards[0])[0] == (
         "비슷한 축제는 보통 6,000만 원이 들어요. 입력한 1,000만 원으로는 작게 여는 걸 추천해요."
     )
@@ -119,7 +119,7 @@ def test_season_conflict_and_demo_differences():
     diffs = screen.demo_differences(demo_proposal(), summer.model_copy(update={"interest": "방어"}))
     assert diffs == [
         "지역: 입력 서귀포시 대정읍 · 카드 제주시 애월읍",
-        "계절: 입력 여름 · 카드 12월",
+        "계절: 입력 여름 · 카드 1·12월",
         "재료: 입력 방어 · 카드 감귤",
     ]
 
@@ -180,15 +180,16 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     at.button[0].click().run()
     assert any("AI 설정이 없어요" in w for w in labels(at, "warning"))
 
-    at.selectbox[0].select("서귀포시 대정읍")
+    # 데모 카드(애월 감귤, 추천 1월)가 시기 확인에서 실패하고 12월로 고쳐지는 조건
+    at.selectbox[0].select("제주시 애월읍")
     at.selectbox[1].select("겨울")
     at.text_input[1].input("지역 상권 활성화")
-    at.text_input[2].input("방어")
+    at.text_input[2].input("감귤")
     at.text_input[3].input("가족")
     at.checkbox[0].check()
     at.number_input[0].set_value(10_000_000)
     at.button[1].click().run()
-    assert any("서귀포시 대정읍" in s for s in labels(at, "success"))
+    assert any("제주시 애월읍" in s for s in labels(at, "success"))
 
     next(b for b in at.button if b.label == "아이디어 카드 받기").click().run()
     assert any("데모 응답" in i for i in labels(at, "info"))  # notices
@@ -201,7 +202,7 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert len(at.dataframe) == 1  # 장소 후보 표
 
     shown = [m.value for m in at.markdown]
-    assert any(v.startswith("**추천 시기: 12월 → 11월") for v in shown)  # 필드 이름 대신 쉬운 말
+    assert any(v.startswith("**추천 시기: 1월 → 12월") for v in shown)  # 필드 이름 대신 쉬운 말
     assert not any("timing.recommended_months" in v for v in shown)
     assert any("timing.recommended_months" in c.value for c in at.code)  # 개발자용 원문은 접기 안에
 
@@ -314,7 +315,7 @@ def test_app_warns_summer_citrus_and_demo_cards(no_llm):
     demo = [w for w in warnings if screen.DEMO_WARNING in w]
     assert (
         demo
-        and "계절: 입력 여름 · 카드 12월" in demo[0]
+        and "계절: 입력 여름 · 카드 1·12월" in demo[0]
         and "지역: 입력 서귀포시 대정읍" in demo[0]
     )
     shown = " ".join([m.value for m in at.markdown] + [c.value for c in at.caption])

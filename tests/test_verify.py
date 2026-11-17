@@ -6,7 +6,11 @@ from agent.draft_contracts import CheckResult, Suggestion
 from agent.fake_checks import FAKE_TOOLS, FAKE_WARNING
 from agent.verify import CHECK_ORDER, apply_suggestions, run_checks, summarize, verify_idea
 
-CARD = demo_proposal().ideas[0]  # 애월 감귤 로컬 마켓, 추천 12월
+_DEMO = demo_proposal().ideas[0]  # 애월 감귤 로컬 마켓 (데모는 시연용으로 추천 1월)
+# 가짜 도구 시나리오(12월 실패 → 11월)를 보려고 추천 월만 12월로 바꾼 사본
+CARD = _DEMO.model_copy(
+    update={"timing": _DEMO.timing.model_copy(update={"recommended_months": [12]})}
+)
 
 
 def fixed(check, status, suggestion=None):
