@@ -8,11 +8,16 @@ import httpx
 import pytest
 from PIL import Image
 
-from agent.demo_cards import DEMO_REQUEST, demo_proposal
+from agent.demo_cards import DEMO_REQUEST
 from agent.fake_checks import FAKE_TOOLS
 from agent.plan import PlanNotApprovedError, approve_plan, generate_plan
 from agent.verify import verify_idea
 from app import promo
+from tests.demo_helpers import december_demo  # noqa: F401 - 픽스처
+from tests.demo_helpers import december_demo_proposal as demo_proposal
+
+# 데모 카드 1은 시연용으로 1월이지만, 이 파일은 원래 12월 카드(→ 11월로 수정) 기준이다
+pytestmark = pytest.mark.usefixtures("december_demo")
 
 NOW = datetime(2026, 11, 17, 9, 0, tzinfo=UTC)
 PLAN_TEXT = {

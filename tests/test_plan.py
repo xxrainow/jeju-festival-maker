@@ -22,7 +22,12 @@ from agent.plan import (
 from agent.verify import verify_idea
 
 NOW = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
-RUN = verify_idea(demo_proposal().ideas[0], DEMO_REQUEST, FAKE_TOOLS, festivals_by_month={11: 2})
+_DEMO = demo_proposal().ideas[0]
+# 가짜 도구 시나리오(12월 실패 → 11월)를 쓰려고 추천 월만 12월로 바꾼 사본 (데모 카드는 1월)
+_CARD = _DEMO.model_copy(
+    update={"timing": _DEMO.timing.model_copy(update={"recommended_months": [12]})}
+)
+RUN = verify_idea(_CARD, DEMO_REQUEST, FAKE_TOOLS, festivals_by_month={11: 2})
 
 
 class FakeLLM:
