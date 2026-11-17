@@ -20,6 +20,59 @@ STATUS_ICONS = {
 WAITING = "데이터 대기"
 
 
+def blocked_check_guidance(run) -> list[str]:
+    """선택한 안의 마지막 검사에서 실패한 항목과 수정 방법만 설명한다."""
+    lines = []
+    for result in run.rounds[-1].results:
+        if result.status != "fail":
+            continue
+        lines.append(f"**{CHECK_LABELS[result.check]} — {result.reason}**")
+        evidence = result.evidence or {}
+        if result.check == "check_timing":
+            from analytics.check_timing import LOW_INDEX
+
+            indices = evidence.get("outsider_visitors_index") or {}
+            low = evidence.get("low_months") or []
+            if low and isinstance(indices, dict):
+                values = []
+                for month in low:
+                    value = indices.get(month, indices.get(str(month)))
+                    if isinstance(value, (int, float)):
+                        values.append(f"{month}월 약 {value * 100:.0f}%")
+                if values:
+                    lines.append(
+                        "관광 목적 와이파이 사용량을 연평균과 비교한 값이에요: "
+                        + ", ".join(values)
+                        + f". 현재 앱은 연평균의 {LOW_INDEX * 100:.0f}% 미만이면 "
+                        "시기 확인을 통과시키지 않아요. 실제 관광객 수나 개최 금지를 뜻하지는 않아요."
+                    )
+            failed_months = [
+                c["month"] for c in evidence.get("month_checks", []) if c["status"] == "fail"
+            ]
+            if failed_months:
+                lines.append(
+                    "여러 달을 고르면 모두 확인해요. 선택한 "
+                    + "·".join(f"{m}월" for m in failed_months)
+                    + "이 통과하지 못해 이 안으로는 아직 진행할 수 없어요."
+                )
+        suggestion = result.suggestion
+        if suggestion and suggestion.field == "timing.recommended_months":
+            lines.append(
+                "**이렇게 바꿔보세요:** 개최 월을 "
+                + "·".join(f"{m}월" for m in suggestion.value)
+                + "로 바꾸고 ‘이 조건으로 다시 확인’을 눌러주세요. "
+                "직접 고친 안은 자동으로 변경하지 않아요."
+            )
+        elif suggestion:
+            lines.append("**수정 제안:** " + suggestion.why)
+        else:
+            lines.append(
+                "자동으로 제안할 대안이 없어요. 위 근거를 확인해 조건을 조정하거나 "
+                "다른 아이디어를 골라주세요."
+            )
+    return lines
+
+
 def md(text):
     """화면 출력용: Streamlit 마크다운에서 "~"가 두 번 나오면 취소선이 되므로 "\\~"로 바꾼다.
 
@@ -400,6 +453,65 @@ def key_numbers(r: CheckResult) -> list[str]:
         if e.get("visitors_estimate_text"):
             out.append(e["visitors_estimate_text"])
     return out
+
+
+def check_card_summary(r: CheckResult) -> dict:
+    """첫 화면의 대표 수치. 상세 원문·출처는 펼친 영역에 보존한다."""
+    e = r.evidence or {}
+    value, label = WAITING, "자료가 준비되면 확인할 수 있어요"
+    synthetic = r.is_synthetic
+    if r.check == "check_timing" and (indices := e.get("outsider_visitors_index")):
+        value = " · ".join(f"{v:.2f}" for v in indices.values())
+        label = months_text([int(m) for m in indices]) + " 관광 목적 사용량 지표 · 연평균 1"
+    elif r.check == "check_venue" and (places := e.get("candidate_places")):
+        first = places[0]
+        distance = first.get("stop_distance_m")
+        value = f"{distance:,.0f}m" if distance is not None else f"후보 {len(places)}곳"
+        label = (
+            f"{first.get('stop_name') or '정류소'}까지 · {first['name']} 후보 기준"
+            if distance is not None else "장소 후보 상세 비교"
+        )
+    elif r.check == "check_target" and (share := e.get("age_share") or e.get("sex_share")):
+        value = f"{share['dong_share_pct']:.1f}%"
+        label = f"대상 이용 비중 · 제주 평균 {share['jeju_share_pct']:.1f}%"
+    elif r.check == "check_risk" and (res := e.get("residential")) and res.get("areas"):
+        area = max(res["areas"], key=lambda a: a["ratio"])
+        value = f"{area['ratio']:g}배"
+        label = f"{area['admin_area']} 야간 거주인구 · 제주 동네 평균 대비"
+        synthetic = res.get("is_synthetic", False)
+    elif r.check == "check_budget":
+        value = won(e.get("input_krw"))
+        label = "입력한 예산"
+        if e.get("format_median_krw") is not None:
+            label += f" · 유사 형식 중앙값 {won(e['format_median_krw'])}"
+    preferred = {
+        "check_timing": ("와이파이 관광 사용량", "날씨는"),
+        "check_venue": ("셔틀", "귀가 버스", "가상 데이터"),
+        "check_target": ("고령층", "사용자 수"),
+        "check_risk": ("가상 데이터", "가짜 데이터"),
+        "check_budget": ("방문객",),
+    }
+    warning = next(
+        (w for phrase in preferred[r.check] for w in r.warnings if phrase in w),
+        next(iter(r.warnings), ""),
+    )
+    if r.check == "check_timing" and "와이파이 관광 사용량" in warning:
+        warning = "관광 목적 와이파이 사용량으로 대신 본 지표이며, 실제 관광객 수는 아니에요."
+    elif r.check == "check_venue" and "셔틀" in warning:
+        warning = "야간 귀가 버스편을 확인하고, 부족하면 셔틀 운영을 검토해주세요."
+        if (e.get("night_return") or {}).get("is_synthetic"):
+            warning += " 시간대 이용량은 가상 데이터예요."
+    elif r.check == "check_target" and "고령층" in warning:
+        warning = "와이파이 이용자 기준이라 실제 방문객의 연령 구성과 다를 수 있어요."
+    elif r.check == "check_risk" and synthetic:
+        warning = "위 수치는 가상 데이터 참고값이에요. 운영 전 실데이터로 확인해주세요."
+    reason = r.reason.split("추천 주:")[0].strip()
+    if r.check == "check_venue" and r.status == "pass" and (places := e.get("candidate_places")):
+        reason = f"{places[0]['name']} 후보 근처에 걸어갈 수 있는 버스 정류소가 있어요."
+    if r.check == "check_budget":
+        reason = reason.split("같은 형식(")[0].strip()
+    return {"reason": reason, "value": value, "label": label,
+            "synthetic": synthetic, "warning": warning}
 
 
 def venue_table(r: CheckResult) -> list[dict]:

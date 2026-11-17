@@ -422,8 +422,48 @@ def test_failing_manual_plan_blocks_progress(no_llm):
     choose(at, "내가 고친 안")
     button = next(b for b in at.button if b.label == "이대로 진행")
     assert button.disabled
-    blocked = [w for w in at.warning if "항목이 남아 있어 기획서를 만들 수 없어요" in w.value]
+    blocked = [w for w in at.warning if "시기 확인을 통과하지 못해 진행을 멈췄어요" in w.value]
     assert blocked and blocked[0].icon == "❌"  # Streamlit은 앞의 이모지를 아이콘으로 보여준다
+    assert any("이렇게 바꿔보세요" in m.value and "11월" in m.value for m in at.markdown)
+
+
+def test_check_cards_use_combined_details_and_keep_evidence(no_llm):
+    at = to_results()
+    details = [e for e in at.expander if e.label == "상세 결과와 근거 보기"]
+    assert len(details) == 5
+    assert not any(e.label == "주의할 점" for e in at.expander)
+    assert len(details[1].dataframe) == 1  # 장소 후보는 통합 상세 안에 보존
+    assert any(c.value.startswith("출처:") for c in details[1].caption)
+    assert any("반경 500m" in c.value for c in details[1].caption)
+    assert not at.exception
+
+
+def test_check_card_primary_metric_preserves_pending_and_synthetic():
+    pending = CheckResult(check="check_target", status="pending", reason="대상 미입력")
+    assert screen.check_card_summary(pending)["value"] == screen.WAITING
+    risk = CheckResult(
+        check="check_risk", status="conditional", reason="소음 주의",
+        evidence={"residential": {"areas": [{"admin_area": "애월읍", "ratio": 1.63}],
+                                  "is_synthetic": True}},
+    )
+    summary = screen.check_card_summary(risk)
+    assert summary["value"] == "1.63배" and summary["synthetic"]
+
+
+def test_blocked_month_guidance_explains_data_and_preserves_other_months():
+    from agent.demo_cards import DEMO_REQUEST, demo_proposal
+    from agent.verify import verify_idea
+    from analytics.real_checks import REAL_TOOLS
+
+    card = demo_proposal().ideas[0]
+    edited = screen.edited_card(card, [1, 11], None, "소규모 버전")
+    run = verify_idea(edited, DEMO_REQUEST, REAL_TOOLS, max_fixes=0)
+    text = " ".join(screen.blocked_check_guidance(run))
+    assert "1월 약 71%" in text and "80% 미만" in text
+    assert "실제 관광객 수나 개최 금지" in text
+    assert "선택한 1월이 통과하지 못해" in text
+    assert "개최 월을 11월로 바꾸고" in text
+    assert run.final.timing.recommended_months == [1, 11]
 
 
 class FakePlanLLM:

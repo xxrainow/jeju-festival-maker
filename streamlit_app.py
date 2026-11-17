@@ -5,6 +5,8 @@
 st.session_state에는 모델을 model_dump(mode="json")로 저장하고 model_validate로 읽는다.
 """
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -30,7 +32,10 @@ class _EscapedText:
 ui = _EscapedText()
 
 st.set_page_config(
-    page_title="제주 축제랩", page_icon="🍊", layout="wide", initial_sidebar_state="collapsed"
+    page_title="제주 축제 메이커",
+    page_icon=str(Path(__file__).resolve().parent / "assets" / "brand-mark.png"),
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 settings = Settings()
 has_llm = bool(settings.llm_api_key.get_secret_value())
@@ -395,23 +400,30 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
     st.html(style.summary_html(results, f"확인 {len(run.rounds)}회"))
     for line in screen.round_summary(run):
         ui.caption(line)
-    cols = st.columns(3)
-    for i, r in enumerate(results):
-        with cols[i % 3], st.container(key=f"res-{r.status}-{key}-{i}"):
-            st.html(style.check_head_html(screen.CHECK_LABELS[r.check], r.status, r.is_synthetic))
-            ui.write(r.reason)
-            with st.container(key=f"check-numbers-{key}-{i}"):
-                for line in screen.key_numbers(r):
-                    ui.caption(line)
-            if r.check == "check_venue" and (rows := screen.venue_table(r)):
-                st.dataframe(pd.DataFrame(rows), hide_index=True)
-            if r.sources:
-                with st.container(key=f"check-source-{key}-{i}"):
-                    ui.caption("출처: " + " · ".join(r.sources))
-            if r.warnings:
-                with st.expander("주의할 점"):
-                    for w in r.warnings:
-                        ui.write(f"- {w}")
+    for row_index, row in enumerate((results[:2], results[2:])):
+        with st.container(key=f"check-row-{key}-{row_index}"):
+            cols = st.columns(len(row))
+            for col, r in zip(cols, row, strict=True):
+                with col, st.container(key=f"res-{r.status}-{key}-{r.check}"):
+                    summary = screen.check_card_summary(r)
+                    st.html(style.check_head_html(screen.CHECK_LABELS[r.check], r.status, False))
+                    ui.write(summary["reason"])
+                    st.html(style.check_metric_html(summary))
+                    if summary["warning"]:
+                        st.html(style.check_warning_html(summary["warning"]))
+                    with st.expander("상세 결과와 근거 보기"):
+                        ui.write(r.reason)
+                        for line in screen.key_numbers(r):
+                            ui.caption(line)
+                        if r.check == "check_venue" and (rows := screen.venue_table(r)):
+                            st.dataframe(pd.DataFrame(rows), hide_index=True)
+                        if r.sources:
+                            ui.caption("출처: " + " · ".join(r.sources))
+                        other_warnings = [w for w in r.warnings if w != summary["warning"]]
+                        if other_warnings:
+                            ui.markdown("**추가로 확인할 점**")
+                            for warning in other_warnings:
+                                ui.write(f"- {warning}")
     if not with_changes:
         return
     st.subheader("바뀐 점")
@@ -485,6 +497,7 @@ def verification_content(request: UserRequest, card) -> None:
     # 직접 고쳐서 다시 확인
     st.subheader("직접 고쳐서 다시 확인")
     ui.caption("개최 월·장소·규모를 바꿔서 확인만 다시 해요. 자동으로 고치지는 않아요.")
+    ui.caption("개최 월을 여러 개 고르면 각 달을 모두 확인해요. 하나라도 실패하면 그 안으로는 진행할 수 없어요.")
     base = (manual or run).final  # 처음 값은 지금 카드(가장 최근 안)의 값
     places = screen.venue_choices(run)
     place_names = [screen.NO_VENUE, *[p["name"] for p in places]]
@@ -546,13 +559,20 @@ def verification_content(request: UserRequest, card) -> None:
     ready = chosen.outcome == "ready_for_approval"
     if not ready:
         with st.container(key="check-blocked"):
-            if chosen_name == "내가 고친 안":
-                ui.warning(
-                    "❌ 항목이 남아 있어 기획서를 만들 수 없어요. 다른 값을 바꿔서 다시 확인해보세요."
-                )
-            else:
-                ui.warning(
-                    "고쳐도 통과하지 못한 확인이 있어요. 직접 고쳐서 다시 확인하거나 다른 아이디어를 골라보세요."
+            failed_labels = [
+                screen.CHECK_LABELS[r.check]
+                for r in chosen.rounds[-1].results if r.status == "fail"
+            ]
+            ui.warning(
+                "❌ " + "·".join(failed_labels) + " 확인을 통과하지 못해 진행을 멈췄어요. "
+                "아래 이유와 수정 방법을 확인해주세요."
+            )
+            for line in screen.blocked_check_guidance(chosen):
+                ui.markdown(line)
+            if chosen_name == "내가 고친 안" and run.outcome == "ready_for_approval":
+                ui.caption(
+                    "다시 수정하지 않고 진행하려면 위 ‘진행할 안’에서 "
+                    "‘에이전트 추천안’을 선택하세요. 추천안의 조건으로 기획서를 만들어요."
                 )
     if st.button("이대로 진행", type="primary", disabled=not ready, key="check-proceed"):
         if ss.get("approved") != chosen_name or "plan" not in ss:

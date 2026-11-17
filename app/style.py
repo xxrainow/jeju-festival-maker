@@ -5,9 +5,15 @@ HTML은 st.html로 그린다 (st.markdown 목록에 섞이지 않아 화면 테�
 카드 모양은 st.container(key=...)가 붙이는 CSS 클래스(st-key-<key>)로 입힌다.
 """
 
+from base64 import b64encode
 from html import escape
+from pathlib import Path
 
 from app import screen
+
+_BRAND_MARK_URI = "data:image/png;base64," + b64encode(
+    (Path(__file__).resolve().parents[1] / "assets" / "brand-mark.png").read_bytes()
+).decode("ascii")
 
 # Figma 변수 (99 컴포넌트 · 토큰)
 TOKENS = {
@@ -90,9 +96,7 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
 .fl-nav {{ display: flex; align-items: center; justify-content: space-between; gap: 16px;
   flex-wrap: wrap; margin-bottom: 8px; }}
 .fl-logo {{ display: flex; align-items: center; gap: 10px; }}
-.fl-blob {{ width: 30px; height: 30px; border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, #ffd166 0%, #ff8a3d 55%, #ffc9b5 100%);
-  box-shadow: 0 0 18px rgba(255, 138, 61, .45); }}
+.fl-blob {{ display: block; width: 36px; height: 30px; flex: none; object-fit: contain; }}
 .fl-logo b {{ display: block; font-size: 15px; font-weight: 700; }}
 .fl-logo small {{ display: block; font-family: {_PIXEL}; font-size: 9px; letter-spacing: .18em;
   color: var(--fl-ink-2); }}
@@ -110,7 +114,7 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
 [data-testid="stSidebarUserContent"] {{ padding: 24px 24px 32px; }}
 .fl-settings {{ color: var(--fl-ink); font-family: {_FONT}; }}
 .fl-settings-brand {{ display: flex; align-items: center; gap: 12px; margin: 4px 0 36px; }}
-.fl-settings-brand .fl-blob {{ width: 34px; height: 34px; flex: none; }}
+.fl-settings-brand .fl-blob {{ width: 41px; height: 34px; }}
 .fl-settings-brand b {{ display: block; font-size: 16px; letter-spacing: -.03em; }}
 .fl-settings-brand small {{ display: block; font-family: {_PIXEL}; font-size: 8px;
   letter-spacing: .12em; color: var(--fl-ink-2); margin-top: 3px; }}
@@ -480,6 +484,54 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   .st-key-verification [data-testid="stTabs"] [data-baseweb="tab"] {{ padding: 10px 14px; }}
 }}
 
+/* Figma 03: 시기·장소 2열, 대상·위험·규모 3열 */
+[data-testid="stMainBlockContainer"]:has(.st-key-verification) {{ max-width: 1312px; }}
+.st-key-verification .fl-h1 {{ font-size: 44px; }}
+.st-key-verification [class*="st-key-check-row-"] [data-testid="stHorizontalBlock"] {{
+  align-items: stretch;
+}}
+.st-key-verification [class*="st-key-check-row-"] [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
+  height: 100%;
+}}
+.st-key-verification [class*="st-key-res-"] {{ height: 100%; gap: 16px; }}
+.fl-check-title {{ display: flex; gap: 12px; align-items: center; flex: 1; min-width: 0; }}
+.fl-check-icon {{ display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 8px; background: var(--fl-surface-2); }}
+.fl-check-icon img {{ display: block; }}
+.fl-check-metric {{ display: flex; align-items: center; gap: 12px; padding: 16px;
+  background: var(--fl-surface-2); border-radius: 16px; min-height: 72px; }}
+.fl-check-metric strong {{ font-size: 28px; font-weight: 700; line-height: 1.25; white-space: nowrap;
+  letter-spacing: -.03em; }}
+.fl-check-metric > div {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }}
+.fl-check-metric > div > span:last-child {{ color: var(--fl-ink-2); font-size: 12px; line-height: 1.5; }}
+.fl-check-metric .fl-tag {{ align-self: flex-start; }}
+.fl-check-warning {{ background: var(--fl-warn-soft); padding: 12px; border-radius: 8px; }}
+.fl-check-warning-title {{ display: flex; gap: 6px; align-items: center;
+  font-size: 12px; font-weight: 500; color: var(--fl-warn); margin-bottom: 8px; }}
+.fl-check-warning-title .fl-check-icon {{ width: 14px; height: 14px; background: transparent; }}
+.st-key-verification [class*="st-key-res-"] .fl-check-warning p {{
+  margin: 0; font-size: 12px; line-height: 1.6; color: var(--fl-ink-2);
+}}
+.st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] {{ margin-top: auto; }}
+.st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] [data-testid="stCaptionContainer"] p {{
+  font-size: 12px;
+}}
+@media (max-width: 700px) {{
+  .st-key-verification .fl-h1 {{ font-size: 32px; }}
+  .fl-check-metric strong {{ font-size: 24px; }}
+  .st-key-verification [class*="st-key-res-"] {{ height: auto; }}
+}}
+
+
+.st-key-verification {{ container-type: inline-size; container-name: verification; }}
+@container verification (max-width: 900px) {{
+  .st-key-verification [class*="st-key-check-row-"] [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
+  .st-key-verification [class*="st-key-check-row-"] [data-testid="stColumn"] {{
+    width: 100% !important; flex: 1 1 100% !important; min-width: 0 !important;
+  }}
+}}
+.fl-check-title b {{ white-space: nowrap; }}
+
 </style>
 """
 
@@ -491,8 +543,8 @@ def nav_html(step: int) -> str:
         cls = "active" if i == step else "done" if i < step else ""
         tabs.append(f'<span class="fl-tab {cls}">{i:02d} {escape(name)}</span>')
     return (
-        '<div class="fl-nav"><div class="fl-logo"><span class="fl-blob"></span>'
-        "<div><b>제주 축제랩</b><small>JEJU FESTA MAKER</small></div></div>"
+        f'<div class="fl-nav"><div class="fl-logo"><img class="fl-blob" src="{_BRAND_MARK_URI}" alt="">'
+        "<div><b>제주 축제 메이커</b><small>JEJU FESTIVAL MAKER</small></div></div>"
         f'<div class="fl-steps">{"".join(tabs)}</div></div>'
     )
 
@@ -639,8 +691,8 @@ def sidebar_html(has_llm: bool) -> str:
     steps = "".join(f"<li><span>{i:02d}</span>{text}</li>" for i, text in enumerate(guide, 1))
     return (
         '<div class="fl-settings">'
-        '<div class="fl-settings-brand"><span class="fl-blob" aria-hidden="true"></span>'
-        '<div><b>제주 축제랩</b><small>JEJU FESTA MAKER</small></div></div>'
+        f'<div class="fl-settings-brand"><img class="fl-blob" src="{_BRAND_MARK_URI}" alt="">'
+        '<div><b>제주 축제 메이커</b><small>JEJU FESTIVAL MAKER</small></div></div>'
         '<div class="fl-settings-eyebrow">WORKSPACE</div>'
         '<h2>설정</h2><p class="fl-settings-intro">축제를 준비하는 나의 작업 공간</p>'
         '<section class="fl-settings-card" aria-label="AI 설정 상태">'
@@ -713,8 +765,33 @@ def tag_html(kind: str) -> str:
 def check_head_html(label: str, status: str, synthetic: bool) -> str:
     extra = " " + tag_html("가상 데이터") if synthetic else ""
     return (
-        f'<div class="fl-check-head"><b>{escape(label)}</b>'
+        f'<div class="fl-check-head"><span class="fl-check-title">{check_icon_html(label)}'
+        f'<b>{escape(label)}</b></span>'
         f"<span>{badge_html(status)}{extra}</span></div>"
+    )
+
+
+def check_icon_html(label: str) -> str:
+    names = {"시기": "timing", "장소": "venue", "대상": "target", "위험": "risk",
+             "규모": "budget", "주의할 점": "warning"}
+    path = Path(__file__).resolve().parents[1] / "assets" / "icons" / f"{names[label]}.svg"
+    uri = "data:image/svg+xml;base64," + b64encode(path.read_bytes()).decode("ascii")
+    return f'<span class="fl-check-icon"><img src="{uri}" alt=""></span>'
+
+
+def check_metric_html(summary: dict) -> str:
+    synthetic = tag_html("가상 데이터") if summary["synthetic"] else ""
+    return (
+        '<div class="fl-check-metric">'
+        f'<strong>{escape(summary["value"])}</strong><div>{synthetic}'
+        f'<span>{escape(summary["label"])}</span></div></div>'
+    )
+
+
+def check_warning_html(warning: str) -> str:
+    return (
+        '<div class="fl-check-warning"><div class="fl-check-warning-title">'
+        f'{check_icon_html("주의할 점")}주의할 점</div><p>{escape(warning)}</p></div>'
     )
 
 
