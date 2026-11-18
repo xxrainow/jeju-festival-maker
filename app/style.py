@@ -15,6 +15,11 @@ _BRAND_MARK_URI = "data:image/png;base64," + b64encode(
     (Path(__file__).resolve().parents[1] / "assets" / "brand-mark.png").read_bytes()
 ).decode("ascii")
 
+
+def _icon_uri(name: str) -> str:
+    path = Path(__file__).resolve().parents[1] / "assets" / "icons" / f"{name}.svg"
+    return "data:image/svg+xml;base64," + b64encode(path.read_bytes()).decode("ascii")
+
 # Figma 변수 (99 컴포넌트 · 토큰)
 TOKENS = {
     "bg": "#f2f2ef",
@@ -641,6 +646,62 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 }}
 .fl-check-title b {{ white-space: nowrap; }}
 
+/* Figma 05: 홍보물 */
+[data-testid="stMainBlockContainer"]:has(.st-key-promo) {{ max-width: 1312px; }}
+.st-key-promo {{ gap: 24px; }}
+.st-key-promo [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ gap: 16px; }}
+/* 노란 안내 띠: st.warning을 ⚠ 픽셀 아이콘 + 연노랑 띠로 */
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContainer"] {{
+  background: var(--fl-warn-soft); border-radius: 16px; padding: 16px 24px; color: var(--fl-ink);
+}}
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] {{
+  display: flex; align-items: center; gap: 12px;
+}}
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"]::before {{
+  content: ""; flex: none; width: 20px; height: 20px; background: url("{_icon_uri("warning")}") center / contain no-repeat;
+}}
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] p {{
+  font-size: 15px; line-height: 1.5; color: var(--fl-ink); margin: 0;
+}}
+.st-key-promo .st-key-promo-notice-synthetic {{ max-width: 960px; }}
+.st-key-promo .st-key-card-poster {{ padding: 0; overflow: hidden; border: none; border-radius: 4px;
+  box-shadow: 0 24px 48px rgba(18, 18, 18, .10); }}
+.st-key-promo .st-key-card-poster img {{ display: block; width: 100%; height: auto; }}
+.st-key-promo [data-testid="stCaptionContainer"] p {{ font-size: 13px; color: var(--fl-ink-3); }}
+.st-key-promo .st-key-poster-download button,
+.st-key-promo .st-key-promo-zip button {{
+  border-radius: 8px; background: var(--fl-surface); border: 1.5px solid var(--fl-ink); color: var(--fl-ink);
+}}
+.st-key-promo .st-key-poster-download button {{ min-height: 48px; padding: 0 24px; }}
+.st-key-promo .st-key-card-sns,
+.st-key-promo .st-key-card-checks {{ padding: 28px 32px; gap: 16px; }}
+.fl-card-head {{ display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; }}
+.fl-card-head b {{ font-size: 20px; font-weight: 600; }}
+.fl-card-head small {{ font-size: 12px; color: var(--fl-ink-3); }}
+.fl-card-head .fl-check-icon {{ background: transparent; width: 28px; height: 28px; }}
+.fl-count {{ font-size: 13px; padding: 4px 16px; border: 1px solid var(--fl-line); border-radius: 999px; }}
+.fl-sns-body {{ white-space: pre-wrap; background: var(--fl-surface-2); border-radius: 16px;
+  padding: 20px 24px; font-size: 15px; line-height: 1.75; color: var(--fl-ink); overflow-wrap: anywhere; }}
+.st-key-card-sns iframe {{ display: block; }}
+.fl-promo-checks {{ list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column;
+  gap: 10px; font-size: 14px; line-height: 1.6; }}
+.fl-promo-checks li {{ display: flex; gap: 4px; }}
+.fl-promo-note {{ margin: 8px 0 0; font-size: 12px; color: var(--fl-ink-3); line-height: 1.6; }}
+.st-key-promo .st-key-promo-save button,
+.st-key-promo .st-key-promo-zip button {{ min-height: 64px; border-radius: 8px; font-size: 16px; }}
+.fl-promo-files {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }}
+.fl-promo-files small {{ font-size: 12px; color: var(--fl-ink-3); margin-right: 4px; }}
+.fl-promo-files span {{ font-size: 13px; padding: 8px 16px; background: var(--fl-surface);
+  border: 1px solid var(--fl-line); border-radius: 999px; }}
+.fl-promo-info {{ display: flex; align-items: center; gap: 16px; padding: 20px 24px;
+  background: var(--fl-sea-soft); border-radius: 16px; font-size: 15px; line-height: 1.7; color: var(--fl-ink); }}
+.fl-promo-info .fl-check-icon {{ background: transparent; width: 20px; height: 20px; }}
+@media (max-width: 700px) {{
+  .st-key-promo .st-key-card-sns, .st-key-promo .st-key-card-checks {{ padding: 20px; }}
+  .fl-notice, .fl-promo-info {{ padding: 14px 16px; font-size: 14px; }}
+}}
+
 </style>
 """
 
@@ -882,7 +943,7 @@ def check_head_html(label: str, status: str, synthetic: bool) -> str:
 
 def check_icon_html(label: str) -> str:
     names = {"시기": "timing", "장소": "venue", "대상": "target", "위험": "risk",
-             "규모": "budget", "주의할 점": "warning"}
+             "규모": "budget", "주의할 점": "warning", "SNS 글": "sns", "안내": "sparkle"}
     path = Path(__file__).resolve().parents[1] / "assets" / "icons" / f"{names[label]}.svg"
     uri = "data:image/svg+xml;base64," + b64encode(path.read_bytes()).decode("ascii")
     return f'<span class="fl-check-icon"><img src="{uri}" alt=""></span>'
@@ -901,6 +962,81 @@ def check_warning_html(warning: str) -> str:
     return (
         '<div class="fl-check-warning"><div class="fl-check-warning-title">'
         f'{check_icon_html("주의할 점")}주의할 점</div><p>{escape(warning)}</p></div>'
+    )
+
+
+# ---------- 05 홍보물 ----------
+
+
+def sns_head_html(length: int | None) -> str:
+    count = f'<span class="fl-count">{length}자</span>' if length is not None else ""
+    return (
+        f'<div class="fl-card-head"><span class="fl-check-title">{check_icon_html("SNS 글")}'
+        f"<b>SNS 글</b></span>{count}</div>"
+    )
+
+
+def sns_body_html(text: str) -> str:
+    return f'<div class="fl-sns-body">{escape(text)}</div>'
+
+
+def copy_button_html(text: str) -> str:
+    """'문구 복사' 버튼. components.html(iframe) 안에서 클립보드에 복사한다."""
+    import json
+
+    return f"""
+<style>
+  body {{ margin: 0; font-family: {_FONT}; }}
+  button {{ background: #121212; color: #fff; border: none; border-radius: 8px;
+    padding: 0 20px; height: 40px; font: inherit; font-size: 13px; cursor: pointer; }}
+  button:hover {{ background: #333; }}
+</style>
+<button id="copy" type="button">문구 복사</button>
+<script>
+const text = {json.dumps(text)};
+const btn = document.getElementById("copy");
+btn.addEventListener("click", async () => {{
+  try {{ await navigator.clipboard.writeText(text); }}
+  catch (e) {{
+    const t = document.createElement("textarea");
+    t.value = text; document.body.appendChild(t); t.select();
+    document.execCommand("copy"); t.remove();
+  }}
+  btn.textContent = "복사했어요";
+  setTimeout(() => (btn.textContent = "문구 복사"), 1500);
+}});
+</script>
+"""
+
+
+def promo_checks_html(checks) -> str:
+    rows = "".join(
+        f'<li>{"✅" if c.ok else "⚠️"} <span>{escape(c.item)}: {escape(c.detail)}</span></li>'
+        for c in checks
+    )
+    return (
+        '<div class="fl-card-head"><b>정보 일치 검사</b>'
+        '<small>기획서와 같은지 · 포스터와 SNS 글 각각</small></div>'
+        f'<ul class="fl-promo-checks">{rows}</ul>'
+        '<p class="fl-promo-note">다른 곳이 있으면 ⚠️로 표시해요. '
+        "기획서에서 미확인인 날짜·장소는 두 곳 모두 ‘추후 공지’로 써요.</p>"
+    )
+
+
+def promo_files_html(has_sns: bool) -> str:
+    files = ["poster.png", *(["sns.txt"] if has_sns else []), "plan.md (ZIP만)"]
+    return (
+        '<div class="fl-promo-files"><small>저장되는 파일</small>'
+        + "".join(f"<span>{escape(f)}</span>" for f in files)
+        + "</div>"
+    )
+
+
+def promo_info_html() -> str:
+    return (
+        f'<div class="fl-promo-info">{check_icon_html("안내")}<span>'
+        "저장 위치는 outputs/ 폴더예요. 포스터와 SNS 문구는 같은 기획서 버전으로 묶어 저장해요. "
+        "에이전트는 SNS 게시, 메일 전송, 광고 등록을 하지 않아요.</span></div>"
     )
 
 

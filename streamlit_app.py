@@ -726,34 +726,69 @@ def step_promo() -> None:
     if "promo" not in ss:
         return
     result = promo.PromoResult.model_validate(ss["promo"])
+    with st.container(key="promo"):
+        promo_content(plan, result)
+
+
+def promo_content(plan, result) -> None:
+    """Figma 05: 왼쪽 포스터, 오른쪽 그림 안내 · SNS 글 · 정보 일치 검사 · 저장."""
+    from app import promo
+
     if result.is_synthetic:
-        ui.warning("🧪 가상 데이터가 섞인 기획서로 만든 홍보물이에요.")
+        with st.container(key="promo-notice-synthetic"):
+            ui.warning("가상 데이터가 섞인 기획서로 만든 홍보물이에요.")
     left, right = st.columns([2, 3], gap="large")
-    with left, st.container(key="card-poster"):
-        st.image(result.poster_path, caption="포스터 미리보기 (1200×1600)")
+    with left:
+        with st.container(key="card-poster"):
+            st.image(result.poster_path)
+        ui.caption("포스터 미리보기 (1200×1600)")
         with open(result.poster_path, "rb") as f:
             st.download_button(
-                "포스터 내려받기", f.read(), file_name="poster.png", mime="image/png"
+                "포스터 내려받기", f.read(), file_name="poster.png", mime="image/png",
+                key="poster-download",
             )
         if result.poster_mode == "ai_text":
             ui.caption("AI가 정한 문구만 포스터에 그렸는지 글자를 읽어 확인했어요.")
         if result.image_cropped:
             ui.caption("받은 그림이 세로 3:4가 아니어서 1200×1600에 맞췄어요.")
-    with right, st.container(key="card-sns"):
+    with right:
         if result.image_notice:
-            ui.warning(result.image_notice)
-            ui.caption("그림 설명 (그대로 복사해 쓰세요)")
-            st.code(result.image_prompt, language=None)
-            ui.caption("포스터 문구")
-            st.code("\n".join((result.poster_lines or result.poster_text).values()), language=None)
-        ui.markdown("**SNS 글 (인스타그램)**")
-        if result.sns_text:
-            st.code(result.sns_text + "\n\n" + " ".join(result.hashtags), language=None)
-        if result.sns_notice:
-            ui.warning(result.sns_notice)
-        ui.markdown("**정보 일치 검사** (기획서와 같은지)")
-        for c in result.checks:
-            ui.write(f"{'✅' if c.ok else '⚠️'} {c.item}: {c.detail}")
+            with st.container(key="promo-notice-image"):
+                ui.warning(result.image_notice)
+            with st.expander("그림 설명과 포스터 문구 보기 (그대로 복사해 쓰세요)"):
+                ui.caption("그림 설명")
+                st.code(result.image_prompt, language=None)
+                ui.caption("포스터 문구")
+                st.code(
+                    "\n".join((result.poster_lines or result.poster_text).values()), language=None
+                )
+        sns = promo.sns_copy_text(result)
+        with st.container(key="card-sns"):
+            st.html(style.sns_head_html(len(sns) if sns else None))
+            if sns:
+                st.html(style.sns_body_html(sns))
+                components.html(style.copy_button_html(sns), height=48)
+            if result.sns_notice:
+                ui.warning(result.sns_notice)
+        with st.container(key="card-checks"):
+            st.html(style.promo_checks_html(result.checks))
+        save_col, zip_col = st.columns(2)
+        if save_col.button("＋ 포스터 · SNS 문구 저장", type="primary", key="promo-save",
+                           use_container_width=True):
+            saved = promo.save_promo_files(result)
+            ui.success("저장했어요: " + ", ".join(str(p) for p in saved))
+        if plan is not None:
+            from agent.plan import plan_to_markdown
+
+            data = promo.promo_zip_bytes(result, plan_to_markdown(plan))
+            zip_col.download_button(
+                "기획서와 함께 ZIP으로 저장", data,
+                file_name=f"{promo.promo_stem(result)}_promo.zip", mime="application/zip",
+                key="promo-zip", use_container_width=True,
+                on_click=promo.save_promo_zip, args=(result, data),
+            )
+        st.html(style.promo_files_html(has_sns=bool(sns)))
+        st.html(style.promo_info_html())
 
 
 # ---------- 화면 ----------

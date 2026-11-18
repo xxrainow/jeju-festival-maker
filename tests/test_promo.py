@@ -454,3 +454,33 @@ def test_no_key_still_makes_plain_poster(plan, tmp_path):
     assert not result.used_ai_image and result.image_notice == promo.NO_KEY_NOTICE
     assert result.sns_text is None and "SNS 글을 만들지 못했어요" in result.sns_notice
     assert result.is_synthetic == plan.is_synthetic
+
+
+def test_save_promo_files_and_zip(plan, tmp_path):
+    import zipfile
+
+    result = promo.make_promo(plan, llm=FakeLLM(good_sns(plan)), out_dir=tmp_path)
+    text = promo.sns_copy_text(result)
+    assert text.startswith(result.sns_text) and text.endswith(" ".join(result.hashtags))
+
+    saved = promo.save_promo_files(result, out_dir=tmp_path)
+    assert saved[0] == tmp_path / f"{plan.plan_id}_v{plan.version}_poster.png"
+    assert saved[1].name == f"{plan.plan_id}_v{plan.version}_sns.txt"
+    assert saved[1].read_text(encoding="utf-8").strip() == text
+
+    data = promo.promo_zip_bytes(result, "# 기획서")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert sorted(zf.namelist()) == ["plan.md", "poster.png", "sns.txt"]
+        assert zf.read("plan.md").decode() == "# 기획서"
+    path = promo.save_promo_zip(result, data, out_dir=tmp_path)
+    assert path.name.endswith("_promo.zip") and path.read_bytes() == data
+
+
+def test_zip_without_sns_text(plan, tmp_path):
+    import zipfile
+
+    result = promo.make_promo(plan, llm=None, out_dir=tmp_path)  # AI 없음: SNS 글 없음
+    assert promo.sns_copy_text(result) == ""
+    assert promo.save_promo_files(result, out_dir=tmp_path) == [tmp_path / f"{plan.plan_id}_v{plan.version}_poster.png"]
+    with zipfile.ZipFile(io.BytesIO(promo.promo_zip_bytes(result, "x"))) as zf:
+        assert sorted(zf.namelist()) == ["plan.md", "poster.png"]
