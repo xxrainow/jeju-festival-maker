@@ -907,3 +907,52 @@ def make_promo(
     )
     result.checks = consistency_checks(plan, result)
     return result
+
+
+# ---------- 저장 (outputs/, Git 제외) ----------
+
+
+def sns_copy_text(result: PromoResult) -> str:
+    """복사·저장용 SNS 글: 본문 + 빈 줄 + 해시태그. SNS 글이 없으면 빈 문자열."""
+    if not result.sns_text:
+        return ""
+    tags = " ".join(result.hashtags)
+    return result.sns_text + (f"\n\n{tags}" if tags else "")
+
+
+def promo_stem(result: PromoResult) -> str:
+    """포스터·SNS 문구·ZIP 파일 이름 앞부분. 같은 기획서 버전끼리 묶인다."""
+    return f"{result.plan_id}_v{result.plan_version}"
+
+
+def save_promo_files(result: PromoResult, out_dir: Path | None = None) -> list[Path]:
+    """포스터(이미 저장됨)와 SNS 문구를 같은 기획서 버전 이름으로 저장한다. 저장한 파일 목록."""
+    out_dir = OUTPUT_DIR if out_dir is None else out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    saved = [Path(result.poster_path)]
+    if text := sns_copy_text(result):
+        sns = out_dir / f"{promo_stem(result)}_sns.txt"
+        sns.write_text(text + "\n", encoding="utf-8")
+        saved.append(sns)
+    return saved
+
+
+def promo_zip_bytes(result: PromoResult, plan_markdown: str) -> bytes:
+    """poster.png · sns.txt · plan.md를 묶은 ZIP. SNS 글이 없으면 sns.txt는 뺀다."""
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(result.poster_path, "poster.png")
+        if text := sns_copy_text(result):
+            zf.writestr("sns.txt", text + "\n")
+        zf.writestr("plan.md", plan_markdown)
+    return buf.getvalue()
+
+
+def save_promo_zip(result: PromoResult, data: bytes, out_dir: Path | None = None) -> Path:
+    out_dir = OUTPUT_DIR if out_dir is None else out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{promo_stem(result)}_promo.zip"
+    path.write_bytes(data)
+    return path

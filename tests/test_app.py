@@ -788,6 +788,10 @@ def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
     assert any(
         c.value == "\n".join(result.poster_lines.values()) for c in at.code
     )  # 포스터 문구 6줄
+    # 저장: 포스터·SNS 문구는 outputs/promo에, ZIP은 내려받기 버튼 (AI 없음이라 SNS 글은 없음)
+    assert any(b.label == "기획서와 함께 ZIP으로 저장" for b in at.get("download_button"))
+    click(at, "＋ 포스터 · SNS 문구 저장")
+    assert any(result.poster_path in s for s in labels(at, "success"))
     # ③으로 돌아가서 같은 안이면 그대로, 다시 확인하면 홍보물도 지워진다
     click(at, "← 이전 단계로")
     click(at, "← 이전 단계로")
