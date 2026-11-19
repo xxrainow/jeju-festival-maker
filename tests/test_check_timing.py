@@ -166,6 +166,23 @@ def test_bad_weather_reason_matches_actual_cause():
     assert reason(rain=True, wind=True) == "5월은 모든 주가 평소보다 폭우·바람이 잦아요."
 
 
+def test_fail_reasons_are_joined_without_semicolons():
+    """여러 달 실패 이유를 "~낮고, ~낮아요"로 잇는다 (세미콜론 없이)."""
+    from analytics.check_timing import join_reasons
+
+    assert join_reasons(["4월은 지수가 낮아요", "12월은 지수가 낮아요"]) == (
+        "4월은 지수가 낮고, 12월은 지수가 낮아요"
+    )
+    assert join_reasons(["5월에는 축제가 열려요", "6월은 폭우가 잦은 주가 많아요"]) == (
+        "5월에는 축제가 열리고, 6월은 폭우가 잦은 주가 많아요"
+    )
+    r = check_timing(card([4, 12]), request(), data(outsider=outsider_table({4: 0.68, 12: 0.7})))
+    assert ";" not in r.reason
+    assert r.reason == (
+        "4월은 외지인 방문 지수(0.68)가 0.8보다 낮고, 12월은 외지인 방문 지수(0.70)가 0.8보다 낮아요."
+    )
+
+
 def test_rain_and_heat_are_reference_only():
     d = data()
     d.monthly.loc[d.monthly["month"] == 8, ["rainy_ratio", "heat_ratio"]] = 2.0
@@ -451,7 +468,10 @@ def test_same_area_festival_fails_and_suggests_other_month():
         "같은 동네",
     )
     assert f["start"] == "2026-05-14" and f["end"] == "2026-05-15"
-    assert "가까운 곳에서 같은 재료 축제가 열려요" in r.reason and "같은 동네" in r.reason
+    assert (
+        r.reason
+        == "5월에는 가까운 곳에서 같은 재료 축제(애월 감귤 축제, 제주시 애월읍 같은 동네)가 열려요."
+    )
 
 
 def test_near_festival_within_10km_fails():

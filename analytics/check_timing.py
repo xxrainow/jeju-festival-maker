@@ -294,7 +294,23 @@ class MonthCheck:
             return "폭우가 잦은 주가 많아요"
         return "모든 주가 평소보다 폭우·바람이 잦아요"
 
+    def fail_parts(self) -> list[str]:
+        """실패 이유 문장들 (각각 "…요"로 끝남). join_reasons로 한 문장으로 잇는다."""
+        text = self._low_weather_text()
+        parts = [text] if text else []
+        if self.near_festivals and not self.near_downgraded:
+            near = " / ".join(
+                f"{f['name']}, {f['admin_area']} {festival_place_text(f)}"
+                for f in self.near_festivals
+            )
+            parts.append(f"{self.month}월에는 가까운 곳에서 같은 재료 축제({near})가 열려요")
+        return parts
+
     def fail_reason(self) -> str | None:
+        parts = self.fail_parts()
+        return join_reasons(parts) if parts else None
+
+    def _low_weather_text(self) -> str | None:
         low = self.index < LOW_INDEX
         low_text = (
             f"외지인 방문 지수({precise_text(self.index, INDEX_THRESHOLDS)})가 {LOW_INDEX}보다 낮"
@@ -308,18 +324,24 @@ class MonthCheck:
             text = f"{self.month}월은 {weather}"
         else:
             text = None
-        if self.near_festivals and not self.near_downgraded:
-            near = ", ".join(
-                f"{f['name']}({f['admin_area']}, {festival_place_text(f)})"
-                for f in self.near_festivals
-            )
-            near_text = f"가까운 곳에서 같은 재료 축제가 열려요: {near}"
-            text = (
-                f"{text}. {self.month}월에는 {near_text}"
-                if text
-                else f"{self.month}월에는 {near_text}"
-            )
         return text
+
+
+# 이유 문장을 이을 때 앞 문장 끝을 연결형으로 ("낮아요" → "낮고")
+_CLAUSE_ENDINGS = {"낮아요": "낮고", "많아요": "많고", "잦아요": "잦고", "열려요": "열리고"}
+
+
+def join_reasons(parts: list[str]) -> str:
+    """["4월은 …낮아요", "12월은 …낮아요"] → "4월은 …낮고, 12월은 …낮아요" (세미콜론 대신)."""
+    out = []
+    for i, part in enumerate(parts):
+        if i < len(parts) - 1:
+            for end, clause in _CLAUSE_ENDINGS.items():
+                if part.endswith(end):
+                    part = part[: -len(end)] + clause
+                    break
+        out.append(part)
+    return ", ".join(out)
 
 
 def _digits(value: float, thresholds: tuple[float, ...], digits: int = 2) -> int:
@@ -452,7 +474,7 @@ def _suggest(card, checks, all_checks, data, input_season=None) -> Suggestion | 
     failed = [c for c in checks if c.status == "fail"]
     if len(failed) < len(checks):
         keep = [m for m in months if m not in {c.month for c in failed}]
-        why = "; ".join(c.fail_reason() for c in failed) + ". 그 달을 빼요."
+        why = join_reasons([p for c in failed for p in c.fail_parts()]) + ". 그 달을 빼요."
         return Suggestion(field="timing.recommended_months", value=keep, why=why)
     season, _basis = data.material_season.get(card.material, (None, None))
     in_input = SEASON_MONTHS.get(input_season or "")
@@ -649,7 +671,9 @@ def check_timing(
                 )
 
     if status == "fail":
-        reason = "; ".join(c.fail_reason() for c in checks if c.status == "fail") + "."
+        reason = (
+            join_reasons([p for c in checks if c.status == "fail" for p in c.fail_parts()]) + "."
+        )
         if suggestion is None:
             warnings.append("통과하는 다른 달이 없어 추천 월을 고치는 제안을 하지 못했어요.")
     else:
