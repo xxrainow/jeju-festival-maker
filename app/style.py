@@ -362,8 +362,6 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-ideas .fl-eyebrow {{ display: none; }}
 .st-key-idea-conditions .fl-chips {{ margin: 0; }}
 .st-key-idea-conditions {{ margin: 14px 0 4px; }}
-.st-key-back_2 {{ margin: 0 0 0 8px; }}
-.st-key-back_2 button {{ text-decoration: underline; text-underline-offset: 3px; }}
 .st-key-idea-demo-notice details {{ background: var(--fl-surface-2);
   border: 0; border-radius: 8px; }}
 .st-key-idea-demo-notice summary {{ padding: 10px 16px; color: var(--fl-ink-2); }}
@@ -379,6 +377,10 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-idea-cards [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
   > [data-testid="stLayoutWrapper"] {{ flex: 1 1 auto; }}
 .st-key-idea-cards [class*="st-key-card-idea-"] {{ height: 100%; border: 1px solid var(--fl-line); }}
+/* Figma 02-2: 카드 윗줄 왼쪽 형식 칩, 오른쪽 픽셀 아이콘 */
+.fl-idea-card-head {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; }}
+.fl-idea-card-head .fl-format {{ margin: 0; }}
+.fl-format-icon {{ display: block; width: 24px; height: 24git add app/style.py docs/submission/manual.md streamlit_app.py tests/test_app.py assets/icons/formatspx; flex: none; image-rendering: pixelated; }}
 .st-key-idea-cards [class*="st-key-card-idea-"] > [data-testid="stElementContainer"]:last-child {{
   margin-top: auto; padding-top: 8px;
 }}
@@ -1327,6 +1329,37 @@ def section_html(label: str) -> str:
 
 def format_html(text: str) -> str:
     return f'<span class="fl-format">{escape(text)}</span>'
+
+
+# 축제 형식(FestivalFormat) → Figma 99 컴포넌트 「Pixel Glyph」 아이콘 (assets/icons/formats/)
+FORMAT_ICONS = {
+    "시장·상권": "market",
+    "푸드·디저트": "dessert",
+    "정원·가드닝": "garden",
+    "여름·물놀이": "water",
+    "맥주·주류": "drinks",
+    "도심·거리·골목": "street",
+    "야간·빛·드론": "night",
+    "영화·책·아트": "art",
+}
+
+
+def format_icon_html(festival_format: str) -> str:
+    """축제 형식 아이콘. 대응하는 아이콘이 없으면 빈 문자열 (카드는 그대로 보인다)."""
+    name = FORMAT_ICONS.get(festival_format)
+    if name is None:
+        return ""
+    path = Path(__file__).resolve().parents[1] / "assets" / "icons" / "formats" / f"{name}.svg"
+    uri = "data:image/svg+xml;base64," + b64encode(path.read_bytes()).decode("ascii")
+    return f'<img class="fl-format-icon" src="{uri}" alt="" width="40" height="40">'
+
+
+def idea_card_head_html(card) -> str:
+    """02 아이디어 카드 윗줄: 왼쪽 '형식 × 재료' 칩, 오른쪽 형식 아이콘."""
+    return (
+        '<div class="fl-idea-card-head">'
+        f'{format_html(f"{card.format} × {card.material}")}{format_icon_html(card.format)}</div>'
+    )
 
 
 HERO = (

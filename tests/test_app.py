@@ -865,7 +865,7 @@ def test_steps_move_forward_and_back(no_llm):
     assert any(c.value == "서귀포시 대정읍 · 계절 미정 · 소재 미정 · 예산 미정" for c in at.caption)
     first = at.session_state["proposal"]
     # 완료한 조건 입력 탭으로 이동해도 기존 카드와 조건은 유지된다
-    assert at.button(key="back_2").label == "조건 수정"
+    assert not any(b.label == "조건 수정" for b in at.button)  # 돌아가기는 상단 단계 탭으로만
     assert not at.button(key="nav_1").disabled
     assert all(at.button(key=f"nav_{i}").disabled for i in range(2, 6))
     at.button(key="nav_1").click().run()
@@ -1211,3 +1211,17 @@ def test_plan_markdown_editor_save_and_unsaved_guard(no_llm, monkeypatch, tmp_pa
     assert saves == []
     next(b for b in at.button if b.label == "기획서 최종 승인").click().run()
     assert not at.exception and saves == []  # 승인은 디스크에 자동 저장하지 않는다.
+
+
+def test_every_festival_format_has_pixel_icon():
+    from typing import get_args
+
+    from agent.draft_contracts import FestivalFormat
+    from app import style
+
+    assert set(style.FORMAT_ICONS) == set(get_args(FestivalFormat))  # 형식 8종 모두 아이콘
+    for fmt in get_args(FestivalFormat):
+        assert style.format_icon_html(fmt).startswith('<img class="fl-format-icon"')
+    head = style.idea_card_head_html(CARD)
+    assert f"{CARD.format} × {CARD.material}" in head and "fl-format-icon" in head
+    assert style.format_icon_html("없는 형식") == ""
