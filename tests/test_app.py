@@ -154,6 +154,48 @@ def test_budget_hint_reads_amount_in_korean(krw, hint):
     assert screen.budget_hint(krw) == hint
 
 
+@pytest.mark.parametrize(
+    "krw", [10_000_000, 150_000_000, 278_000_000, 311_250_000, 123_456_789, 99_995_000, 5_000]
+)
+def test_screen_won_matches_plan_and_downloads(krw):
+    """화면 금액 = 기획서(agent.plan.krw_text) 금액. 기획서 화면·Markdown·Word·한글이 모두 krw_text를 쓴다."""
+    from agent.plan import krw_text
+
+    assert screen.won(krw) == krw_text(krw)
+
+
+def _plan_number_check(sentence: str) -> list[str]:
+    """agent.plan의 기획서 숫자 검사와 같은 방식으로, 입력에 없는 숫자 목록."""
+    from agent.plan import _MONTH, _numbers, allowed_numbers, krw_text
+
+    allowed = allowed_numbers({"예산 상한": krw_text(10_000_000), "개최 월": "12월"})
+    return sorted(_numbers(_MONTH.sub("", sentence)) - allowed)
+
+
+def test_plan_number_check_accepts_same_budget_format():
+    """won() 형식 변경과 무관: 기획서 숫자 검사는 입력(krw_text, "1,000만 원")의 숫자 글자로 비교한다."""
+    assert _plan_number_check("예산은 1,000만 원으로 운영한다.") == []
+    assert _plan_number_check("예산은 1000만원으로 운영한다.") == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="agent/plan.py 숫자 검사는 금액을 값이 아니라 숫자 글자로 비교해 같은 금액의 다른 표기를 반려한다 (A 담당)",
+)
+@pytest.mark.parametrize(
+    "sentence", ["예산은 1천만 원으로 운영한다.", "예산은 10,000,000원으로 운영한다."]
+)
+def test_plan_number_check_other_formats_of_same_budget(sentence):
+    assert _plan_number_check(sentence) == []
+
+
+def test_input_instructions_are_hidden_in_all_forms():
+    """입력 양식의 영어 안내("Press Enter to submit form")는 앱 전체에서 숨긴다."""
+    from app import style
+
+    assert '[data-testid="InputInstructions"] { display: none !important; }' in style.CSS
+
+
 def test_budget_hint_on_screen_keeps_value_in_won(no_llm):
     """표시만 추가: 입력칸·저장 값은 원 단위 숫자 그대로."""
     from agent.draft_contracts import UserRequest

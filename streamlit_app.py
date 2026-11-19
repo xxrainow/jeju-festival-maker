@@ -178,13 +178,13 @@ def fill_demo_conditions() -> None:
     ss.pop("parse_error", None)
 
 
-# screen.budget_hint와 같은 규칙 (만 원 단위 반올림, 억·만). 예산 칸에 입력할 때마다 회색 글씨를 바꾼다
+# screen.budget_hint(= agent.plan.krw_text)와 같은 규칙 (만 원 아래 버림, 억·만). 예산 칸에 입력할 때마다 바꾼다
 BUDGET_HINT_SCRIPT = """<script>
 const doc = window.parent.document;
 function koreanWon(v) {
   if (!v || v <= 0) return "";
   if (v < 10000) return "= " + v.toLocaleString("ko-KR") + "원";
-  const man = Math.round(v / 10000), eok = Math.floor(man / 10000), rest = man % 10000;
+  const eok = Math.floor(v / 100000000), rest = Math.floor((v % 100000000) / 10000);
   const parts = [];
   if (eok) parts.push(eok.toLocaleString("ko-KR") + "억");
   if (rest) parts.push(rest.toLocaleString("ko-KR") + "만");

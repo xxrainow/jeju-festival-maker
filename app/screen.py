@@ -101,15 +101,12 @@ DATA_SOURCES = [
 def korean_won(krw: int) -> str:
     """원 단위 금액을 한국어 단위로: 150000000 → "1억 5,000만 원", 10000000 → "1,000만 원".
 
-    만 원 아래는 반올림한다 (1만 원 미만이면 "5,000원"). 기획서의 금액 표기와 같은 방식.
+    기획서(agent.plan.krw_text)와 같은 함수를 써서 화면·기획서·Word·한글 표기를 똑같이 맞춘다
+    (만 원 아래는 버림, 1만 원 미만이면 "5,000원").
     """
-    krw = int(krw)
-    if krw < 10_000:
-        return f"{krw:,}원"
-    # 만 원 단위로 반올림(0.5는 올림, 화면 스크립트와 같게)한 뒤 억·만으로 나눈다
-    eok, man = divmod(int(krw / 10_000 + 0.5), 10_000)
-    parts = ([f"{eok:,}억"] if eok else []) + ([f"{man:,}만"] if man else [])
-    return " ".join(parts) + " 원"
+    from agent.plan import krw_text
+
+    return krw_text(int(krw))
 
 
 def won(krw: int | None) -> str:
