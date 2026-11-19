@@ -19,3 +19,7 @@ outputs/*
 # 참고 문서 원본 (hwp, 데이터 명세서 xlsx)
 docs/*.hwp
 docs/*.xlsx
+
+# 제출 ZIP용 PDF (docs/submission md에서 생성)
+submission_pdf/
+.cache/
