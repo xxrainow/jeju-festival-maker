@@ -146,7 +146,8 @@
 **앱을 실행할 때는 이 절이 필요 없습니다.** 가공본이 저장소와 제출 ZIP에 들어 있습니다. 공개 데이터 원본부터 가공본을 다시 만들 때만 씁니다.
 
 **데이터를 다루는 원칙**
-- **공개 데이터 원본은 저장소(GitHub)에 올리지 않습니다.** 용량이 크고 각 기관에서 받을 수 있기 때문입니다. 제출 ZIP에는 넣을 수 있습니다.
+- **큰 공개 데이터 원본(와이파이 사용량·사용자 현황, 버스 이용 원자료 등)은 저장소(GitHub)에 올리지 않습니다.** 용량이 크고 각 기관에서 받을 수 있기 때문입니다. 제출 ZIP에는 넣을 수 있습니다.
+- 예외: 허브 API 원본인 공공와이파이 AP 정보(`analytics/reference/jejuhub_wifi_ap.csv`, `data/raw/jejuhub_wifi_ap.csv`의 사본)는 앱 실행에 필요해서 **저장소와 제출 ZIP에 들어 있습니다.**
 - **센터 비공개 데이터(4-11, 3-04, 3-07·3-08·3-10 등)는 센터 PC 안에서만 씁니다.** 이 데이터로 만든 집계 결과도 센터 밖으로 가져가려면 반출 승인을 받아야 합니다. 이 절의 명령은 공개 데이터만 씁니다.
 
 **1) 받을 데이터와 둘 곳**
@@ -163,14 +164,14 @@
 | 와이파이 장소별 사용자 현황 | 제주데이터허브 | 위와 같음 | `와이파이장소별사용자현황.csv` | ⑥ → ⑦ | `analytics/reference/wifi_users_demographics.csv`, `area_link_wifi.csv` |
 | 이용자유형별 버스정류소 이용인원 | 제주데이터허브 | 위와 같음 | `이용자유형별버스정류소이용인원현황.csv` | ⑥ → ⑦ | `analytics/reference/bus_station_daily.csv` |
 | 일별 시간대별 버스 승차 인원 | 제주데이터허브 | 위와 같음 | `일별시간대별버스승차인원수현황*.csv` | ⑥ → ⑦ | `analytics/reference/bus_hourly_share.csv` |
-| ASOS 일자료 (제주·고산·성산·서귀포, 2016-10~2025) | 기상청 | 기상자료개방포털 https://data.kma.go.kr [확인 필요: 메뉴 위치] | `OBS_ASOS_DD_*.csv` | ③ → ⑥ → ⑦ | `analytics/reference/weather_weekly_risk.csv`, `weather_monthly_risk.csv`, `weather_station_by_dong.csv` |
-| 관측지점정보 | 기상청 | 위와 같음 [확인 필요: 메뉴 위치] | `META_관측지점정보_*.csv` | ③ | `analytics/reference/asos_stations_jeju.csv` |
-| 2026년 지역축제 개최 계획 현황 (공개용) | 문화체육관광부 | 문화체육관광부 누리집 [확인 필요: 게시 위치] | `2026년 지역축제 개최 계획 현황(공개용).xlsx` | ⑤ → ⑥ → ⑦ | `analytics/reference/jeju_festival_dates.csv` |
-| 지역축제 개최계획 2024·2025·2026 | 문화체육관광부 | 위와 같음 [확인 필요: 게시 위치] | `mcst/mcst_2024.xlsx`, `mcst/mcst_2025.xlsx`, `mcst/mcst_2026.xlsx` (`data/raw/mcst/` 폴더) | ⑧ | `research/reference/festival_panel_2024_2026.parquet` |
+| ASOS 일자료 (제주·고산·성산·서귀포, 2016-10~2025) | 기상청 | 기상자료개방포털 https://data.kma.go.kr 에서 '종관기상관측(ASOS)' 검색 | `OBS_ASOS_DD_*.csv` | ③ → ⑥ → ⑦ | `analytics/reference/weather_weekly_risk.csv`, `weather_monthly_risk.csv`, `weather_station_by_dong.csv` |
+| 관측지점정보 | 기상청 | https://data.kma.go.kr 에서 '종관기상관측(ASOS)' 검색 | `META_관측지점정보_*.csv` | ③ | `analytics/reference/asos_stations_jeju.csv` |
+| 2026년 지역축제 개최 계획 현황 (공개용) | 문화체육관광부 | https://www.mcst.go.kr 에서 '지역축제 개최계획' 검색 | `2026년 지역축제 개최 계획 현황(공개용).xlsx` | ⑤ → ⑥ → ⑦ | `analytics/reference/jeju_festival_dates.csv` |
+| 지역축제 개최계획 2024·2025·2026 | 문화체육관광부 | https://www.mcst.go.kr 에서 '지역축제 개최계획' 검색 | `mcst/mcst_2024.xlsx`, `mcst/mcst_2025.xlsx`, `mcst/mcst_2026.xlsx` (`data/raw/mcst/` 폴더) | ⑧ | `research/reference/festival_panel_2024_2026.parquet` |
 | 전국문화축제표준데이터 | 공공데이터포털 | https://www.data.go.kr ("전국문화축제표준데이터" 검색) | `전국문화축제표준데이터-20261103.xls` | ⑥ → ⑦, ⑨ | `analytics/reference/jeju_festival_dates.csv`, `research/reference/jeju_materials.csv`, `jeju_material_review.csv` |
 | 행정동 경계 (ver20261001) | vuski/admdongkor (CC BY 4.0) | https://github.com/vuski/admdongkor | `boundary/HangJeongDong_ver20261001.geojson` (`data/raw/boundary/` 폴더) | ③ ④ ⑤ ⑥ ⑦ | `analytics/reference/dong_neighbors.csv` (동네 판정은 거의 모든 표에 쓰임) |
 
-- `mcst_2026.xlsx`와 `2026년 지역축제 개최 계획 현황(공개용).xlsx`는 같은 2026년 자료를 두 명령이 따로 읽습니다. [확인 필요: 두 파일이 같은 파일인지]
+- `mcst_2026.xlsx`와 `2026년 지역축제 개최 계획 현황(공개용).xlsx`는 같은 2026년 자료를 두 명령이 각각 읽습니다 (⑤는 공개용 이름, ⑧은 `mcst_2026.xlsx`).
 - 제주도 방문 내국인 유동인구 추이(`제주도방문내국인유동인구추이.csv`)는 점검만 했고 가공본을 만들지 않습니다.
 - 사람이 직접 확인해 만든 표는 명령으로 다시 만들지 않습니다: `analytics/reference/tourist_spot_areas.csv`(관광지 → 읍면동), `research/reference/jeju_material_keywords.csv`(재료 키워드).
 
