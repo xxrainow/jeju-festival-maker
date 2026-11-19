@@ -203,7 +203,7 @@ REQUEST_TIMEOUT_SECONDS=30
    ```
 
 3. 끝나면 `data/raw/jejuhub_*.csv` 파일이 만들어지고, 데이터마다 사용한 호출 횟수가 출력됩니다.
-4. 이 파일로 가공본을 다시 만드는 방법은 [data-spec.md](data-spec.md) 3-3절에 있습니다.
+4. 이 파일로 가공본을 다시 만드는 방법은 [data-spec.md](data-spec.md) 3-4절 "가공본 다시 만들기"에 있습니다.
 
 **주의**
 - 키는 제출물·Git(GitHub)·로그에 넣지 않습니다. `.env`와 `data/raw/`는 Git에서 빠져 있습니다.

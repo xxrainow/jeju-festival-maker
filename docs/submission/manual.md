@@ -6,6 +6,7 @@
 - 큰따옴표("")로 적은 문장은 화면에 나오는 문장을 그대로 옮긴 것입니다. 버튼 이름도 화면과 같습니다.
 - 설치와 실행은 [install.md](install.md), 안내 문구가 나왔을 때 할 일은 [troubleshooting.md](troubleshooting.md)를 보세요.
 - API 키 발급·설정(Gemini, 제주데이터허브)은 [install.md](install.md)의 3절과 3-1절 "제주데이터허브 API 키 발급·설정 (선택)"을 보세요. 제주데이터허브 키는 앱 실행에는 필요 없습니다.
+- 공개 데이터 원본부터 가공본을 다시 만드는 방법은 [data-spec.md](data-spec.md) 3-4절 "가공본 다시 만들기"를 보세요.
 
 ## 한눈에 보기
 
