@@ -613,7 +613,7 @@ def plan_to_markdown(plan: FestivalPlan) -> str:
     ]
     if plan.is_synthetic:
         lines += [
-            "> ⚠️ 가짜·합성 데이터로 낸 확인 결과가 섞여 있어요. 실제 판단 전에 실데이터로 다시 확인해야 해요.",
+            "> ⚠️ 가상 데이터로 낸 확인 결과가 섞여 있어요. 실제 판단 전에 실데이터로 다시 확인해야 해요.",
             "",
         ]
     lines += [

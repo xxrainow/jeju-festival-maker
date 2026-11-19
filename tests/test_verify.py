@@ -74,6 +74,26 @@ def test_fail_without_suggestion_stops_immediately():
     assert run.outcome == "needs_other_idea" and len(run.rounds) == 1
 
 
+def test_fixable_fail_is_fixed_even_with_unfixable_fail():
+    """QA #7·#13: 대상 실패(제안 없음)가 있어도 시기 실패는 제안대로 고쳐 다시 확인한다."""
+
+    def timing(card, request):
+        if card.timing.recommended_months == [12]:
+            return CheckResult(
+                check="check_timing", status="fail", reason="12월은 바람",
+                suggestion=Suggestion(field="timing.recommended_months", value=[1], why="바람 적음"),
+            )  # fmt: skip
+        return CheckResult(check="check_timing", status="pass", reason="ok")
+
+    tools = {"check_timing": timing, "check_target": fixed("check_target", "fail")}
+    run = verify_idea(CARD, DEMO_REQUEST, tools)
+    assert len(run.rounds) == 2
+    assert [c.field for c in run.rounds[0].changes] == ["timing.recommended_months"]
+    assert run.final.timing.recommended_months == [1]
+    assert run.rounds[1].results[0].status == "pass"
+    assert run.outcome == "needs_other_idea"  # 대상 실패는 남는다
+
+
 def test_repeating_same_suggestion_stops():
     same = Suggestion(field="timing.recommended_months", value=[12], why="그대로")
     run = verify_idea(CARD, DEMO_REQUEST, {"check_timing": fixed("check_timing", "fail", same)})
