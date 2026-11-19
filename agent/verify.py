@@ -5,6 +5,7 @@
 - format, material(아이디어의 핵심)은 바꾸지 않는다
 - 처음 확인 1회 + 고친 뒤 재확인 최대 MAX_FIXES회. 그래도 fail이 남으면 다른 아이디어를 고르게 한다
 - pending(데이터 대기)은 실패로 세지 않는다
+- 제안이 없는 실패(예: 대상)가 있어도 제안이 있는 실패는 고쳐서 다시 확인한다
 
 확인 도구는 B가 만든다(회의에서 담당 확정). 연결 전에는 agent/fake_checks.py의 가짜 도구로 돌린다.
 """
@@ -113,13 +114,13 @@ def verify_idea(
         if not fails or number == max_fixes + 1:
             rounds.append(CheckRound(round=number, results=results))
             break
-        # 고칠 방법이 없는 실패가 있으면 더 돌리지 않는다
-        if any(r.suggestion is None for r in fails):
+        # 고칠 제안이 있는 실패는 먼저 고친다 (대상처럼 제안이 없는 실패가 섞여 있어도).
+        # 고칠 수 있는 실패가 하나도 없을 때만 더 돌리지 않는다
+        fixable = [r.suggestion for r in fails if r.suggestion is not None]
+        if not fixable:
             rounds.append(CheckRound(round=number, results=results))
             break
-        updated, changes = apply_suggestions(
-            current, [r.suggestion for r in fails], festivals_by_month
-        )
+        updated, changes = apply_suggestions(current, fixable, festivals_by_month)
         rounds.append(CheckRound(round=number, results=results, changes=changes))
         if not changes:  # 같은 제안만 반복되면 고쳐도 소용없다
             break

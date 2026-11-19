@@ -154,7 +154,7 @@ def test_markdown_and_save(tmp_path):
     for heading in ["사업 개요", "추진 배경", "목표·KPI", "세부 프로그램", "추진 일정", "예산 계획",
                     "위험 관리", "데이터 검증 결과 요약", "변경 이력", "데이터 출처"]:  # fmt: skip
         assert heading in md
-    assert "가짜·합성 데이터" in md
+    assert "가상 데이터로 낸 확인 결과" in md and "가짜" not in md
     assert "| 예산 | 1,000만 원 |" in md
     md_path, json_path = save_plan(plan, tmp_path)
     assert md_path.read_text(encoding="utf-8") == md
