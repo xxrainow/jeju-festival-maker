@@ -887,16 +887,17 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContainer"] {{
   background: var(--fl-warn-soft); border-radius: 16px; padding: 16px 24px; color: var(--fl-ink);
 }}
-.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] {{
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid^="stAlertContent"] {{
   display: flex; align-items: center; gap: 12px;
 }}
-.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"]::before {{
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid^="stAlertContent"]::before {{
   content: ""; flex: none; width: 20px; height: 20px; background: url("{_icon_uri("warning")}") center / contain no-repeat;
 }}
-.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] p {{
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid^="stAlertContent"] p {{
   font-size: 13.5px; line-height: 1.5; color: var(--fl-ink); margin: 0;
 }}
-.st-key-promo .st-key-promo-notice-synthetic {{ max-width: 960px; }}
+.st-key-promo .st-key-promo-notice-synthetic {{ max-width: 688px; }}
 .st-key-promo .st-key-card-poster {{ padding: 0; overflow: hidden; border: none; border-radius: 4px;
   box-shadow: 0 24px 48px rgba(18, 18, 18, .10); }}
 .st-key-promo .st-key-card-poster img {{ display: block; width: 100%; height: auto; }}
@@ -917,12 +918,13 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .fl-sns-body {{ white-space: pre-wrap; background: var(--fl-surface-2); border-radius: 16px;
   padding: 20px 24px; font-size: 13.5px; line-height: 1.75; color: var(--fl-ink); overflow-wrap: anywhere; }}
 .st-key-card-sns iframe {{ display: block; }}
-.fl-promo-checks {{ list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column;
-  gap: 10px; font-size: 12.6px; line-height: 1.6; }}
+.st-key-card-checks ul.fl-promo-checks {{ list-style: none; margin: 4px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 5px; font-size: 12.6px; line-height: 1.6; }}
 .fl-promo-checks li {{ display: flex; gap: 4px; }}
 .fl-promo-checks .fl-check-ok {{ color: #E87629; font-weight: 700; }}
 .fl-promo-note {{ margin: 8px 0 0; font-size: 10.8px; color: var(--fl-ink-3); line-height: 1.6; }}
-.st-key-promo .st-key-promo-zip button {{ min-height: 64px; border-radius: 8px; font-size: 14.4px; }}
+.st-key-promo .st-key-promo-zip button {{ min-height: 52px; padding: 0 24px; border-radius: 8px;
+  font-size: 14.4px; font-weight: 600; }}
 .fl-promo-files {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }}
 .fl-promo-files small {{ font-size: 10.8px; color: var(--fl-ink-3); margin-right: 4px; }}
 .fl-promo-files span {{ font-size: 11.7px; padding: 8px 16px; background: var(--fl-surface);

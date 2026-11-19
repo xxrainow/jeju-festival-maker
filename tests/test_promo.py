@@ -504,3 +504,15 @@ def test_promo_checks_use_orange_check_mark():
     assert "<table" not in html and html.count("<li>") == 2
     assert "<b>정보 일치 검사</b>" in html and "기획서와 같은지 · 포스터와 SNS 글 각각" in html
     assert ".fl-promo-checks .fl-check-ok { color: #E87629;" in style.CSS  # 브랜드 주황
+
+
+def test_promo_layout_css_matches_figma_06_1():
+    """Figma 06-1 배치: 노란 띠 ⚠ 아이콘(Streamlit 1.66의 stAlertContentWarning), 검사 목록 들여쓰기 없음,
+    가상 데이터 띠 폭, ZIP 버튼 높이."""
+    from app import style
+
+    css = style.CSS
+    assert '[data-testid^="stAlertContent"]::before' in css  # stAlertContentWarning에도 아이콘
+    assert ".st-key-card-checks ul.fl-promo-checks { list-style: none; margin: 4px 0 0; padding: 0;" in css
+    assert ".st-key-promo .st-key-promo-notice-synthetic { max-width: 688px; }" in css
+    assert ".st-key-promo .st-key-promo-zip button { min-height: 52px;" in css

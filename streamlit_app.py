@@ -829,7 +829,7 @@ def promo_content(plan, result) -> None:
     if result.is_synthetic:
         with st.container(key="promo-notice-synthetic"):
             ui.warning("가상 데이터가 섞인 기획서로 만든 홍보물이에요.")
-    left, right = st.columns([2, 3], gap="large")
+    left, right = st.columns([2, 3], gap="medium")  # Figma 06-1: 두 칸 사이 약 36px
     with left:
         with st.container(key="card-poster"):
             st.image(result.poster_path)
@@ -873,7 +873,7 @@ def promo_content(plan, result) -> None:
             st.download_button(
                 "기획서와 함께 ZIP으로 저장", data,
                 file_name=f"{promo.promo_stem(result)}_promo.zip", mime="application/zip",
-                key="promo-zip", use_container_width=True,
+                key="promo-zip",  # Figma 06-1: 글자 폭 버튼, 왼쪽 정렬
                 on_click=promo.save_promo_zip, args=(result, data),
             )
         st.html(style.promo_files_html(promo.ZIP_FILES))
