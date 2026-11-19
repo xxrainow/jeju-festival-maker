@@ -98,12 +98,25 @@ DATA_SOURCES = [
 ]
 
 
+def korean_won(krw: int) -> str:
+    """원 단위 금액을 한국어 단위로: 150000000 → "1억 5,000만 원", 10000000 → "1,000만 원".
+
+    기획서(agent.plan.krw_text)와 같은 함수를 써서 화면·기획서·Word·한글 표기를 똑같이 맞춘다
+    (만 원 아래는 버림, 1만 원 미만이면 "5,000원").
+    """
+    from agent.plan import krw_text
+
+    return krw_text(int(krw))
+
+
 def won(krw: int | None) -> str:
-    if krw is None:
-        return "미정"
-    if krw >= 100_000_000:
-        return f"{krw / 100_000_000:,.2f}".rstrip("0").rstrip(".") + "억 원"
-    return f"{krw / 10_000:,.0f}만 원"
+    """화면 금액 표기. 값이 없으면 "미정" (표기는 korean_won과 같음)."""
+    return "미정" if krw is None else korean_won(krw)
+
+
+def budget_hint(krw) -> str:
+    """① 예산 칸 아래 회색 글씨: 10000000 → "= 1,000만 원". 0이나 빈 값이면 빈 문자열."""
+    return f"= {korean_won(krw)}" if krw else ""
 
 
 def ordered_months(months: list[int]) -> list[int]:
@@ -987,13 +1000,46 @@ def venue_choices(run) -> list[dict]:
         if c["name"] in seen:
             continue
         seen.add(c["name"])
-        label = c["name"]
+        label, short = c["name"], None
         if region and c["admin_area"] != region:
             short = c["admin_area"].split()[-1]
             km = c.get("distance_km")
             label += f" · {short}" + (f" 약 {km:.1f}km" if km is not None else "")
-        out.append({"name": c["name"], "admin_area": c["admin_area"], "label": label})
+        out.append({"name": c["name"], "admin_area": c["admin_area"], "label": label,
+                    "neighbor_area": short})  # fmt: skip
     return out
+
+
+PLAN_VENUE_BASIS = "관광 수요·버스 접근성 기준"
+
+
+def plan_venue_text(run) -> str | None:
+    """장소를 정하지 않은 기획서의 장소 칸: "미확인 (후보: A · B · C — 관광 수요·버스 접근성 기준)".
+
+    후보는 "직접 고쳐서 다시 확인"의 장소 선택지와 같은 목록·순서(최대 3곳). 인접 동네 후보는
+    "이중섭거리(정방동)"처럼 동네를 붙인다. 후보가 없으면 None ("미확인"만).
+    """
+    from agent.draft_contracts import UNCONFIRMED
+
+    choices = venue_choices(run)[:3]
+    if not choices:
+        return None
+    names = " · ".join(
+        c["name"] + (f"({c['neighbor_area']})" if c.get("neighbor_area") else "") for c in choices
+    )
+    return f"{UNCONFIRMED} (후보: {names} — {PLAN_VENUE_BASIS})"
+
+
+def with_venue_candidates(plan, run):
+    """기획서 장소가 "미확인"이면 확인 도구가 찾은 후보를 함께 적는다. 정한 장소는 그대로.
+
+    "미확인"으로 시작하는 값은 그대로 미확인으로 다룬다 (홍보물은 "장소는 추후 공지").
+    """
+    from agent.draft_contracts import UNCONFIRMED
+
+    if plan.overview.venue != UNCONFIRMED or not (text := plan_venue_text(run)):
+        return plan
+    return plan.model_copy(update={"overview": plan.overview.model_copy(update={"venue": text})})
 
 
 # ---------- 단계별 화면, 예시 카드 이유 ----------

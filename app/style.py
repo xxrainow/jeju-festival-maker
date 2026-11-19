@@ -85,6 +85,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {{
   font-family: {_FONT};
 }}
 [data-testid="stAppViewContainer"] {{ background: var(--fl-bg); color: var(--fl-ink); }}
+/* 입력 양식의 영어 안내("Press Enter to submit form" 등)는 앱 전체에서 숨긴다 */
+[data-testid="InputInstructions"] {{ display: none !important; }}
 [data-testid="stHeader"] {{ background: transparent; }}
 [data-testid="stAppDeployButton"] {{ display: none; }}
 [data-testid="stMainBlockContainer"] {{ max-width: 1280px; padding-top: 3rem; padding-bottom: 4rem; }}

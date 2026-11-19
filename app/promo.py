@@ -174,7 +174,7 @@ def fixed_texts(plan: FestivalPlan) -> dict[str, str]:
         period_text = f"{known} · 날짜 추후 공지"
     else:
         period_text = period
-    if o.venue and o.venue != UNCONFIRMED:
+    if o.venue and not o.venue.startswith(UNCONFIRMED):  # "미확인 (후보: …)"도 미확인
         place_text = f"{o.region} {o.venue}".strip() if o.region else o.venue
     elif o.region:
         place_text = f"{o.region} · 장소 추후 공지"
@@ -194,7 +194,7 @@ def sns_info(plan: FestivalPlan) -> dict[str, str]:
         when = f"{known} (날짜는 추후 공지)"
     else:
         when = period
-    if o.venue and o.venue != UNCONFIRMED:
+    if o.venue and not o.venue.startswith(UNCONFIRMED):  # 후보는 홍보물에 쓰지 않는다
         where = f"{o.region} {o.venue}".strip() if o.region else o.venue
     elif o.region:
         where = f"{o.region} (장소는 추후 공지)"

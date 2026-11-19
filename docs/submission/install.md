@@ -107,7 +107,7 @@ REQUEST_TIMEOUT_SECONDS=30
 | `LLM_MODEL` | 아니요 | 문장을 쓰는 Gemini 모델 이름. **비워 두면 `gemini-3.5-flash-lite`**. 포스터 글자 검사에도 같은 모델을 씁니다 |
 | `LLM_API_KEY` | AI를 쓸 때 | Google AI Studio에서 받은 키 (3절). 화면·로그에는 표시하지 않습니다 |
 | `IMAGE_MODEL` | 아니요 | 포스터 그림 모델. **비워 두면 `gemini-3.1-flash-lite-image`**. 키는 `LLM_API_KEY`를 같이 씁니다. 결제 설정한 키만 쓸 수 있습니다 |
-| `JEJU_HUB_KEY` | 아니요 | 제주데이터허브 API 키. 개발자가 원자료를 다시 받을 때만 씁니다 (`analytics/fetch_jeju_hub.py`). 일반 사용에는 필요 없습니다 |
+| `JEJU_HUB_KEY` | 아니요 | 제주데이터허브 API 키. 가공본을 원자료부터 다시 만들 때만 씁니다 (`analytics/fetch_jeju_hub.py`). 앱 실행에는 필요 없고, 제출물에 넣지 않습니다. 발급·설정은 3-1절 |
 | `MAX_AGENT_STEPS` | 아니요 | 예약 값입니다. 지금 버전에서는 쓰지 않습니다 (고치고 다시 확인하는 횟수는 코드에서 최대 3번) |
 | `REQUEST_TIMEOUT_SECONDS` | 아니요 | AI 응답을 기다리는 최대 시간(초). 기본 30. 1~120 |
 
@@ -120,13 +120,30 @@ REQUEST_TIMEOUT_SECONDS=30
   - 평가하는 분은 ZIP을 풀고 바로 실행하면 됩니다. 2절의 `.env` 만들기는 건너뛰세요.
 - 키를 다른 사람에게 메일·메신저로 보내지 마세요.
 
-## 3. Gemini API 키 받기 (Google AI Studio)
+## 3. Gemini API 키 발급·설정 (Google AI Studio)
 
+- **언제 필요한가요**: AI 기능을 쓸 때 필요합니다(한 문장 정리, 아이디어 카드, 기획서, SNS 글, 포스터 그림). 키가 없어도 앱은 열리고 확인 도구는 돌아갑니다.
+
+**발급**
 1. https://aistudio.google.com 에 Google 계정으로 로그인합니다.
 2. 왼쪽 메뉴의 **Get API key**(API 키 받기)를 누릅니다.
-3. **Create API key**(API 키 만들기)를 누르고 프로젝트를 고릅니다. 없으면 새로 만듭니다.
-4. 만들어진 키를 복사해 `.env`의 `LLM_API_KEY=` 뒤에 붙여 넣고 저장합니다. 앞뒤에 빈칸이나 따옴표를 넣지 마세요.
-5. 프로그램을 다시 실행하면 설정 패널에 "AI 설정 · 사용 가능"이 나옵니다.
+3. **Create API key**(API 키 만들기)를 누르고 Google Cloud 프로젝트를 고릅니다. 없으면 새로 만듭니다.
+   - **포스터 그림(이미지 모델)까지 쓰려면** 결제 계정이 연결된 프로젝트에서 키를 만들어야 합니다. 결제가 없는 프로젝트의 키는 텍스트 기능만 됩니다.
+4. 만들어진 키를 복사합니다.
+
+**설정**
+1. `.env`를 열고 다음처럼 적은 뒤 저장합니다. 앞뒤에 빈칸이나 따옴표를 넣지 마세요.
+
+   ```
+   LLM_PROVIDER=gemini
+   LLM_API_KEY=복사한-키
+   ```
+
+2. 프로그램을 다시 실행하면 설정 패널에 "AI 설정 · 사용 가능"이 나옵니다.
+
+**주의**
+- 키는 Git(GitHub)·로그·화면에 넣지 않습니다. 프로그램도 화면과 오류 문장에 키를 출력하지 않습니다.
+- 공모전 평가용 키(사용 한도 설정, 평가 후 폐기)만 제출 ZIP의 `.env`에 넣고, 개인 키는 넣지 않습니다 (2절 "키 관리").
 
 ### 비용과 무료 사용량
 
@@ -144,6 +161,54 @@ REQUEST_TIMEOUT_SECONDS=30
 - **포스터 그림을 쓰려면** Google Cloud 프로젝트에 결제 계정을 연결한 키가 필요합니다.
   - 무료 키여도 포스터는 기본 포스터(단색 바탕 + 글자)로 만들어집니다.
   - 화면에 그림 설명이 나오니, 복사해서 AI Studio에서 직접 그림을 만들 수 있습니다.
+
+## 3-1. 제주데이터허브 API 키 발급·설정 (선택)
+
+- **언제 필요한가요: 앱을 실행할 때는 필요 없습니다.**
+  - 앱은 저장소에 들어 있는 가공본(`analytics/reference/`)으로 돌아갑니다.
+  - 이 키는 가공본을 원자료부터 다시 만들 때만 필요합니다.
+- 공모전 규칙에 따라 **실제 제주데이터허브 API 키는 제출물에 넣지 않습니다.** 필요하면 아래 방법으로 직접 발급해 설정하세요.
+
+**이 키로 받는 데이터 (4종, `analytics/fetch_jeju_hub.py`)**
+
+| 이름 (코드) | 데이터 | 조건 | 저장 파일 |
+|---|---|---|---|
+| `bus_stations` | 버스 정류소 기본 정보 | 없음 | `data/raw/jejuhub_bus_stations.csv` |
+| `wifi_ap` | 공공와이파이 AP 정보 | 기준일 `baseDate` | `data/raw/jejuhub_wifi_ap.csv` |
+| `lodging` | 관광 숙박업 정보 | 없음 | `data/raw/jejuhub_lodging.csv` |
+| `tourist_spot_visitors` | 관광지별 내국인 유입자 수 | 2022-01 ~ 2024-12 | `data/raw/jejuhub_tourist_spot_visitors.csv` |
+
+- 호출 한도: **데이터마다 하루 1,000회**입니다. 한 번에 100건씩 받고, 한도에 닿으면 멈춥니다.
+- 와이파이 사용량·버스 이용 인원 같은 나머지 원자료는 이 API가 아니라 파일로 받습니다 ([data-spec.md](data-spec.md)).
+
+**발급**
+1. 제주데이터허브(https://open.jejudatahub.net)에 회원가입하고 로그인합니다. [확인 필요: 회원가입 메뉴 이름]
+2. 위 4종 데이터를 각각 찾아 상세 화면을 엽니다. [확인 필요: 데이터 검색 메뉴 이름]
+3. 상세 화면에서 API 이용을 신청합니다. [확인 필요: 신청 버튼 이름, 승인까지 걸리는 시간]
+4. 발급된 인증키를 확인해 복사합니다. [확인 필요: 인증키를 보는 메뉴 이름(예: 마이페이지)]
+
+**설정과 실행**
+1. `.env`에 다음 한 줄을 적고 저장합니다.
+
+   ```
+   JEJU_HUB_KEY=발급받은-키
+   ```
+
+2. 프로그램 폴더에서 실행합니다. 먼저 `--check`로 데이터마다 첫 페이지만 받아 키와 응답을 확인하는 것을 권합니다.
+
+   ```sh
+   uv run python -m analytics.fetch_jeju_hub --check   # 데이터마다 첫 페이지만 확인
+   uv run python -m analytics.fetch_jeju_hub           # 4종 전체 수집
+   uv run python -m analytics.fetch_jeju_hub --only bus_stations   # 한 종류만
+   ```
+
+3. 끝나면 `data/raw/jejuhub_*.csv` 파일이 만들어지고, 데이터마다 사용한 호출 횟수가 출력됩니다.
+4. 이 파일로 가공본을 다시 만드는 방법은 [data-spec.md](data-spec.md) 3-3절에 있습니다.
+
+**주의**
+- 키는 제출물·Git(GitHub)·로그에 넣지 않습니다. `.env`와 `data/raw/`는 Git에서 빠져 있습니다.
+- 요청 주소에 키가 들어가므로 프로그램은 요청 기록(httpx 로그)을 끄고, 오류 메시지에 키가 있으면 `***`로 가립니다.
+- 키가 비어 있으면 ".env에 JEJU_HUB_KEY가 비어 있습니다"라고 알려 주고 멈춥니다.
 
 ## 4. 실행
 
