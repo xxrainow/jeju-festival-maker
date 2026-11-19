@@ -217,7 +217,8 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     at.number_input[0].set_value(10_000_000)
     click(at, "아이디어 보기")
     assert at.session_state["request"]["region"] == "서귀포시 대정읍"
-    assert any("데모 응답" in i for i in labels(at, "info"))  # notices
+    notice = next(e for e in at.expander if e.label == "예시 카드예요")
+    assert any("데모 응답" in m.value for m in notice.markdown)  # notices는 접는 안내에 보존
     assert len([h for h in at.subheader]) == 3
 
     pick(at)
@@ -445,7 +446,7 @@ def test_synthetic_labels_are_unified():
 
 
 def test_app_warns_summer_citrus_and_demo_cards(no_llm):
-    """여름 + 감귤 입력: 계절-제철 안내와 데모 카드 경고 두 개, 카드 문장에 분석 용어 없음."""
+    """계절 충돌은 경고로, 예시 카드 설명은 접힌 안내에 보존한다."""
     at = AppTest.from_file(APP, default_timeout=120).run()
     at.selectbox[0].select("서귀포시 대정읍")
     at.selectbox[1].select("여름")
@@ -455,8 +456,8 @@ def test_app_warns_summer_citrus_and_demo_cards(no_llm):
     assert any(
         "감귤은 11·12·1월이 제철이라 여름과 맞지 않아요" in w for w in warnings
     )  # 입력한 조건의 충돌 안내도 카드 화면에 유지
-    warnings = labels(at, "warning")  # ② 아이디어
-    demo = [w for w in warnings if screen.DEMO_WARNING in w]
+    assert any(e.label == "예시 카드예요" for e in at.expander)
+    demo = [m.value for m in at.markdown if screen.DEMO_WARNING in m.value]
     assert demo and f"이유: {screen.NO_KEY_REASON}" in demo[0]  # 예시 카드로 바뀐 이유
     assert (
         demo
@@ -622,7 +623,7 @@ def test_passing_manual_plan_makes_plan_from_it(no_llm, monkeypatch, tmp_path):
     plan = FestivalPlan.model_validate(at.session_state["plan"])
     assert plan.idea.venue[0].name == "산이물공원"
     assert plan.idea.timing.recommended_months == [11]
-    assert any("내가 고친 안으로 기획서를 만들었어요" in s for s in labels(at, "success"))
+    assert any("내가 고친 안으로 기획서를 만들었어요" in str(el.value) for el in at.get("html"))
 
 
 class FlakyPlanLLM(FakePlanLLM):
@@ -700,14 +701,14 @@ def test_old_plan_is_cleared_when_choice_or_recheck_changes(no_llm, monkeypatch,
     click(at, "이대로 진행")
     assert at.session_state["step"] == 4 and "plan" in at.session_state
     # ③으로 돌아가 진행할 안을 바꾸면 예전 기획서가 사라진다
-    click(at, "← 이전 단계로")
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     choose(at, "내가 고친 안")
     assert "plan" not in at.session_state and "approved" not in at.session_state
     assert not any("기획서를 만들었어요" in s for s in labels(at, "success"))
     # 고친 안으로 만든 뒤 돌아와서 다시 확인해도 사라진다
     click(at, "이대로 진행")
     assert "plan" in at.session_state
-    click(at, "← 이전 단계로")
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     at = recheck(at, [11, 12])
     assert "plan" not in at.session_state and "approved" not in at.session_state
 
@@ -793,8 +794,8 @@ def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
     click(at, "＋ 포스터 · SNS 문구 저장")
     assert any(result.poster_path in s for s in labels(at, "success"))
     # ③으로 돌아가서 같은 안이면 그대로, 다시 확인하면 홍보물도 지워진다
-    click(at, "← 이전 단계로")
-    click(at, "← 이전 단계로")
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     assert at.session_state["step"] == 3
     choose(at, "에이전트 추천안")
     assert "promo" in at.session_state
@@ -863,27 +864,31 @@ def test_steps_move_forward_and_back(no_llm):
     assert at.session_state["step"] == 2 and "**② 아이디어**" in at.markdown[1].value
     assert any(c.value == "서귀포시 대정읍 · 계절 미정 · 소재 미정 · 예산 미정" for c in at.caption)
     first = at.session_state["proposal"]
-    # 이전 단계로: 결과는 그대로, 같은 조건이면 받아 둔 카드를 다시 보여준다
-    click(at, "← 이전 단계로")
+    # 완료한 조건 입력 탭으로 이동해도 기존 카드와 조건은 유지된다
+    assert at.button(key="back_2").label == "조건 수정"
+    assert not at.button(key="nav_1").disabled
+    assert all(at.button(key=f"nav_{i}").disabled for i in range(2, 6))
+    at.button(key="nav_1").click().run()
     assert at.session_state["step"] == 1 and at.session_state["proposal"] == first
     click(at, "아이디어 보기")
     assert at.session_state["step"] == 2
     # 아이디어 고르기 → ③, 돌아가서 같은 아이디어를 고르면 확인 결과 유지
     pick(at)
     assert at.session_state["step"] == 3 and "run" in at.session_state
+    assert not any(b.label.startswith("←") for b in at.button)
     title = demo_proposal().ideas[0].title  # 예시 카드 첫 장
     assert any(c.value.endswith(f"/ 고른 아이디어: {title}") for c in at.caption)
     run = at.session_state["run"]
-    click(at, "← 이전 단계로")
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     pick(at)
     assert at.session_state["run"] == run
     # 다른 아이디어를 고르면 확인 결과부터 다시
-    click(at, "← 이전 단계로")
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     pick(at, 1)
     assert at.session_state["run"] != run
     # ①로 돌아가 조건을 바꾸면 뒤 단계 결과가 지워진다
-    click(at, "← 이전 단계로")
-    click(at, "← 이전 단계로")
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
+    at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     assert at.session_state["step"] == 1
     at.selectbox[0].select("제주시 애월읍")
     click(at, "아이디어 보기")
@@ -927,7 +932,7 @@ def test_demo_cards_show_reason_on_ai_failure(monkeypatch, message, reason):
     monkeypatch.setattr(agent.proposals, "propose_idea_cards", failing)
     at = click(confirm(), "아이디어 보기")
     assert at.session_state["step"] == 2
-    demo = [w for w in labels(at, "warning") if screen.DEMO_WARNING in w]
+    demo = [m.value for m in at.markdown if screen.DEMO_WARNING in m.value]
     assert demo and reason in demo[0]
     assert "HTTP" not in demo[0] and "test-key" not in demo[0]  # 오류 원문·키는 보여주지 않음
 
@@ -1029,10 +1034,10 @@ def test_demo_toggle_is_in_options_and_explains_how_to_turn_off(no_llm):
     assert toggle.value is False  # 기본은 꺼짐
     toggle.check().run()  # 시연 조건을 채운 뒤 사용자가 확인하고 제출
     click(at, "아이디어 보기")
-    warnings = labels(at, "warning")
-    chosen = [w for w in warnings if screen.CHOSEN_DEMO_WARNING in w]
+    notice = next(e for e in at.expander if e.label == "예시 카드예요")
+    chosen = [m.value for m in notice.markdown if screen.CHOSEN_DEMO_WARNING in m.value]
     assert chosen and "① 조건 입력에서 체크를 끄면" in chosen[0]
-    assert not any(screen.DEMO_WARNING in w for w in warnings)  # "AI 연결 전이라 …"는 안 나옴
+    assert not any(screen.DEMO_WARNING in m.value for m in notice.markdown)  # AI 오류 안내는 안 나옴
 
 
 def test_demo_toggle_prefills_conditions_before_submission(no_llm, monkeypatch):
@@ -1165,3 +1170,44 @@ def test_check_selection_and_plan_strip_html():
     assert "진행 불가" in strip and screen.NO_VENUE in strip
     assert screen.months_text(CARD.timing.recommended_months) in strip
     assert "진행 가능" in style.plan_strip_html("에이전트 추천안", CARD, ready=True)
+
+
+
+def test_plan_markdown_editor_save_and_unsaved_guard(no_llm, monkeypatch, tmp_path):
+    import agent.plan
+    import agent.proposals
+    from agent.draft_contracts import FestivalPlan
+
+    monkeypatch.setattr(agent.proposals, "default_llm", lambda: FakePlanLLM())
+    save = agent.plan.save_plan
+    saves = []
+
+    def save_explicitly(plan):
+        saves.append(plan.version)
+        return save(plan, tmp_path)
+
+    monkeypatch.setattr(agent.plan, "save_plan", save_explicitly)
+    at = to_results()
+    next(b for b in at.button if b.label == "이대로 진행").click().run()
+    assert not at.exception
+    assert saves == []  # 생성 직후에는 저장 함수를 호출하지 않는다.
+    assert any(el.proto.label == ".json 다운로드" for el in at.get("download_button"))
+    assert not any("저장: outputs/" in value for value in labels(at, "caption"))
+    editor = next(t for t in at.text_area if t.label == "기획서 Markdown")
+    original = FestivalPlan.model_validate(at.session_state["plan"])
+    edited = editor.value.replace(f"| 축제명 | {original.overview.name} |", "| 축제명 | 수정한 감귤 마켓 |")
+    editor.set_value(edited).run()
+    assert next(b for b in at.button if b.label == "기획서 최종 승인").disabled
+    next(b for b in at.button if b.label == "수정 내용 적용").click().run()
+    assert not at.exception
+    revised = FestivalPlan.model_validate(at.session_state["plan"])
+    assert revised.version == 2 and revised.overview.name == "수정한 감귤 마켓"
+    assert saves == []  # 적용은 파일 저장을 하지 않는다.
+    html = "".join(str(el.value) for el in at.get("html"))
+    assert "fl-plan-document" in html and "fl-plan-kpi" in html
+    assert "수정한 감귤 마켓" in html and "fl-plan-table overview" in html
+    assert not next(b for b in at.button if b.label == "기획서 최종 승인").disabled
+
+    assert saves == []
+    next(b for b in at.button if b.label == "기획서 최종 승인").click().run()
+    assert not at.exception and saves == []  # 승인은 디스크에 자동 저장하지 않는다.

@@ -205,6 +205,9 @@ def sns_info(plan: FestivalPlan) -> dict[str, str]:
 
 def season_text(plan: FestivalPlan) -> str:
     """추천 월의 계절 (첫 달 기준). 월이 없으면 빈 문자열."""
+    if plan.markdown_override is not None:
+        month = re.search(r"(?<!\d)(1[0-2]|[1-9])월", plan.overview.period)
+        return SEASON_KO.get(int(month[1]), "") if month else ""
     months = plan.idea.timing.recommended_months
     return SEASON_KO.get(months[0], "") if months else ""
 
@@ -269,6 +272,8 @@ def _concept_line(plan: FestivalPlan) -> str:
     기획서에 없는 프로그램 말이 없는 것을 쓴다. 없으면 "방어와 함께하는 겨울 축제"처럼 짧게 만든다.
     """
     sentences = [_clean_sentence(plan.idea.concept), _clean_sentence(_section(plan, "concept"))]
+    if plan.markdown_override is not None:
+        sentences = [sentences[1]]  # 수정한 기획서의 컨셉을 사용한다
     candidates = [*sentences, *(s.split(",")[0].strip() for s in sentences if "," in s)]
     for text in candidates:
         if 8 <= len(text) <= LINE_MAX and not unplanned_programs(text, plan):

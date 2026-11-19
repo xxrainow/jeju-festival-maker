@@ -600,7 +600,10 @@ def generate_plan(
 
 
 def plan_to_markdown(plan: FestivalPlan) -> str:
-    """9-4 항목 순서대로 마크다운을 만든다."""
+    """9-4 항목 순서대로 마크다운을 만든다. 사용자 수정본은 원문을 보존한다."""
+    if plan.markdown_override is not None:
+        heading = f"# {plan.title} 기획안 (v{plan.version}, {'승인' if plan.status == 'approved' else '초안'})"
+        return re.sub(r"(?m)^# [^\n]+", lambda _: heading, plan.markdown_override, count=1)
     o, b, card = plan.overview, plan.budget, plan.idea
     text = {s.key: s.body for s in plan.sections}
     notes = plan_warning_notes(plan.checks)

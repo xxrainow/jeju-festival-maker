@@ -360,6 +360,7 @@ class FestivalPlan(BaseModel):
     LLM: 추진 배경, 기본 컨셉, 세부 프로그램, 홍보, 운영, 위험 관리, 기대효과
     """
 
+    markdown_override: str | None = None  # 사용자가 직접 수정한 기획서 원문
     plan_id: str
     version: int = Field(default=1, ge=1)
     status: PlanStatus = "draft"
