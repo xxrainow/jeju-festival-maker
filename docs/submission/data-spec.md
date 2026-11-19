@@ -136,18 +136,65 @@
 
 | 폴더 | 파일 | 읽는 순서 |
 |---|---|---|
-| `analytics/reference/` (확인 도구용, 약 5.6MB) | 와이파이 사용량 집계(`wifi_usage_by_place_month_type.parquet`), 장소 → 행정동(`area_link_wifi.csv`), AP 정보, 성·연령 표, 장소 후보, 정류소 일별 이용, 이웃 동네, 외지인 지수, 제주 축제 일정, 날씨 위험(주별·월별), 동네별 날씨 지점, 시간대 승차 비중, 관측지점 | **가공본을 먼저** 읽고, 없으면 `data/processed/` |
+| `analytics/reference/` (확인 도구용, 약 4.9MB) | 와이파이 사용량 집계(`wifi_usage_by_place_month_type.parquet`), 장소 → 행정동·좌표(`area_link_wifi.csv`), 성·연령 표, 장소 후보, 정류소 일별 이용, 이웃 동네, 외지인 지수, 제주 축제 일정, 날씨 위험(주별·월별), 동네별 날씨 지점, 시간대 승차 비중, 관측지점 | **가공본을 먼저** 읽고, 없으면 `data/processed/` |
 | `research/reference/` (아이디어 카드용) | 문체부 축제 3개년 패널, 제주 재료 사전·키워드·검수표 | `data/processed/`에 직접 만든 것이 있으면 그것, 없으면 가공본 |
 
-원자료가 바뀌었을 때 다시 만드는 방법 (원자료를 가진 개발자만):
+원자료가 바뀌었을 때 다시 만드는 방법은 3-4절에 있습니다.
+
+### 3-4. 가공본 다시 만들기
+
+**앱을 실행할 때는 이 절이 필요 없습니다.** 가공본이 저장소와 제출 ZIP에 들어 있습니다. 공개 데이터 원본부터 가공본을 다시 만들 때만 씁니다.
+
+**데이터를 다루는 원칙**
+- **큰 공개 데이터 원본(와이파이 사용량·사용자 현황, 버스 이용 원자료 등)은 저장소(GitHub)에 올리지 않습니다.** 용량이 크고 각 기관에서 받을 수 있기 때문입니다. 제출 ZIP에는 넣을 수 있습니다.
+- 허브 API 원본(정류소·와이파이 AP·숙박·관광지 4종, `data/raw/jejuhub_*.csv`)도 저장소에 올리지 않습니다. **`data/raw/`에서만 쓰고, 가공본을 만들 때만 필요합니다.** 앱은 이 원본으로 만든 가공본(예: 와이파이 장소 → 행정동·좌표 `area_link_wifi.csv`)만 읽습니다.
+- **센터 비공개 데이터(4-11, 3-04, 3-07·3-08·3-10 등)는 센터 PC 안에서만 씁니다.** 이 데이터로 만든 집계 결과도 센터 밖으로 가져가려면 반출 승인을 받아야 합니다. 이 절의 명령은 공개 데이터만 씁니다.
+
+**1) 받을 데이터와 둘 곳**
+
+파일 이름은 표와 같아야 합니다. 프로그램이 이 이름으로 찾습니다. 날짜가 다른 파일을 받았으면 표의 이름으로 바꿔 두세요(`*`가 있는 이름은 그 부분이 달라도 됩니다).
+
+| 데이터명 | 제공기관 | 받는 곳 | `data/raw/`에 둘 파일 이름 | 가공 명령 (아래 2단계 번호) | 만들어지는 가공본 |
+|---|---|---|---|---|---|
+| 버스 정류소 기본 정보 (API) | 제주데이터허브 | https://open.jejudatahub.net (API, [install.md](install.md) 3-1절) | `jejuhub_bus_stations.csv` | ①로 받음 → ⑥⑦ | `analytics/reference/bus_station_daily.csv`(정류소 좌표), `area_link_wifi.csv` |
+| 공공와이파이 AP 정보 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_wifi_ap.csv` | ①로 받음 → ⑦ | `analytics/reference/area_link_wifi.csv` (원본은 `data/raw/`에서만 사용) |
+| 관광 숙박업 정보 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_lodging.csv` | ①로 받음 → ④ | 없음 (분석용 후보지 비교표, `data/processed/`) |
+| 관광지별 내국인 유입자 수 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_tourist_spot_visitors.csv` | ①로 받음 → ④ | 없음 (분석용 후보지 비교표, `data/processed/`) |
+| 와이파이 장소별 방문자별 사용량 | 제주데이터허브 | https://open.jejudatahub.net (파일 내려받기) | `와이파이장소별방문자별사용량.csv` | ② → ⑥ → ⑦, ⑨ | `analytics/reference/wifi_usage_by_place_month_type.parquet`, `venue_places.csv`, `outsider_index.csv`, `research/reference/jeju_materials.csv` |
+| 와이파이 장소별 사용자 현황 | 제주데이터허브 | 위와 같음 | `와이파이장소별사용자현황.csv` | ⑥ → ⑦ | `analytics/reference/wifi_users_demographics.csv`, `area_link_wifi.csv` |
+| 이용자유형별 버스정류소 이용인원 | 제주데이터허브 | 위와 같음 | `이용자유형별버스정류소이용인원현황.csv` | ⑥ → ⑦ | `analytics/reference/bus_station_daily.csv` |
+| 일별 시간대별 버스 승차 인원 | 제주데이터허브 | 위와 같음 | `일별시간대별버스승차인원수현황*.csv` | ⑥ → ⑦ | `analytics/reference/bus_hourly_share.csv` |
+| ASOS 일자료 (제주·고산·성산·서귀포, 2016-10~2025) | 기상청 | 기상자료개방포털 https://data.kma.go.kr 에서 '종관기상관측(ASOS)' 검색 | `OBS_ASOS_DD_*.csv` | ③ → ⑥ → ⑦ | `analytics/reference/weather_weekly_risk.csv`, `weather_monthly_risk.csv`, `weather_station_by_dong.csv` |
+| 관측지점정보 | 기상청 | https://data.kma.go.kr 에서 '종관기상관측(ASOS)' 검색 | `META_관측지점정보_*.csv` | ③ | `analytics/reference/asos_stations_jeju.csv` |
+| 2026년 지역축제 개최 계획 현황 (공개용) | 문화체육관광부 | https://www.mcst.go.kr 에서 '지역축제 개최계획' 검색 | `2026년 지역축제 개최 계획 현황(공개용).xlsx` | ⑤ → ⑥ → ⑦ | `analytics/reference/jeju_festival_dates.csv` |
+| 지역축제 개최계획 2024·2025·2026 | 문화체육관광부 | https://www.mcst.go.kr 에서 '지역축제 개최계획' 검색 | `mcst/mcst_2024.xlsx`, `mcst/mcst_2025.xlsx`, `mcst/mcst_2026.xlsx` (`data/raw/mcst/` 폴더) | ⑧ | `research/reference/festival_panel_2024_2026.parquet` |
+| 전국문화축제표준데이터 | 공공데이터포털 | https://www.data.go.kr ("전국문화축제표준데이터" 검색) | `전국문화축제표준데이터-20261103.xls` | ⑥ → ⑦, ⑨ | `analytics/reference/jeju_festival_dates.csv`, `research/reference/jeju_materials.csv`, `jeju_material_review.csv` |
+| 행정동 경계 (ver20261001) | vuski/admdongkor (CC BY 4.0) | https://github.com/vuski/admdongkor | `boundary/HangJeongDong_ver20261001.geojson` (`data/raw/boundary/` 폴더) | ③ ④ ⑤ ⑥ ⑦ | `analytics/reference/dong_neighbors.csv` (동네 판정은 거의 모든 표에 쓰임) |
+
+- `mcst_2026.xlsx`와 `2026년 지역축제 개최 계획 현황(공개용).xlsx`는 같은 2026년 자료를 두 명령이 각각 읽습니다 (⑤는 공개용 이름, ⑧은 `mcst_2026.xlsx`).
+- 제주도 방문 내국인 유동인구 추이(`제주도방문내국인유동인구추이.csv`)는 점검만 했고 가공본을 만들지 않습니다.
+- 사람이 직접 확인해 만든 표는 명령으로 다시 만들지 않습니다: `analytics/reference/tourist_spot_areas.csv`(관광지 → 읍면동), `research/reference/jeju_material_keywords.csv`(재료 키워드).
+
+**2) 순서대로 실행**
+
+프로그램 폴더에서 아래 순서대로 실행합니다. 앞 단계의 결과(`data/processed/`)를 뒤 단계가 읽습니다.
 
 ```sh
-uv run python -m analytics.weather
-uv run python -m analytics.real_checks --build
-uv run python -m analytics.reference_data
-uv run --with python-calamine python -m research.trends --publish
-uv run python -m research.materials --publish
+uv run python -m analytics.fetch_jeju_hub                      # ① 허브 API 4종 → data/raw/jejuhub_*.csv (JEJU_HUB_KEY 필요)
+uv run python -m analytics.build_wifi_usage                    # ② 와이파이 사용량 장소·월·방문유형 집계
+uv run python -m analytics.weather                             # ③ 날씨 위험 표, 동네별 날씨 지점, 관측지점 좌표
+uv run python -m analytics.candidate_compare                   # ④ 후보지 비교표, 법정동 → 행정동 변환표
+uv run python -m analytics.budget_benchmark                    # ⑤ 문체부 2026 예산 기준, 제주 축제 → 행정동
+uv run python -m analytics.real_checks --build                 # ⑥ 확인 도구 5개용 표 (외지인 지수, 축제 날짜, 성·연령, 장소, 정류소)
+uv run python -m analytics.reference_data                      # ⑦ 위 결과를 analytics/reference/에 복사 (가공본 갱신)
+uv run --with python-calamine python -m research.trends --publish   # ⑧ 문체부 3개년 축제 패널 → research/reference/
+uv run python -m research.materials --publish                  # ⑨ 제주 재료 사전·검수표 → research/reference/
 ```
+
+- ①은 이미 `data/raw/jejuhub_*.csv`가 있으면 건너뛰어도 됩니다. 키 발급·설정은 [install.md](install.md) 3-1절에 있습니다.
+- ⑥은 와이파이 사용량 집계와 장소 연결을 `analytics/reference/`에서 먼저 읽습니다. **와이파이 원자료가 바뀌었으면 ⑦까지 한 번 실행한 뒤 ⑥·⑦을 한 번 더 실행**하세요.
+- ⑧의 `python-calamine`은 엑셀 읽기용입니다. 가공본을 만들 때만 필요해서 의존성에 넣지 않고 `--with`로 잠시 설치합니다.
+- 다 끝나면 `analytics/reference/`, `research/reference/`의 바뀐 파일을 확인합니다. `data/raw/`와 `data/processed/`는 Git에서 빠져 있습니다.
 
 ## 4. 외부 서비스·오픈소스
 

@@ -5,7 +5,8 @@
 
 - wifi_usage_by_place_month_type.parquet: 와이파이 장소 × 월 × 방문유형 데이터 사용량
   (analytics.build_wifi_usage 결과를 그대로 복사)
-- jejuhub_wifi_ap.csv: 허브 와이파이 AP 정보 (data/raw/ 사본. macAddress는 허브가 해시로 준 값)
+허브 와이파이 AP 정보 원본(jejuhub_wifi_ap.csv)은 올리지 않는다. data/raw/에서만 읽고, 가공본을 만들 때만 쓴다
+(장소 좌표·행정동은 area_link_wifi.csv에 담겨 있어 앱 실행에는 필요 없다).
 - 확인 도구 표 9개(TOOL_TABLES): data/processed/에 만든 것을 복사
   (먼저 uv run python -m analytics.weather, uv run python -m analytics.real_checks --build)
 - area_link_wifi.csv: 와이파이 장소 → 행정동·읍면 연결과 장소 좌표(AP 좌표 평균).
@@ -24,7 +25,6 @@ REFERENCE_DIR = Path(__file__).parent / "reference"
 PROCESSED_DIR = Path("data/processed")
 WIFI_USAGE_NAME = "wifi_usage_by_place_month_type.parquet"
 AREA_LINK_NAME = "area_link_wifi.csv"
-WIFI_AP_RAW = Path("data/raw/jejuhub_wifi_ap.csv")
 TOOL_TABLES = [
     "wifi_users_demographics.csv",  # check_target
     "venue_places.csv",  # check_venue
@@ -108,14 +108,13 @@ def main() -> None:
     names = pd.concat([usage["wifi_place_name"], load_wifi_users()["wifi_place_name"]])
     link = build_area_link(names)
     link.to_csv(REFERENCE_DIR / AREA_LINK_NAME, index=False, encoding="utf-8-sig")
-    shutil.copyfile(WIFI_AP_RAW, REFERENCE_DIR / WIFI_AP_RAW.name)
     missing = [n for n in TOOL_TABLES if not (PROCESSED_DIR / n).exists()]
     if missing:
         raise SystemExit(f"먼저 표를 만들어 주세요 (analytics.real_checks --build): {missing}")
     for name in TOOL_TABLES:
         shutil.copyfile(PROCESSED_DIR / name, REFERENCE_DIR / name)
     total = 0
-    for name in (WIFI_USAGE_NAME, AREA_LINK_NAME, WIFI_AP_RAW.name, *TOOL_TABLES):
+    for name in (WIFI_USAGE_NAME, AREA_LINK_NAME, *TOOL_TABLES):
         size = (REFERENCE_DIR / name).stat().st_size
         total += size
         print(f"{name}: {size / 1024:,.0f} KB")
