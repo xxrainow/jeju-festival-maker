@@ -440,7 +440,9 @@ def idea_details(card) -> None:
 # ---------- ③ 데이터로 확인 ----------
 
 
-def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> None:
+def show_run(
+    run: VerificationRun, with_changes: bool, key: str = "agent", request: UserRequest | None = None
+) -> None:
     """확인 결과 5개, 확인 과정 요약, (에이전트 추천안이면) 바뀐 점."""
     low_notes = screen.low_data_notes(run.rounds[-1].results)  # 지금(마지막 회차) 결과 기준
     if low_notes:
@@ -470,6 +472,8 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
                             ui.caption(line)
                         if rows:
                             st.dataframe(pd.DataFrame(rows), hide_index=True)
+                        if r.check == "check_timing" and request is not None:
+                            year_table(run.final, request)
                         if r.sources:
                             ui.caption("출처: " + " · ".join(r.sources))
                         other_warnings = [w for w in r.warnings if w != summary["warning"]]
@@ -503,6 +507,19 @@ def show_run(run: VerificationRun, with_changes: bool, key: str = "agent") -> No
             ui.caption("에이전트가 바꾼 점은 없어요.")
 
 
+def year_table(card, request: UserRequest) -> None:
+    """시기 상세: 같은 동네·소재로 1~12월을 한 달씩 확인한 표 (코드 계산, AI 호출 없음)."""
+    rows = screen.timing_year_rows(card, request)
+    if not rows:
+        return
+    ui.markdown("**12개월 한눈에 보기**")
+    ui.caption(
+        "같은 동네·소재로 달마다 시기 확인을 돌린 결과예요. "
+        "‘입력 계절’ ●는 입력한 계절 안의 달이에요. 개최 월을 고를 때 참고하세요."
+    )
+    st.dataframe(pd.DataFrame(rows), hide_index=True)
+
+
 def step_check(request: UserRequest, card) -> None:
     with st.container(key="verification"):
         verification_content(request, card)
@@ -529,7 +546,7 @@ def verification_content(request: UserRequest, card) -> None:
 
     if manual is None:
         strip("에이전트 추천안", run)
-        show_run(run, with_changes=True)
+        show_run(run, with_changes=True, request=request)
     else:
         # 방금 직접 고쳐서 다시 확인했으면 그 결과 탭을 먼저 연다
         agent_tab, manual_tab = st.tabs(
@@ -537,16 +554,15 @@ def verification_content(request: UserRequest, card) -> None:
         )
         with agent_tab:
             strip("에이전트 추천안", run)
-            show_run(run, with_changes=True)
+            show_run(run, with_changes=True, request=request)
         with manual_tab:
             strip("내가 고친 안", manual)
-            show_run(manual, with_changes=False, key="manual")
+            show_run(manual, with_changes=False, key="manual", request=request)
 
     # 직접 고쳐서 다시 확인
     st.subheader("직접 고쳐서 다시 확인")
-    with st.container(key="check-manual-intro"):  # 안내 두 줄은 붙여서 한 덩어리로
+    with st.container(key="check-manual-intro"):
         ui.caption("개최 월·장소·규모를 바꿔서 확인만 다시 해요. 자동으로 고치지는 않아요.")
-        ui.caption("개최 월을 여러 개 고르면 각 달을 모두 확인해요. 하나라도 실패하면 그 안으로는 진행할 수 없어요.")
     base = (manual or run).final  # 처음 값은 지금 카드(가장 최근 안)의 값
     places = screen.venue_choices(run)
     place_names = [screen.NO_VENUE, *[p["name"] for p in places]]
@@ -555,10 +571,11 @@ def verification_content(request: UserRequest, card) -> None:
     with st.form("manual_form"):
         m1, m2, m3 = st.columns([350, 430, 308])
         with m1, st.container(key="check-field-month"):
-            months = st.multiselect(
+            current = base.timing.recommended_months
+            month = st.selectbox(
                 "개최 월",
                 list(range(1, 13)),
-                default=base.timing.recommended_months,
+                index=(current[0] - 1) if current else 0,  # 지금 안의 첫 달
                 format_func=lambda m: f"{m}월",
             )
         with m2, st.container(key="check-field-place"):
@@ -576,15 +593,15 @@ def verification_content(request: UserRequest, card) -> None:
             )
         recheck = st.form_submit_button("이 조건으로 다시 확인")
     if recheck:
-        if not months:
-            ui.warning("개최 월을 하나 이상 골라주세요.")
+        if month is None:
+            ui.warning("개최 월을 골라주세요.")
         else:
             from agent.verify import verify_idea
 
             scale_value = next(k for k, v in screen.SCALE_LABELS.items() if v == scale)
             venue = next((p for p in places if p["name"] == place), None)
             try:
-                edited = screen.edited_card(run.final, months, venue, scale_value)
+                edited = screen.edited_card(run.final, [month], venue, scale_value)  # 한 달만
                 with st.spinner(TOOLS_NOTE):
                     manual = verify_idea(edited, request, tools(), max_fixes=0)  # 확인만
             except Exception as e:  # noqa: BLE001

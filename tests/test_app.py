@@ -225,7 +225,7 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     assert not at.exception
     run = VerificationRun.model_validate(at.session_state["run"])
     assert len(run.rounds[-1].results) == 5
-    assert len(at.dataframe) == 1  # 장소 후보 표
+    assert len(at.dataframe) == 2  # 시기 12개월 표, 장소 후보 표
 
     shown = [m.value for m in at.markdown]
     # 입력 계절이 겨울이라 제철(11·12·1월) 중 겨울인 1월을 먼저 고른다 (11월은 가을)
@@ -242,7 +242,7 @@ def test_app_runs_from_sentence_to_approval_without_llm(no_llm):
     texts += labels(at, "warning") + labels(at, "info") + labels(at, "success")
     assert any(r"\~" in t for t in texts)
     assert not [t for t in texts if re.search(r"(?<!\\)~", t)]
-    table = at.dataframe[0].value
+    table = at.dataframe[1].value  # 장소 후보 표
     assert not table.astype(str).apply(lambda col: col.str.contains("\\", regex=False)).any().any()
 
     next(b for b in at.button if b.label == "이대로 진행").click().run()
@@ -501,8 +501,9 @@ def to_results(region="서귀포시 대정읍") -> AppTest:
     return at
 
 
-def recheck(at, months, place=None, scale=None) -> AppTest:
-    at.multiselect[0].set_value(months)
+def recheck(at, month: int, place=None, scale=None) -> AppTest:
+    """직접 고쳐서 다시 확인: 개최 월은 한 달만 고른다."""
+    next(s for s in at.selectbox if s.label == "개최 월").set_value(month)
     if place:
         next(s for s in at.selectbox if s.label.startswith("장소")).select(place)
     if scale:
@@ -515,8 +516,9 @@ def test_manual_months_are_checked_as_is_without_auto_fix(no_llm):
     at = to_results()
     agent = VerificationRun.model_validate(at.session_state["run"])
     assert agent.final.timing.recommended_months == [11]  # 에이전트는 12월 → 11월로 고침
-    assert at.multiselect[0].value == [11]  # 처음 값은 지금 카드 값
-    at = recheck(at, [12])
+    assert next(s for s in at.selectbox if s.label == "개최 월").value == 11  # 지금 안의 첫 달
+    assert not at.multiselect  # 여러 달 고르기 없음
+    at = recheck(at, 12)
     manual = VerificationRun.model_validate(at.session_state["manual_run"])
     assert len(manual.rounds) == 1 and not manual.rounds[0].changes  # 자동 수정 없음
     assert manual.final.timing.recommended_months == [12]
@@ -525,8 +527,79 @@ def test_manual_months_are_checked_as_is_without_auto_fix(no_llm):
     assert not at.exception
 
 
+def test_one_month_recheck_checks_only_that_month(no_llm):
+    """직접 고쳐서 다시 확인은 한 달만 고르고, 그 달만 판정한다 (여러 달 섞여 ❌가 나던 문제)."""
+    at = recheck(to_results(), 4)
+    manual = VerificationRun.model_validate(at.session_state["manual_run"])
+    assert manual.final.timing.recommended_months == [4]
+    timing = manual.rounds[0].results[0]
+    assert timing.check == "check_timing" and timing.evidence["months"] == [4]
+    assert [m["month"] for m in timing.evidence["month_checks"]] == [4]
+    assert not any("여러 개 고르면" in c.value for c in at.caption)
+    assert not at.exception
+
+
+def test_year_table_has_12_rows(no_llm):
+    """시기 상세의 12개월 한눈에 보기: 같은 동네·소재로 1~12월 (AI 호출 없이 코드 계산)."""
+    from agent.draft_contracts import UserRequest
+
+    card = demo_proposal().ideas[0]
+    request = UserRequest(region="서귀포시 남원읍", interest="감귤", season="겨울", target="가족")
+    rows = screen.timing_year_rows(card, request)
+    assert [r["월"] for r in rows] == [f"{m}월" for m in range(1, 13)]
+    assert list(rows[0]) == [
+        "월",
+        "입력 계절",
+        "외지인 지수",
+        "날씨 나쁜 주",
+        "같은 재료 축제",
+        "판정",
+    ]
+    assert [r["월"] for r in rows if r["입력 계절"] == "●"] == ["1월", "2월", "12월"]
+    assert {r["판정"][0] for r in rows} <= {"✅", "⚠", "❌"}
+    # 4월은 외지인 지수가 0.8보다 낮아 실패
+    april = rows[3]
+    assert april["판정"].startswith("❌") and float(april["외지인 지수"]) < 0.8
+    # 지역이 없으면 표를 만들지 않는다
+    assert screen.timing_year_rows(card, request.model_copy(update={"region": None})) == []
+    # 화면: 시기 상세에 12행 표
+    at = to_results()
+    year = [d.value for d in at.dataframe if "판정" in d.value.columns]
+    assert year and len(year[0]) == 12
+    assert any(m.value == "**12개월 한눈에 보기**" for m in at.markdown)
+
+
+def test_timing_card_summary_for_many_months_is_short():
+    """여러 달이면 지수를 모두 나열하지 않고 "N개월 중 M개월 통과"와 가장 낮은 달만."""
+    months = {11: 0.86, 12: 0.798, 3: 0.93, 4: 0.68, 5: 0.88, 7: 1.27, 8: 0.97}
+    statuses = {11: "conditional", 12: "fail", 3: "conditional", 4: "fail", 5: "fail",
+                7: "pass", 8: "conditional"}  # fmt: skip
+    r = CheckResult(check="check_timing", status="fail", reason="r", evidence={
+        "outsider_visitors_index": months,
+        "month_checks": [{"month": m, "status": st} for m, st in statuses.items()],
+    })  # fmt: skip
+    summary = screen.check_card_summary(r)
+    assert summary["value"] == "0.68"
+    assert summary["label"] == "7개월 중 1개월 통과 · 가장 낮은 4월"
+    one = CheckResult(check="check_timing", status="fail", reason="r", evidence={
+        "outsider_visitors_index": {12: 0.798}, "month_checks": [{"month": 12, "status": "fail"}],
+    })  # fmt: skip
+    assert screen.check_card_summary(one)["value"] == "0.798"  # 0.80으로 반올림하지 않음
+    assert screen.check_card_summary(one)["label"] == "12월 관광 지표 · 연평균 1"
+
+
+def test_streamlit_config_is_headless_and_local():
+    """첫 실행 때 영어 이메일 질문이 안 뜨게 headless, 서버는 이 컴퓨터에서만."""
+    import tomllib
+
+    config = tomllib.loads(Path(".streamlit/config.toml").read_text(encoding="utf-8"))
+    assert config["server"]["headless"] is True
+    assert config["server"]["address"] == "127.0.0.1"
+    assert config["browser"]["gatherUsageStats"] is False
+
+
 def test_failing_manual_plan_blocks_progress(no_llm):
-    at = recheck(to_results(), [12])
+    at = recheck(to_results(), 12)
     choose(at, "내가 고친 안")
     button = next(b for b in at.button if b.label == "이대로 진행")
     assert button.disabled
@@ -538,7 +611,8 @@ def test_failing_manual_plan_blocks_progress(no_llm):
 def test_check_cards_use_combined_details_and_keep_evidence(no_llm):
     at = to_results()
     details = [
-        e for e in at.expander
+        e
+        for e in at.expander
         if e.label == "상세 결과와 근거 보기" or e.label.startswith("장소 후보 ")
     ]
     assert len(details) == 5
@@ -556,9 +630,15 @@ def test_check_card_primary_metric_preserves_pending_and_synthetic():
     pending = CheckResult(check="check_target", status="pending", reason="대상 미입력")
     assert screen.check_card_summary(pending)["value"] == screen.WAITING
     risk = CheckResult(
-        check="check_risk", status="conditional", reason="소음 주의",
-        evidence={"residential": {"areas": [{"admin_area": "애월읍", "ratio": 1.63}],
-                                  "is_synthetic": True}},
+        check="check_risk",
+        status="conditional",
+        reason="소음 주의",
+        evidence={
+            "residential": {
+                "areas": [{"admin_area": "애월읍", "ratio": 1.63}],
+                "is_synthetic": True,
+            }
+        },
     )
     summary = screen.check_card_summary(risk)
     assert summary["value"] == "1.63배" and summary["synthetic"]
@@ -611,7 +691,7 @@ def test_passing_manual_plan_makes_plan_from_it(no_llm, monkeypatch, tmp_path):
     monkeypatch.setattr(
         agent.plan, "save_plan", lambda plan: (tmp_path / "p.md", tmp_path / "p.json")
     )
-    at = recheck(to_results(), [11], place="산이물공원", scale="작게")
+    at = recheck(to_results(), 11, place="산이물공원", scale="작게")
     manual = VerificationRun.model_validate(at.session_state["manual_run"])
     assert manual.outcome == "ready_for_approval"
     assert manual.final.venue[0].name == "산이물공원" and manual.final.budget.scale == "소규모 버전"
@@ -694,7 +774,7 @@ def test_old_plan_is_cleared_when_choice_or_recheck_changes(no_llm, monkeypatch,
     monkeypatch.setattr(
         agent.plan, "save_plan", lambda plan: (tmp_path / "p.md", tmp_path / "p.json")
     )
-    at = recheck(to_results(), [11])
+    at = recheck(to_results(), 11)
     # 직접 고쳐서 다시 확인하면 그 안(내가 고친 안)이 바로 선택된다
     assert next(r for r in at.radio if r.label == "진행할 안").value == "내가 고친 안"
     choose(at, "에이전트 추천안")
@@ -709,7 +789,7 @@ def test_old_plan_is_cleared_when_choice_or_recheck_changes(no_llm, monkeypatch,
     click(at, "이대로 진행")
     assert "plan" in at.session_state
     at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
-    at = recheck(at, [11, 12])
+    at = recheck(at, 12)
     assert "plan" not in at.session_state and "approved" not in at.session_state
 
 
@@ -799,7 +879,7 @@ def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
     assert at.session_state["step"] == 3
     choose(at, "에이전트 추천안")
     assert "promo" in at.session_state
-    at = recheck(at, [11, 12])
+    at = recheck(at, 12)
     assert "promo" not in at.session_state and "plan" not in at.session_state
 
 
@@ -1037,7 +1117,9 @@ def test_demo_toggle_is_in_options_and_explains_how_to_turn_off(no_llm):
     notice = next(e for e in at.expander if e.label == "예시 카드예요")
     chosen = [m.value for m in notice.markdown if screen.CHOSEN_DEMO_WARNING in m.value]
     assert chosen and "① 조건 입력에서 체크를 끄면" in chosen[0]
-    assert not any(screen.DEMO_WARNING in m.value for m in notice.markdown)  # AI 오류 안내는 안 나옴
+    assert not any(
+        screen.DEMO_WARNING in m.value for m in notice.markdown
+    )  # AI 오류 안내는 안 나옴
 
 
 def test_demo_toggle_prefills_conditions_before_submission(no_llm, monkeypatch):
@@ -1172,7 +1254,6 @@ def test_check_selection_and_plan_strip_html():
     assert "진행 가능" in style.plan_strip_html("에이전트 추천안", CARD, ready=True)
 
 
-
 def test_plan_markdown_editor_save_and_unsaved_guard(no_llm, monkeypatch, tmp_path):
     import agent.plan
     import agent.proposals
@@ -1195,7 +1276,9 @@ def test_plan_markdown_editor_save_and_unsaved_guard(no_llm, monkeypatch, tmp_pa
     assert not any("저장: outputs/" in value for value in labels(at, "caption"))
     editor = next(t for t in at.text_area if t.label == "기획서 Markdown")
     original = FestivalPlan.model_validate(at.session_state["plan"])
-    edited = editor.value.replace(f"| 축제명 | {original.overview.name} |", "| 축제명 | 수정한 감귤 마켓 |")
+    edited = editor.value.replace(
+        f"| 축제명 | {original.overview.name} |", "| 축제명 | 수정한 감귤 마켓 |"
+    )
     editor.set_value(edited).run()
     assert next(b for b in at.button if b.label == "기획서 최종 승인").disabled
     next(b for b in at.button if b.label == "수정 내용 적용").click().run()

@@ -61,7 +61,8 @@ cp .env.example .env
 uv run streamlit run streamlit_app.py
 ```
 
-브라우저 주소: http://127.0.0.1:8501
+브라우저는 자동으로 열리지 않습니다. **브라우저에서 http://localhost:8501 을 직접 여세요** (안 되면 http://127.0.0.1:8501).
+첫 실행 때 이메일을 묻는 영어 질문은 나오지 않습니다 (`.streamlit/config.toml`의 `headless = true`).
 종료: 실행한 터미널에서 Ctrl+C.
 
 ### AI(LLM) 설정
@@ -181,7 +182,7 @@ uv run python -m research.materials --publish
 
 1. 제출 준비
    - 사용자 매뉴얼의 [캡처] 13곳 채우기 (화면 수정이 끝난 뒤)
-   - 새 PC에서 설치·실행 확인, 제출 ZIP 구성 (`.env`·`data/raw/`·`outputs/` 제외)
+   - 새 PC에서 설치·실행 확인, 제출 ZIP 구성 (`data/raw/`·`outputs/`·개인 키 제외, 평가용 키만 `.env`에 포함. GitHub에는 키를 올리지 않음)
    - 프롬프트·모델 설명 문서 (A)
 2. A: 카드·기획서 품질
    - 카드 이름에 입력과 다른 지역이 들어가는 경우 막기
