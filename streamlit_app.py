@@ -5,6 +5,7 @@
 st.session_state에는 모델을 model_dump(mode="json")로 저장하고 model_validate로 읽는다.
 """
 
+import logging
 from importlib import reload
 from pathlib import Path
 
@@ -17,7 +18,8 @@ from analytics.flow_spec import EMD_CODES
 from app import screen, style
 from app.settings import Settings
 
-# 스타일 파일 수정은 서버 재시작 없이 이번 실행부터 반영한다.
+# 화면·스타일 파일 수정은 서버 재시작 없이 이번 실행부터 반영한다.
+reload(screen)
 reload(style)
 
 
@@ -571,8 +573,18 @@ def verification_content(request: UserRequest, card) -> None:
         ss["run"] = run.model_dump(mode="json")
     run = VerificationRun.model_validate(ss["run"])
     manual = VerificationRun.model_validate(ss["manual_run"]) if "manual_run" in ss else None
-    for notice in screen.center_data_notices():  # 센터 파일을 읽지 못해 가상 데이터로 대신했을 때
-        ui.warning(f"⚠️ {notice}")
+    data_notices = getattr(screen, "center_data_notices", None)
+    if callable(data_notices):  # 센터 파일을 읽지 못해 가상 데이터로 대신했을 때
+        for notice in data_notices():
+            ui.warning(f"⚠️ {notice}")
+    else:
+        logging.getLogger(__name__).warning(
+            "center_data_notices 누락: screen 모듈 경로=%s", getattr(screen, "__file__", None)
+        )
+        ui.warning(
+            "일부 데이터 안내를 불러오지 못했어요. "
+            "아래 확인 결과의 데이터 출처와 주의사항을 확인해 주세요."
+        )
 
     def strip(name: str, r: VerificationRun) -> None:
         st.html(style.plan_strip_html(name, r.final, r.outcome == "ready_for_approval"))
