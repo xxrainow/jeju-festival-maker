@@ -380,9 +380,7 @@ def stage_navigation(step: int) -> None:
 def step_ideas(request: UserRequest) -> None:
     st.html(style.head_html(2))
     with st.container(key="idea-conditions", horizontal=True, vertical_alignment="center"):
-        st.html(style.request_chips(request), width="content")
-        if st.button("조건 수정", key="back_2", type="tertiary"):
-            goto(1)
+        st.html(style.request_chips(request), width="content")  # 조건 입력으로는 상단 01 탭으로 돌아간다
     if conflict := screen.season_conflict(request):
         ui.warning(f"⚠️ {conflict}")
     proposal = IdeaProposal.model_validate(ss["proposal"])
@@ -400,7 +398,7 @@ def step_ideas(request: UserRequest) -> None:
         cols = st.columns(3)
         for col, card in zip(cols, proposal.ideas, strict=True):  # rank 순서, rank·score는 숨김
             with col, st.container(key=f"card-idea-{card.idea_id}"):
-                st.html(style.format_html(f"{card.format} × {card.material}"))
+                st.html(style.idea_card_head_html(card))  # 형식 칩 + 형식 아이콘
                 st.subheader(card.title)
                 ui.write(card.concept)
                 st.html(style.idea_summary_html(screen.idea_summary(card)))
