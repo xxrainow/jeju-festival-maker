@@ -129,3 +129,34 @@ def test_app_shows_notice_and_keeps_going(raw, monkeypatch):
     assert not at.exception and not at.error and "run" in at.session_state
     notices = [w.value for w in at.warning if "센터 데이터를 읽지 못해" in w.value]
     assert notices and "3-04 버스 정류소별 이용 파일이 비어 있어요" in notices[0]
+
+
+@pytest.mark.parametrize("old_file", [False, True], ids=["cached-module", "old-file"])
+def test_app_keeps_going_when_notice_function_was_missing(raw, monkeypatch, old_file):
+    """이전 모듈은 다시 읽고, 다시 읽어도 함수가 없으면 ③ 결과와 승인 버튼을 보여준다."""
+    import importlib
+
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.delattr(screen, "center_data_notices")
+    if old_file:
+        original_reload = importlib.reload
+
+        def reload_with_old_screen(module):
+            return module if module is screen else original_reload(module)
+
+        monkeypatch.setattr(importlib, "reload", reload_with_old_screen)
+
+    app = str(Path(__file__).resolve().parents[1] / "streamlit_app.py")
+    at = AppTest.from_file(app, default_timeout=180).run()
+    at.checkbox(key="use_demo").check().run()
+    next(b for b in at.button if b.label == "아이디어 보기").click().run()
+    next(b for b in at.button if b.label == "자세히 보기").click().run()
+    next(b for b in at.button if b.label == "이 아이디어 고르기").click().run()
+    assert not at.exception and not at.error and "run" in at.session_state
+    assert any(b.label == "이대로 진행" for b in at.button)
+    assert any("일부 데이터 안내" in w.value for w in at.warning) is old_file
+    if not old_file:
+        assert callable(screen.center_data_notices)
