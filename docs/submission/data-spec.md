@@ -136,7 +136,7 @@
 
 | 폴더 | 파일 | 읽는 순서 |
 |---|---|---|
-| `analytics/reference/` (확인 도구용, 약 5.6MB) | 와이파이 사용량 집계(`wifi_usage_by_place_month_type.parquet`), 장소 → 행정동(`area_link_wifi.csv`), AP 정보, 성·연령 표, 장소 후보, 정류소 일별 이용, 이웃 동네, 외지인 지수, 제주 축제 일정, 날씨 위험(주별·월별), 동네별 날씨 지점, 시간대 승차 비중, 관측지점 | **가공본을 먼저** 읽고, 없으면 `data/processed/` |
+| `analytics/reference/` (확인 도구용, 약 4.9MB) | 와이파이 사용량 집계(`wifi_usage_by_place_month_type.parquet`), 장소 → 행정동·좌표(`area_link_wifi.csv`), 성·연령 표, 장소 후보, 정류소 일별 이용, 이웃 동네, 외지인 지수, 제주 축제 일정, 날씨 위험(주별·월별), 동네별 날씨 지점, 시간대 승차 비중, 관측지점 | **가공본을 먼저** 읽고, 없으면 `data/processed/` |
 | `research/reference/` (아이디어 카드용) | 문체부 축제 3개년 패널, 제주 재료 사전·키워드·검수표 | `data/processed/`에 직접 만든 것이 있으면 그것, 없으면 가공본 |
 
 원자료가 바뀌었을 때 다시 만드는 방법은 3-4절에 있습니다.
@@ -147,7 +147,7 @@
 
 **데이터를 다루는 원칙**
 - **큰 공개 데이터 원본(와이파이 사용량·사용자 현황, 버스 이용 원자료 등)은 저장소(GitHub)에 올리지 않습니다.** 용량이 크고 각 기관에서 받을 수 있기 때문입니다. 제출 ZIP에는 넣을 수 있습니다.
-- 예외: 허브 API 원본인 공공와이파이 AP 정보(`analytics/reference/jejuhub_wifi_ap.csv`, `data/raw/jejuhub_wifi_ap.csv`의 사본)는 앱 실행에 필요해서 **저장소와 제출 ZIP에 들어 있습니다.**
+- 허브 API 원본(정류소·와이파이 AP·숙박·관광지 4종, `data/raw/jejuhub_*.csv`)도 저장소에 올리지 않습니다. **`data/raw/`에서만 쓰고, 가공본을 만들 때만 필요합니다.** 앱은 이 원본으로 만든 가공본(예: 와이파이 장소 → 행정동·좌표 `area_link_wifi.csv`)만 읽습니다.
 - **센터 비공개 데이터(4-11, 3-04, 3-07·3-08·3-10 등)는 센터 PC 안에서만 씁니다.** 이 데이터로 만든 집계 결과도 센터 밖으로 가져가려면 반출 승인을 받아야 합니다. 이 절의 명령은 공개 데이터만 씁니다.
 
 **1) 받을 데이터와 둘 곳**
@@ -157,7 +157,7 @@
 | 데이터명 | 제공기관 | 받는 곳 | `data/raw/`에 둘 파일 이름 | 가공 명령 (아래 2단계 번호) | 만들어지는 가공본 |
 |---|---|---|---|---|---|
 | 버스 정류소 기본 정보 (API) | 제주데이터허브 | https://open.jejudatahub.net (API, [install.md](install.md) 3-1절) | `jejuhub_bus_stations.csv` | ①로 받음 → ⑥⑦ | `analytics/reference/bus_station_daily.csv`(정류소 좌표), `area_link_wifi.csv` |
-| 공공와이파이 AP 정보 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_wifi_ap.csv` | ①로 받음 → ⑦ | `analytics/reference/jejuhub_wifi_ap.csv`, `area_link_wifi.csv` |
+| 공공와이파이 AP 정보 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_wifi_ap.csv` | ①로 받음 → ⑦ | `analytics/reference/area_link_wifi.csv` (원본은 `data/raw/`에서만 사용) |
 | 관광 숙박업 정보 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_lodging.csv` | ①로 받음 → ④ | 없음 (분석용 후보지 비교표, `data/processed/`) |
 | 관광지별 내국인 유입자 수 (API) | 제주데이터허브 | 위와 같음 | `jejuhub_tourist_spot_visitors.csv` | ①로 받음 → ④ | 없음 (분석용 후보지 비교표, `data/processed/`) |
 | 와이파이 장소별 방문자별 사용량 | 제주데이터허브 | https://open.jejudatahub.net (파일 내려받기) | `와이파이장소별방문자별사용량.csv` | ② → ⑥ → ⑦, ⑨ | `analytics/reference/wifi_usage_by_place_month_type.parquet`, `venue_places.csv`, `outsider_index.csv`, `research/reference/jeju_materials.csv` |

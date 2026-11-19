@@ -175,10 +175,10 @@ run = verify_idea(card, request, {**FAKE_TOOLS, **REAL_TOOLS})  # 5개 모두 �
 - 정체: `congestion_check(points)`. 후보 장소(check_venue 후보 좌표, 없으면 카드 venue 이름으로 장소 표에서 찾음) 반경 1km 안 도로 구간의 주말 11~19시 평균 속도 ÷ 그 구간 평소 평균이 0.8 미만이면 conditional "정체 주의". 3-10·3-07·3-08 실데이터(`data/raw/`)가 없으면 가상 데이터(`data/demo/`)로 계산하고 `is_synthetic=True`. 교통 자료나 좌표가 없으면 evidence `congestion`은 pending
 - 결과: 걸린 것이 있으면 conditional, 없으면 pass (fail 없음)
 
-## 12. Git에 올린 가공본 (`analytics/reference/`, 합계 5.6MB)
+## 12. Git에 올린 가공본 (`analytics/reference/`, 합계 4.9MB)
 
 - 와이파이: `wifi_usage_by_place_month_type.parquet` (2,963KB), `area_link_wifi.csv` (361KB, 장소 → 행정동·읍면 + AP 좌표)
-- 허브 와이파이 AP 정보: `jejuhub_wifi_ap.csv` (738KB, `data/raw/` 사본. AP 주소·좌표. macAddress는 허브가 해시로 준 값). `analytics.area_link.load_wifi_ap()`가 먼저 읽음
+- 허브 와이파이 AP 정보 원본(`jejuhub_wifi_ap.csv`)은 올리지 않음. `data/raw/`에서만 사용(가공본 만들 때만, `analytics.area_link.load_wifi_ap()`). 앱이 쓰는 장소 좌표·행정동은 `area_link_wifi.csv`에 있음
 - 확인 도구 표: `bus_hourly_share.csv` 5KB (허브 시간대 승차 요약), `wifi_users_demographics.csv` 694KB, `venue_places.csv` 67KB, `bus_station_daily.csv` 675KB, `dong_neighbors.csv` 8KB, `outsider_index.csv` 78KB, `jeju_festival_dates.csv` 9KB, `weather_weekly_risk.csv` 80KB, `weather_monthly_risk.csv` 12KB, `weather_station_by_dong.csv` 4KB
 - `data/`가 없는 PC에서도 확인 도구 5개가 돈다 (4-11·교통 가상 데이터는 `data/demo/`에 있어 없으면 그 부분만 확인하지 않고 경고)
 - 코드는 reference를 먼저 읽고, 없으면 `data/processed/`를 읽는다 (`analytics/reference_data.py`)
