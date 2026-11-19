@@ -28,6 +28,7 @@ class TrafficData:
     links: pd.DataFrame  # link_id, road_name, mid_lat, mid_lon
     hourly: pd.DataFrame  # link_id, weekend, hour, average_speed (평균)
     is_synthetic: bool
+    fallback_reason: str | None = None  # 센터 파일을 읽지 못해 가상 데이터로 대신한 이유
 
     @property
     def label(self) -> str:
@@ -73,16 +74,39 @@ def prepare(traffic: pd.DataFrame, links: pd.DataFrame, nodes: pd.DataFrame, syn
     return TrafficData(out_links, hourly, synthetic)
 
 
+def _load(files: dict[str, Path], synthetic: bool) -> TrafficData:
+    from analytics.center_data import read_csv_any
+
+    return prepare(
+        *(read_csv_any(files[k], dtype=str) for k in ("traffic", "links", "nodes")), synthetic
+    )
+
+
 @lru_cache(maxsize=1)
 def load_traffic() -> TrafficData | None:
+    """실데이터(data/raw/)가 있으면 그것, 없거나 읽지 못하면 가상 데이터(data/demo/).
+
+    UTF-8·CP949 모두 읽는다. 열 이름이 다르거나 빈 파일이면 가상 데이터로 대신하고 이유를 남긴다.
+    """
+    from analytics.center_data import reason_text
+
     found = find_traffic_files()
     if found is None:
         return None
     files, synthetic = found
-    read = {"dtype": str, "encoding": "utf-8-sig"}
-    return prepare(
-        pd.read_csv(files["traffic"], **read),
-        pd.read_csv(files["links"], **read),
-        pd.read_csv(files["nodes"], **read),
-        synthetic,
-    )
+    try:
+        return _load(files, synthetic)
+    except Exception as exc:  # noqa: BLE001 - 센터 파일 형식이 달라도 앱이 멈추지 않게
+        if synthetic:
+            return None
+        reason = reason_text(exc, "교통(3-07·3-08·3-10)")
+        demo_files = {
+            "traffic": demo.TRAFFIC_PATH,
+            "links": demo.LINKS_PATH,
+            "nodes": demo.NODES_PATH,
+        }
+        if not all(p.exists() for p in demo_files.values()):
+            return None
+        data = _load(demo_files, True)
+        data.fallback_reason = reason
+        return data

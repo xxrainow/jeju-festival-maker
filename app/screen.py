@@ -1103,6 +1103,27 @@ def ai_failure_reason(exc) -> str | None:
 RETRY_PLAN_LABEL = "다시 만들기"
 
 
+def center_data_notices() -> list[str]:
+    """센터 지정 데이터(data/raw/)를 읽지 못해 가상 데이터로 대신했으면 화면 안내 문장들.
+
+    예: "센터 데이터를 읽지 못해 가상 데이터로 확인했어요(이유: 3-04 버스 정류소별 이용 파일이 비어 있어요)"
+    """
+    from analytics.bus_hourly import load_station_hourly
+    from analytics.center_data import fallback_notice
+    from analytics.flow_source import load_flow
+    from analytics.traffic_source import load_traffic
+
+    notices = []
+    for load in (load_flow, load_station_hourly, load_traffic):
+        try:
+            data = load()
+        except Exception:  # noqa: BLE001, S112 - 안내를 만들다 화면이 멈추면 안 된다
+            continue
+        if data is not None and getattr(data, "fallback_reason", None):
+            notices.append(fallback_notice(data.fallback_reason))
+    return notices
+
+
 def plan_failure_reason(exc) -> str:
     """기획서 생성 실패 이유를 쉬운 말 한 줄로 (오류 원문·HTTP 코드는 보여주지 않는다)."""
     from agent.llm import LLMError
