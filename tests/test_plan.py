@@ -274,3 +274,106 @@ def test_approve_plan_and_require_approved():
     assert FestivalPlan.model_validate_json(approved.model_dump_json()).status == "approved"
     with pytest.raises(ValueError, match="approved_at"):
         FestivalPlan.model_validate(draft.model_dump() | {"status": "approved"})
+
+
+def test_plan_document_uses_live_data_and_sixteen_sections():
+    from app.plan_view import document_html
+
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    html = document_html(plan)
+    assert html.count('<section class="fl-plan-section"') == 16
+    assert '16. 데이터 출처' in html
+    assert plan.overview.name in html and plan.overview.region in html
+    assert '미확인' in html and '데이터 대기' in html
+    assert all(s in html for s in ('대리 지표', '데이터 범위', '방문객 수', 'KPI'))
+    assert '13. 변경 이력' in plan_to_markdown(plan)  # 저장용 문서의 추적 정보는 유지
+
+
+def test_plan_document_escapes_generated_text_and_keeps_unknown_budget():
+    from app.plan_view import document_html, rail_html
+
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    plan = plan.model_copy(update={
+        'title': '<script>alert(1)</script>',
+        'overview': plan.overview.model_copy(update={'budget_krw': None}),
+        'assumptions': ['<img src=x onerror=alert(1)>'],
+    })
+    html = document_html(plan)
+    assert '<script>' not in html and '<img src=x' not in html
+    assert '&lt;script&gt;' in html and '&lt;img src=x' in html
+    assert '예산 미확인' in html
+    assert '&lt;script&gt;' in rail_html(plan, '<script>')
+
+
+def test_plan_kpi_renders_zero_as_data_and_synthetic_notice_conditionally():
+    from app.plan_view import document_html, rail_html
+
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    kpi = plan.kpis[0].model_copy(update={
+        'baseline': plan.kpis[0].baseline.model_copy(update={'value': 0.0, 'status': 'ready'}),
+    })
+    plan = plan.model_copy(update={'kpis': [kpi], 'is_synthetic': False})
+    assert '<p>0.0</p>' in document_html(plan)
+    assert 'rail-note warning' not in rail_html(plan, '에이전트 추천안')
+    synthetic = plan.model_copy(update={'is_synthetic': True})
+    assert 'rail-note warning' in rail_html(synthetic, '에이전트 추천안')
+
+
+
+def test_markdown_edit_saves_new_draft_and_updates_promo(tmp_path):
+    from agent.plan import approve_plan
+    from agent.plan_edit import edit_plan
+    from app.promo import fixed_texts, promo_payload
+
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    approved = approve_plan(plan)
+    source = plan_to_markdown(approved)
+    edited = source.replace(f"| 축제명 | {plan.overview.name} |", "| 축제명 | 새 감귤 마켓 |")
+    edited = edited.replace(f"| 장소 | {plan.overview.venue} |", "| 장소 | 사용자가 확인한 장소 |")
+    edited = edited.replace(plan.programs[0].name, "감귤 가족 체험")
+    revised = edit_plan(approved, edited)
+    assert revised.version == plan.version + 1 and revised.status == "draft"
+    assert revised.approved_at is None and revised.overview.name == "새 감귤 마켓"
+    assert revised.overview.venue == "사용자가 확인한 장소"
+    assert "감귤 가족 체험" in promo_payload(revised)["프로그램"]
+    assert fixed_texts(revised)["title"] == "새 감귤 마켓"
+    md, js = save_plan(revised, tmp_path)
+    assert md.read_text() == plan_to_markdown(revised)
+    restored = FestivalPlan.model_validate_json(js.read_text())
+    assert restored.markdown_override == revised.markdown_override
+    assert "v2, 초안" in plan_to_markdown(restored)
+    assert "v2, 승인" in plan_to_markdown(approve_plan(restored))
+
+
+def test_markdown_edit_rejects_missing_structure_without_modifying_original():
+    from agent.plan_edit import edit_plan
+
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    source = plan_to_markdown(plan)
+    assert edit_plan(plan, source) is plan
+    for invalid in ("", "# 새 기획서", source.replace("## 4. 기본 컨셉", "## 삭제"),
+                    source.replace("| 축제명 |", "| 삭제 |")):
+        with pytest.raises(ValueError):
+            edit_plan(plan, invalid)
+    assert plan.markdown_override is None and plan.version == 1
+
+
+
+def test_markdown_edit_keeps_document_design_and_unstructured_edits():
+    from agent.plan_edit import edit_plan
+    from app.plan_view import document_html
+
+    plan = generate_plan(RUN, DEMO_REQUEST, FakeLLM(good_response()), approved=True, now=NOW)
+    source = plan_to_markdown(plan)
+    concept = next(s.body for s in plan.sections if s.key == "concept")
+    revised = edit_plan(plan, source.replace(concept, "가족이 함께하는 수정된 마켓 컨셉입니다."))
+    html = document_html(revised)
+    assert "가족이 함께하는 수정된 마켓 컨셉입니다." in html
+    assert html.count('<section class="fl-plan-section"') == 16
+    assert 'fl-plan-table overview' in html and 'fl-plan-kpi' in html
+    assert 'fl-plan-program' in html and 'fl-plan-table limitations' in html
+    other = edit_plan(plan, source.replace("| --- | --- | --- |", "| --- | --- | --- |", 1)
+                      .replace("## 7. 예산 계획", "## 7. 예산 계획\n\n사용자가 추가한 예산 안내"))
+    html = document_html(other)
+    assert "사용자가 추가한 예산 안내" in html
+    assert 'fl-plan-kpi' in html and 'fl-plan-table overview' in html

@@ -47,8 +47,9 @@ STATUS_WORD = {"pass": "통과", "conditional": "조건부", "fail": "실패", "
 # 근거 종류 태그 (Figma Evidence Tag)
 EVIDENCE_TONE = {
     "사실": "sea",
+    "데이터": "sea",
     "에이전트 해석": "accent",
-    "주최 측 주장": "ink",
+    "참고 수치": "ink",
     "데이터 대기": "pending",
     "가상 데이터": "warn",
 }
@@ -91,6 +92,24 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {{
 h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl-ink); }}
 [data-testid="stCaptionContainer"] {{ color: var(--fl-ink-3); }}
 
+/* Streamlit 기본 글씨도 90%로 조정한다. rem 기준과 컨테이너 여백은 유지한다. */
+[data-testid="stMarkdownContainer"] {{ font-size: 14.4px; }}
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stWidgetLabel"] p,
+[data-testid="stExpander"] summary p {{ font-size: 14.4px; }}
+[data-testid="stMarkdownContainer"] h1 {{ font-size: 39.6px; }}
+[data-testid="stMarkdownContainer"] h2 {{ font-size: 32.4px; }}
+[data-testid="stMarkdownContainer"] h3 {{ font-size: 25.2px; }}
+[data-testid="stMarkdownContainer"] h4 {{ font-size: 21.6px; }}
+[data-testid="stCaptionContainer"] p {{ font-size: 12.6px; }}
+[data-testid="stAppViewContainer"] input,
+[data-testid="stAppViewContainer"] textarea,
+[data-baseweb="select"], [data-baseweb="select"] input,
+[data-baseweb="select"] span, [data-baseweb="select"] div,
+[data-baseweb="menu"] li {{ font-size: 14.4px; }}
+[data-testid="stCode"] code {{ font-size: 12.6px; }}
+
 /* 화면 읽기 프로그램용 글 (눈에는 상단 탭·칩으로 보인다) */
 .st-key-sr-only {{
   position: absolute !important; width: 1px !important; height: 1px !important;
@@ -102,12 +121,12 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
   flex-wrap: wrap; margin-bottom: 8px; }}
 .fl-logo {{ display: flex; align-items: center; gap: 10px; }}
 .fl-blob {{ display: block; width: 36px; height: 30px; flex: none; object-fit: contain; }}
-.fl-logo b {{ display: block; font-size: 15px; font-weight: 700; }}
-.fl-logo small {{ display: block; font-family: {_PIXEL}; font-size: 9px; letter-spacing: .18em;
+.fl-logo b {{ display: block; font-size: 13.5px; font-weight: 700; }}
+.fl-logo small {{ display: block; font-family: {_PIXEL}; font-size: 8.1px; letter-spacing: .18em;
   color: var(--fl-ink-2); }}
 .fl-steps {{ display: flex; gap: 4px; background: var(--fl-ink); padding: 5px; border-radius: 16px;
   flex-wrap: wrap; }}
-.fl-tab {{ padding: 8px 14px; border-radius: 12px; font-size: 13px; color: #8d8d8d; white-space: nowrap; }}
+.fl-tab {{ padding: 8px 14px; border-radius: 12px; font-size: 11.7px; color: #8d8d8d; white-space: nowrap; }}
 .fl-tab.done {{ color: #ffffff; }}
 .fl-tab.done::before {{ content: "✓ "; color: var(--fl-accent); }}
 .fl-tab.active {{ background: var(--fl-accent); color: var(--fl-ink); font-weight: 600; }}
@@ -116,64 +135,60 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
 
 /* 접어 두는 설정 패널 */
 [data-testid="stSidebar"] {{ border-right: 1px solid var(--fl-line); }}
-[data-testid="stSidebarUserContent"] {{ padding: 24px 24px 32px; }}
-.fl-settings {{ color: var(--fl-ink); font-family: {_FONT}; }}
-.fl-settings-brand {{ display: flex; align-items: center; gap: 12px; margin: 4px 0 36px; }}
-.fl-settings-brand .fl-blob {{ width: 41px; height: 34px; }}
-.fl-settings-brand b {{ display: block; font-size: 16px; letter-spacing: -.03em; }}
-.fl-settings-brand small {{ display: block; font-family: {_PIXEL}; font-size: 8px;
-  letter-spacing: .12em; color: var(--fl-ink-2); margin-top: 3px; }}
-.fl-settings-eyebrow {{ font-family: {_PIXEL}; font-size: 10px; letter-spacing: .18em;
+[data-testid="stSidebarUserContent"] {{ padding: 0px 24px 32px; }}
+.fl-settings {{ color: var(--fl-ink); font-family: {_FONT}; display: flex;
+  flex-direction: column; min-height: calc(100dvh - 96px); }}
+.fl-settings > * {{ flex-shrink: 0; }}
+.fl-settings-eyebrow {{ font-family: {_PIXEL}; font-size: 9px; letter-spacing: .18em;
   color: var(--fl-ink-3); margin-bottom: 8px; }}
-.fl-settings h2 {{ font-size: 28px; font-weight: 700; letter-spacing: -.04em; margin: 0 0 10px;
+.fl-settings h2 {{ font-size: 25.2px; font-weight: 700; letter-spacing: -.04em; margin: 0 0 10px;
   padding: 0; line-height: 1.25; }}
-.fl-settings-intro {{ font-size: 13px; color: var(--fl-ink-2); margin: 0 0 24px; line-height: 1.6; }}
+.fl-settings-intro {{ font-size: 11.7px; color: var(--fl-ink-2); margin: 0 0 24px; line-height: 1.6; }}
 .fl-settings-card {{ padding: 20px; border: 1px solid var(--fl-line); border-radius: 20px;
   background: var(--fl-surface); }}
 .fl-settings-label {{ display: flex; justify-content: space-between; align-items: center; gap: 8px;
-  font-size: 12px; color: var(--fl-ink-2); margin-bottom: 18px; }}
+  font-size: 10.8px; color: var(--fl-ink-2); margin-bottom: 18px; }}
 .fl-settings-state {{ display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;
-  border-radius: 999px; background: var(--fl-accent-soft); color: #a44816; font-size: 11px; }}
+  border-radius: 999px; background: var(--fl-accent-soft); color: #a44816; font-size: 9.9px; }}
 .fl-settings-state::before {{ content: ""; width: 5px; height: 5px; border-radius: 50%;
   background: var(--fl-accent); }}
 .fl-settings-state.off {{ background: var(--fl-pending-soft); color: var(--fl-pending); }}
 .fl-settings-state.off::before {{ background: var(--fl-pending); }}
-.fl-settings-card h3 {{ font-size: 18px; margin: 0 0 8px; padding: 0; letter-spacing: -.03em; }}
-.fl-settings-card p {{ font-size: 13px; line-height: 1.75; color: var(--fl-ink-2); margin: 0; }}
-.fl-settings-privacy {{ border-top: 1px solid var(--fl-line); margin-top: 18px; padding-top: 14px;
-  font-size: 11px; line-height: 1.7; color: var(--fl-ink-3); }}
-.fl-settings-guide {{ margin-top: 30px; }}
-.fl-settings-guide h3 {{ font-size: 12px; font-weight: 600; color: var(--fl-ink-2);
+.fl-settings-card h3 {{ font-size: 16.2px; margin: 0px 0 8px; padding: 0; letter-spacing: -.03em; }}
+.fl-settings-card p {{ font-size: 11.7px; line-height: 1.75; color: var(--fl-ink-2); margin: 0; }}
+.fl-settings-guide {{ margin-top: auto; padding-top: 48px; margin-bottom: 48px; }}
+.fl-settings-guide h3 {{ font-size: 10.8px; font-weight: 600; color: var(--fl-ink-2);
   padding: 0; margin: 0 0 14px; }}
 .fl-settings-guide ol {{ list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }}
-.fl-settings-guide li {{ display: flex; align-items: center; gap: 10px; font-size: 13px;
+.fl-settings-guide li {{ display: flex; align-items: center; gap: 10px; font-size: 11.7px;
   color: var(--fl-ink-2); }}
 .fl-settings-guide li span {{ display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; flex: none; background: var(--fl-surface); border: 1px solid var(--fl-line);
-  border-radius: 8px; font-size: 10px; color: var(--fl-ink-3); }}
-.fl-settings-foot {{ margin: 30px 0 0; padding-top: 18px; border-top: 1px solid var(--fl-line);
-  font-size: 11px; line-height: 1.8; color: var(--fl-ink-3); }}
+  border-radius: 8px; font-size: 9px; color: var(--fl-ink-3); }}
+.fl-settings-foot {{ margin: 0; padding-top: 18px; margin-bottom: 48px; border-top: 1px solid var(--fl-line);
+  font-size: 9.9px; line-height: 1.8; color: var(--fl-ink-3); }}
 
 /* 단계 머리글 */
 .fl-head {{ margin: 28px 0 8px; }}
-[class*="st-key-back_"] + div .fl-head, .fl-head.near {{ margin-top: 8px; }}
-.fl-eyebrow {{ font-family: {_PIXEL}; font-size: 11px; letter-spacing: .2em; color: var(--fl-ink-2);
+[class*="st-key-back_"] + div .fl-head {{ margin-top: 20px; }}
+.fl-head.near {{ margin-top: 8px; }}
+.fl-eyebrow {{ font-family: {_PIXEL}; font-size: 9.9px; letter-spacing: .2em; color: var(--fl-ink-2);
   display: flex; align-items: center; gap: 8px; text-transform: uppercase; }}
 .fl-eyebrow::before {{ content: ""; width: 8px; height: 8px; background: var(--fl-accent); }}
 .fl-eyebrow span {{ font-family: {_FONT}; letter-spacing: 0; text-transform: none; }}
-.fl-h1 {{ font-size: 40px; font-weight: 700; letter-spacing: -0.03em; margin: 10px 0 8px; line-height: 1.2; }}
-.fl-desc {{ font-size: 16px; color: var(--fl-ink-2); max-width: 780px; margin: 0; }}
+.fl-h1 {{ font-size: 36px; font-weight: 700; letter-spacing: -0.03em; margin: 10px 0 8px; line-height: 1.2; }}
+.fl-desc {{ font-size: 14.4px; color: var(--fl-ink-2); max-width: 780px; margin: 0; }}
 
 /* 칩 · 배지 · 근거 태그 */
 .fl-chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }}
-.fl-chip {{ font-size: 12px; padding: 6px 12px; border-radius: 999px; background: var(--fl-ink);
+.fl-chip {{ font-size: 10.8px; padding: 6px 12px; border-radius: 999px; background: var(--fl-ink);
   color: #fff; }}
 .fl-chip.light {{ background: var(--fl-surface); color: var(--fl-ink); border: 1px solid var(--fl-line); }}
-.fl-badge {{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500;
+.fl-badge {{ display: inline-flex; align-items: center; gap: 6px; font-size: 10.8px; font-weight: 500;
   padding: 4px 10px; border-radius: 999px; }}
 .fl-badge::before {{ content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }}
 {"".join(f".fl-badge.{t} {{ color: var(--fl-{t}); background: var(--fl-{t}-soft); }}" for t in ("pass", "warn", "fail", "pending"))}
-.fl-tag {{ display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+.fl-tag {{ display: inline-flex; align-items: center; gap: 5px; font-size: 9.9px; font-weight: 600;
   padding: 3px 8px; border-radius: 6px; margin-bottom: 2px; }}
 .fl-tag::before {{ content: ""; width: 6px; height: 6px; border-radius: 2px; background: currentColor; }}
 .fl-tag.sea {{ color: var(--fl-sea); background: var(--fl-sea-soft); }}
@@ -181,12 +196,12 @@ h1, h2, h3, h4 {{ font-family: {_FONT}; letter-spacing: -0.02em; color: var(--fl
 .fl-tag.ink {{ color: var(--fl-ink); background: var(--fl-pending-soft); }}
 .fl-tag.pending {{ color: var(--fl-pending); background: var(--fl-pending-soft); }}
 .fl-tag.warn {{ color: var(--fl-warn); background: var(--fl-warn-soft); }}
-.fl-format {{ display: inline-block; font-size: 12px; padding: 5px 12px; border-radius: 999px;
+.fl-format {{ display: inline-block; font-size: 10.8px; padding: 5px 12px; border-radius: 999px;
   border: 1px solid var(--fl-line); background: var(--fl-surface-2); margin-bottom: 4px; }}
 
 .fl-check-head {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }}
-.fl-check-head b {{ font-size: 18px; }}
-.fl-section {{ font-family: {_PIXEL}; font-size: 11px; letter-spacing: .2em; color: var(--fl-ink-3);
+.fl-check-head b {{ font-size: 16.2px; }}
+.fl-section {{ font-family: {_PIXEL}; font-size: 9.9px; letter-spacing: .2em; color: var(--fl-ink-3);
   margin: 26px 0 6px; text-transform: uppercase; }}
 
 /* 카드 (st.container(key=...)) */
@@ -212,11 +227,15 @@ button[data-testid$="FormSubmit"], [class*="st-key-pick_"] button {{ background:
   border-color: var(--fl-ink); color: #fff; }}
 button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{ background: #2b2b2b;
   border-color: #2b2b2b; color: #fff; }}
-[class*="st-key-back_"] {{ margin-top: 18px; margin-bottom: -18px; }}
-[class*="st-key-back_"] button {{ background: var(--fl-surface); border: 1px solid var(--fl-line);
-  color: var(--fl-ink-2); min-height: 34px; padding: 4px 14px; font-size: 13px; font-weight: 500; }}
-[class*="st-key-back_"] button:hover {{ border-color: var(--fl-ink); color: var(--fl-ink);
-  background: var(--fl-surface); }}
+[class*="st-key-back_"] {{ margin-top: 18px; margin-bottom: 0; }}
+[class*="st-key-back_"] button {{ background: transparent; border: 0; border-radius: 4px;
+  box-shadow: none; color: var(--fl-ink-2); min-height: 28px; padding: 2px 0;
+  font-size: 11.7px; font-weight: 400; }}
+[class*="st-key-back_"] button p {{ font-size: inherit; font-weight: inherit; }}
+[class*="st-key-back_"] button:hover {{ color: var(--fl-ink); background: transparent;
+  text-decoration: underline; text-underline-offset: 3px; }}
+[class*="st-key-back_"] button:focus-visible {{ outline: 2px solid var(--fl-accent);
+  outline-offset: 4px; }}
 
 /* 입력 · 알림 · 접기 · 표 */
 [data-testid="stForm"] {{ padding: 0; }}
@@ -229,9 +248,9 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 /* 01-1 첫 화면 */
 .fl-hero {{ display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px;
   margin: 36px 0 12px; }}
-.fl-hero .side small {{ display: block; font-family: {_PIXEL}; font-size: 11px; letter-spacing: .2em;
+.fl-hero .side small {{ display: block; font-family: {_PIXEL}; font-size: 9.9px; letter-spacing: .2em;
   color: var(--fl-ink-2); margin-bottom: 6px; }}
-.fl-hero .side b {{ font-size: clamp(40px, 5.6vw, 76px); font-weight: 800; letter-spacing: -0.04em;
+.fl-hero .side b {{ font-size: clamp(36px, 5.04vw, 68.4px); font-weight: 800; letter-spacing: -0.04em;
   line-height: 1.05; }}
 .fl-hero .side.right {{ text-align: right; }}
 .fl-orb {{ position: relative; width: 260px; height: 260px; }}
@@ -246,13 +265,13 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
     linear-gradient(var(--fl-accent), var(--fl-accent)) 50% 100% / 10px 20px no-repeat,
     linear-gradient(var(--fl-accent), var(--fl-accent)) 0 50% / 20px 10px no-repeat,
     linear-gradient(var(--fl-accent), var(--fl-accent)) 100% 50% / 20px 10px no-repeat; }}
-.fl-orb .tag {{ position: absolute; font-size: 12px; background: var(--fl-ink); color: #fff;
+.fl-orb .tag {{ position: absolute; font-size: 10.8px; background: var(--fl-ink); color: #fff;
   padding: 7px 12px; border-radius: 999px; white-space: nowrap; }}
-.fl-hero-desc {{ text-align: center; color: var(--fl-ink-2); font-size: 17px; margin: 22px 0 18px; }}
+.fl-hero-desc {{ text-align: center; color: var(--fl-ink-2); font-size: 15.3px; margin: 22px 0 18px; }}
 .st-key-pill {{ background: var(--fl-surface); border-radius: 999px; padding: 8px 10px 8px 22px;
   box-shadow: 0 12px 40px rgba(18, 18, 18, .08); }}
 .st-key-pill [data-baseweb="input"] {{ background: transparent; border: none; }}
-.st-key-pill input {{ font-size: 16px; }}
+.st-key-pill input {{ font-size: 14.4px; }}
 .st-key-pill [data-baseweb="base-input"], .st-key-pill input,
 [class*="st-key-fieldcard"] [data-baseweb="base-input"], [class*="st-key-fieldcard"] input,
 [class*="st-key-fieldcard"] [data-baseweb="select"] div,
@@ -264,59 +283,271 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 
 /* 01-2 문장 띠 · 조건 칸 카드 */
 .fl-quote {{ display: flex; align-items: center; gap: 14px; background: var(--fl-ink); color: #fff;
-  border-radius: 999px; padding: 18px 28px; font-size: 16px; margin: 18px 0 14px; }}
+  border-radius: 999px; padding: 18px 28px; font-size: 14.4px; margin: 18px 0 14px; }}
 .fl-quote::before {{ content: "✦"; color: var(--fl-accent); }}
 [class*="st-key-fieldcard"] {{ background: var(--fl-surface); border: 1px solid var(--fl-line);
   border-radius: 20px; padding: 14px 18px 12px; gap: 4px; }}
 [class*="st-key-fieldcard"] [data-baseweb="input"], [class*="st-key-fieldcard"] [data-baseweb="select"] > div,
 [class*="st-key-fieldcard"] [data-testid="stNumberInputContainer"] {{ background: transparent; border: none; }}
 [class*="st-key-fieldcard"] input, [class*="st-key-fieldcard"] [data-baseweb="select"] {{
-  font-size: 19px; font-weight: 600; color: var(--fl-ink); }}
+  font-size: 17.1px; font-weight: 600; color: var(--fl-ink); }}
 [class*="st-key-fieldcard"] input {{ padding-left: 0; }}
-.fl-field-head {{ display: flex; justify-content: space-between; font-size: 13px; color: var(--fl-ink-2); }}
+.fl-field-head {{ display: flex; justify-content: space-between; font-size: 11.7px; color: var(--fl-ink-2); }}
 .fl-field-head .ai {{ color: var(--fl-accent); }}
 .fl-field-head .empty {{ color: var(--fl-ink-3); }}
 /* 01-1 예시 카드 (꾸밈용, 누를 수 없음) */
 .fl-examples {{ display: flex; justify-content: center; margin: 0 auto -6px; max-width: 980px; }}
 .fl-ex {{ flex: 1; background: var(--fl-surface); border-radius: 16px; padding: 22px 18px 18px;
   margin: 0 -6px; box-shadow: 0 10px 30px rgba(18, 18, 18, .07); border-top: 10px solid; pointer-events: none; }}
-.fl-ex small {{ display: block; color: var(--fl-ink-3); font-size: 11px; margin-bottom: 6px; }}
-.fl-ex b {{ display: block; font-size: 15px; margin-bottom: 6px; }}
-.fl-ex span {{ font-size: 12px; color: var(--fl-ink-2); }}
+.fl-ex small {{ display: block; color: var(--fl-ink-3); font-size: 9.9px; margin-bottom: 6px; }}
+.fl-ex b {{ display: block; font-size: 13.5px; margin-bottom: 6px; }}
+.fl-ex span {{ font-size: 10.8px; color: var(--fl-ink-2); }}
 
 /* 02-1 아이디어 만드는 중 */
 .fl-work {{ background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: 24px;
   padding: 26px 28px; margin-top: 18px; max-width: 760px; }}
-.fl-work .title {{ font-size: 13px; font-weight: 600; color: var(--fl-ink-2); margin-bottom: 10px; }}
+.fl-work .title {{ font-size: 11.7px; font-weight: 600; color: var(--fl-ink-2); margin-bottom: 10px; }}
 .fl-row {{ display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--fl-line); }}
 .fl-row:first-of-type {{ border-top: none; }}
 .fl-row .dot {{ width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--fl-line); flex: none;
-  display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }}
+  display: flex; align-items: center; justify-content: center; font-size: 10.8px; color: #fff; }}
 .fl-row.done .dot {{ background: var(--fl-pass); border-color: var(--fl-pass); }}
 .fl-row.done .dot::before {{ content: "✓"; }}
 .fl-row.active .dot {{ border-color: var(--fl-accent); border-top-color: transparent;
   animation: fl-spin .9s linear infinite; }}
 @keyframes fl-spin {{ to {{ transform: rotate(360deg); }} }}
 .fl-row .txt {{ flex: 1; }}
-.fl-row .txt b {{ display: block; font-size: 15px; font-weight: 600; }}
-.fl-row .txt span {{ font-size: 12px; color: var(--fl-ink-3); }}
+.fl-row .txt b {{ display: block; font-size: 13.5px; font-weight: 600; }}
+.fl-row .txt span {{ font-size: 10.8px; color: var(--fl-ink-3); }}
 .fl-row.todo .txt b {{ color: var(--fl-ink-3); }}
-.fl-row .eng {{ font-size: 12px; border: 1px solid var(--fl-line); border-radius: 999px; padding: 4px 12px; }}
+.fl-row .eng {{ font-size: 10.8px; border: 1px solid var(--fl-line); border-radius: 999px; padding: 4px 12px; }}
 .fl-evidence-legend {{ display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px;
-  margin-top: 28px; font-family: {_FONT}; font-size: 12px; color: var(--fl-ink-2); }}
+  margin-top: 28px; font-family: {_FONT}; font-size: 10.8px; color: var(--fl-ink-2); }}
 .fl-evidence-legend > span {{ display: inline-flex; align-items: center; flex-wrap: wrap;
   gap: 8px; line-height: 1.7; }}
 .fl-evidence-legend .fl-tag {{ margin: 0; flex-shrink: 0; }}
 .st-key-foot {{ margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--fl-line); }}
 
+/* 02 아이디어: 조건과 편집 동작을 묶고, 세 카드를 같은 높이로 표시한다. */
+.st-key-idea-nav {{ margin-bottom: 8px; }}
+.st-key-idea-step-tabs {{ background: var(--fl-ink); padding: 5px; border-radius: 16px; }}
+.st-key-idea-step-tabs > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {{
+  gap: 4px; align-items: center;
+}}
+.st-key-idea-step-tabs button {{
+  font-family: {_FONT};
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+  height: 34.72px; min-height: 34.72px; padding: 8px 14px; border-radius: 12px;
+  font-size: 11.7px; line-height: 1.6;
+}}
+.st-key-idea-step-tabs button {{ border: 0; background: transparent; color: white; box-shadow: none; }}
+.st-key-idea-step-tabs button [data-testid="stMarkdownContainer"] {{
+  display: flex; align-items: center; line-height: 1.6;
+}}
+.st-key-idea-step-tabs button p {{ font-family: {_FONT}; display: flex; align-items: center; gap: 6px;
+  font-size: 11.7px; line-height: 1.6; font-weight: 400; color: inherit; white-space: nowrap; margin: 0; }}
+.st-key-idea-step-tabs button:not(:disabled) p::before {{ content: "✓";
+  color: var(--fl-accent); flex-shrink: 0; }}
+.st-key-idea-step-tabs button:disabled,
+.st-key-idea-step-tabs button:disabled:is(:hover, :focus, :active) {{
+  background: transparent; color: #8d8d8d; cursor: default; opacity: 1;
+}}
+.st-key-idea-step-tabs button[data-testid="stBaseButton-primary"]:disabled,
+.st-key-idea-step-tabs button[data-testid="stBaseButton-primary"]:disabled:is(:hover, :focus, :active) {{
+  background: var(--fl-accent); color: var(--fl-ink); opacity: 1;
+}}
+.st-key-idea-step-tabs button[data-testid="stBaseButton-primary"] p {{ font-weight: 600; }}
+.st-key-idea-step-tabs button:not(:disabled):hover {{ background: #000000; color: white; }}
+.fl-nav-balance {{ display: block; width: 84px; }}
+.st-key-ideas .fl-eyebrow {{ display: none; }}
+.st-key-idea-conditions .fl-chips {{ margin: 0; }}
+.st-key-idea-conditions {{ margin: 14px 0 4px; }}
+.st-key-back_2 {{ margin: 0 0 0 8px; }}
+.st-key-back_2 button {{ text-decoration: underline; text-underline-offset: 3px; }}
+.st-key-idea-demo-notice details {{ background: var(--fl-surface-2);
+  border: 0; border-radius: 8px; }}
+.st-key-idea-demo-notice summary {{ padding: 10px 16px; color: var(--fl-ink-2); }}
+.st-key-idea-demo-notice summary p {{ font-size: 11.7px; }}
+.st-key-idea-demo-notice summary p::before {{ content: ""; display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--fl-accent);
+  margin-right: 8px; vertical-align: middle; }}
+.st-key-idea-demo-notice summary::after {{ content: "설명 보기"; margin-left: auto;
+  font-size: 10.8px; color: var(--fl-ink-3); white-space: nowrap; }}
+.st-key-idea-demo-notice details[open] summary::after {{ content: "설명 접기"; }}
+.st-key-idea-cards [data-testid="stHorizontalBlock"] {{ align-items: stretch; }}
+.st-key-idea-cards [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ height: 100%; }}
+.st-key-idea-cards [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > [data-testid="stLayoutWrapper"] {{ flex: 1 1 auto; }}
+.st-key-idea-cards [class*="st-key-card-idea-"] {{ height: 100%; border: 1px solid var(--fl-line); }}
+.st-key-idea-cards [class*="st-key-card-idea-"] > [data-testid="stElementContainer"]:last-child {{
+  margin-top: auto; padding-top: 8px;
+}}
+@media (max-width: 900px) {{
+  .fl-nav-balance {{ display: none; }}
+}}
+@media (max-width: 700px) {{
+  .st-key-idea-cards [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
+  .st-key-idea-cards [data-testid="stColumn"] {{ width: 100%; flex: 1 1 100%; min-width: 0; }}
+  .st-key-idea-cards [class*="st-key-card-idea-"] {{ height: auto; }}
+}}
+
+/* 04 기획서: 문서와 승인 패널 */
+.st-key-plan {{ container-type: inline-size; container-name: plan;
+  background: radial-gradient(ellipse 420px 280px at 100% 0, #ffddd233, transparent 75%); }}
+.st-key-plan-layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {{
+  display: grid; grid-template-columns: minmax(0, 896fr) minmax(0, 320fr); gap: 32px; align-items: start;
+}}
+.st-key-plan-layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+  width: 100%; min-width: 0;
+}}
+.st-key-plan .st-key-doc {{ padding: 48px 56px; border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(18,18,18,.035); }}
+.st-key-plan .st-key-card-rail {{ padding: 24px; border-radius: 24px; box-shadow: none; }}
+.st-key-plan .st-key-plan-downloads {{ gap: 6px; }}
+.fl-plan-download-title {{ font-size: 14.4px; font-weight: 600; line-height: 1.6; margin: 0; }}
+.fl-plan-approve-divider {{ border: 0; border-top: 1px solid var(--fl-line); margin: 0; }}
+.st-key-plan .st-key-card-rail .st-key-plan-downloads button {{ min-height: 40px; border-radius: 8px; padding: 8px;
+  background: var(--fl-surface); color: var(--fl-ink); border: 1px solid var(--fl-line); }}
+.st-key-plan .st-key-card-rail .st-key-plan-downloads button p {{ font-size: 12px; }}
+.st-key-plan .st-key-card-rail .st-key-plan-downloads button:hover {{ background: var(--fl-surface-2); border-color: var(--fl-ink); }}
+/* 문서 우측 상단의 Preview / Edit 전환 */
+.st-key-plan .st-key-doc > [data-testid="stTabs"] {{ width: 100%; }}
+.st-key-plan .st-key-doc [role="tablist"] {{ display: flex; width: 100%; justify-content: flex-end; gap: 4px; }}
+.st-key-plan .st-key-doc [role="tab"] {{ font-size: 13px; padding: 8px 16px; }}
+.st-key-plan .st-key-doc [role="tab"] p {{ font-size: 13px; }}
+.st-key-plan .st-key-doc textarea {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; line-height: 1.7; }}
+.st-key-plan-md-preview [data-testid="stMarkdownContainer"] {{ font-size: 17px; overflow-wrap: anywhere; }}
+.st-key-plan-md-preview h1 {{ font-size: 32px; }}
+.st-key-plan-md-preview h2 {{ font-size: 24px; }}
+.st-key-plan-md-preview h3 {{ font-size: 17px; }}
+.st-key-plan-md-preview table {{ width: 100%; font-size: 15px; }}
+.st-key-plan-md-preview p, .st-key-plan-md-preview li {{ font-size: 17px; }}
+
+.st-key-plan .fl-eyebrow {{ font-size: 11px; }}
+.st-key-plan .fl-h1 {{ font-size: 43.2px; }}
+.st-key-plan .fl-desc {{ font-size: 15.3px; }}
+.fl-plan-document .fl-tag {{ font-size: 12px; }}
+.fl-plan-table .fl-tag {{ font-size: 15px; }}
+.fl-plan-table.overview table {{ font-size: 15px; }}
+.fl-plan-table.limitations table, .fl-plan-table.sources table {{ font-size: 13px; }}
+.fl-plan-section[aria-labelledby="plan-section-15"] h3,
+[aria-labelledby="plan-section-15"] .fl-plan-copy p {{ font-size: 15px; }}
+.fl-plan-document {{ font-family: {_FONT}; color: var(--fl-ink); min-width: 0; }}
+.fl-plan-document h1 {{ font-family: {_FONT}; font-size: 32px; line-height: 1.35;
+  letter-spacing: -.04em; margin: 30px 0 18px; padding: 0; overflow-wrap: anywhere; }}
+.fl-plan-version {{ display: inline-block; padding: 6px 14px; border-radius: 999px;
+  background: var(--fl-accent-soft); font-size: 12px; line-height: 1.6; }}
+.fl-plan-version.approved {{ background: var(--fl-pass-soft); color: var(--fl-pass); }}
+.fl-plan-chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 34px; }}
+.fl-plan-chips > span {{ border: 1px solid var(--fl-line); border-radius: 999px;
+  padding: 6px 12px; font-size: 13px; line-height: 1.5; }}
+.fl-plan-section {{ margin-top: 34px; }}
+.fl-plan-section h2 {{ display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  font-family: {_FONT}; font-size: 24px; font-weight: 600; line-height: 1.4;
+  letter-spacing: -.025em; margin: 0 0 16px; padding: 0; }}
+.fl-plan-section h2 .fl-tag {{ margin: 0; white-space: nowrap; }}
+.fl-plan-section h3 {{ font-family: {_FONT}; font-size: 17px; font-weight: 600;
+  margin: 20px 0 12px; padding: 0; line-height: 1.5; }}
+.fl-plan-copy p {{ font-size: 17px; line-height: 1.85; margin: 0 0 12px;
+  overflow-wrap: anywhere; word-break: normal; }}
+.fl-plan-copy p:last-child {{ margin-bottom: 0; }}
+.fl-plan-copy li {{ font-size: inherit; line-height: 1.85; margin: 8px 0; }}
+.fl-plan-copy {{ font-size: 17px; }}
+.fl-plan-table {{ width: 100%; border: 1px solid var(--fl-line); border-radius: 16px;
+  overflow: hidden; background: var(--fl-surface); }}
+.fl-plan-table table {{ width: 100%; table-layout: fixed; border-collapse: collapse;
+  font-family: {_FONT}; font-size: 15px; line-height: 1.6; margin: 0; }}
+.fl-plan-table th {{ text-align: left; padding: 12px 14px; background: var(--fl-surface-2);
+  color: var(--fl-ink); font-weight: 600; border: 0; }}
+.fl-plan-table td {{ padding: 12px 14px; color: var(--fl-ink-2); vertical-align: top;
+  border: 0; border-top: 1px solid var(--fl-line); overflow-wrap: anywhere; }}
+.fl-plan-table th:first-child, .fl-plan-table td:first-child {{ width: 22%; }}
+.fl-plan-table.budget th:first-child {{ width: 30%; }}
+.fl-plan-table.budget th:nth-child(2) {{ width: 30%; }}
+.fl-plan-table.checks th:first-child {{ width: 10%; }}
+.fl-plan-table.checks th:nth-child(2) {{ width: 13%; }}
+.fl-plan-table.sources th:first-child {{ width: 36%; }}
+.fl-plan-table.sources th:nth-child(2) {{ width: 14%; }}
+/* 참고 사례 설명과 표: 본문 간격을 유지하고 축제명에 충분한 폭을 준다. */
+[aria-labelledby="plan-section-13"] .fl-plan-copy {{ margin-bottom: 16px; }}
+.fl-plan-table.reference th:first-child, .fl-plan-table.reference td:first-child {{ width: 75%; }}
+.fl-plan-timing {{ margin-top: 14px; padding: 16px 20px; border-radius: 16px;
+  background: var(--fl-sea-soft); color: var(--fl-ink-2); }}
+.fl-plan-timing b {{ font-size: 14px; color: var(--fl-sea); font-weight: 600; }}
+.fl-plan-timing p {{ font-size: 13px; line-height: 1.8; margin: 8px 0 0; overflow-wrap: anywhere; }}
+.fl-plan-kpi {{ padding: 18px; border-radius: 16px; background: var(--fl-surface-2); margin-top: 12px; }}
+.fl-plan-kpi-head {{ display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }}
+.fl-plan-kpi-head h3 {{ margin: 0; font-size: 17px; }}
+.fl-plan-kpi-head small {{ font-size: 13px; color: var(--fl-ink-3); }}
+.fl-plan-formula {{ font-size: 15px; line-height: 1.7; color: var(--fl-ink-2); margin: 12px 0; }}
+.fl-plan-kpi-values {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+.fl-plan-kpi-values > div {{ background: var(--fl-surface); border-radius: 10px; padding: 12px 14px; min-width: 0; }}
+.fl-plan-kpi-label {{ display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-size: 13px; color: var(--fl-ink-3); }}
+.fl-plan-kpi-label .fl-tag {{ margin: 0; }}
+.fl-plan-kpi-values p {{ font-size: 13px; line-height: 1.7; margin: 8px 0 0; color: var(--fl-ink-2);
+  overflow-wrap: anywhere; }}
+.fl-plan-program {{ display: grid; grid-template-columns: minmax(110px, .8fr) 2.6fr auto;
+  align-items: center; gap: 16px; padding: 14px 18px; background: var(--fl-surface-2);
+  border-radius: 16px; margin-top: 12px; }}
+.fl-plan-program b {{ font-size: 15px; line-height: 1.6; }}
+.fl-plan-program p {{ font-size: 14px; line-height: 1.6; color: var(--fl-ink-2); margin: 0; }}
+.fl-plan-program small {{ font-size: 12px; color: var(--fl-ink-3); }}
+.fl-plan-schedule > div {{ display: flex; align-items: center; gap: 18px;
+  border-top: 1px solid var(--fl-line); padding: 14px 0; }}
+.fl-plan-schedule span {{ min-width: 62px; text-align: center; padding: 5px 10px;
+  border-radius: 8px; background: var(--fl-surface-2); font-size: 15px; }}
+.fl-plan-schedule span.event {{ background: var(--fl-accent-soft); }}
+.fl-plan-schedule p {{ margin: 0; font-size: 15px; line-height: 1.5; }}
+.fl-plan-risk-notes {{ margin-top: 16px; padding: 18px; border-radius: 16px;
+  background: var(--fl-surface-2); color: var(--fl-ink-2); }}
+.fl-plan-risk-notes b {{ font-size: 14px; color: var(--fl-ink); }}
+.fl-plan-risk-notes ul, .fl-plan-assumptions {{ padding-left: 18px; margin: 10px 0 0; }}
+.fl-plan-risk-notes li {{ font-size: 13px; line-height: 1.85; margin: 8px 0; }}
+.fl-plan-assumptions li {{ font-size: 15px; line-height: 1.85; color: var(--fl-ink-2); margin: 12px 0; }}
+.fl-plan-caption {{ font-size: 13px; line-height: 1.7; color: var(--fl-ink-3); margin: 12px 0 0; }}
+.fl-plan-rail-head small {{ font-family: {_PIXEL}; font-size: 11px; letter-spacing: .16em;
+  color: var(--fl-ink-2); }}
+.fl-plan-rail-head h2 {{ font-family: {_FONT}; font-size: 18px; font-weight: 600; padding: 0;
+  margin: 20px 0; line-height: 1.5; }}
+.fl-plan-rail-head p {{ font-size: 13px; color: var(--fl-ink-2); line-height: 1.8; margin: 0 0 18px; }}
+.fl-plan-rail-note {{ display: flex; align-items: center; gap: 12px; border-radius: 16px;
+  padding: 16px; margin-top: 14px; }}
+.fl-plan-rail-note.warning {{ background: var(--fl-warn-soft); }}
+.fl-plan-rail-note.success {{ background: var(--fl-pass-soft); color: var(--fl-pass); }}
+.fl-plan-rail-note p {{ font-size: 12px; line-height: 1.7; margin: 0; }}
+.fl-plan-rail-note .fl-check-icon {{ flex: none; width: 20px; height: 20px; background: none; }}
+.fl-plan-rail-note .fl-check-icon img {{ width: 18px; height: 18px; }}
+.fl-plan-rail-note.success img {{ filter: brightness(0) saturate(100%) invert(48%) sepia(53%) saturate(868%) hue-rotate(96deg) brightness(92%) contrast(91%); }}
+.st-key-plan .st-key-card-rail button {{ border-radius: 8px; min-height: 56px; margin-top: 0;
+  font-family: {_FONT}; font-size: 15px; }}
+.st-key-plan .st-key-card-rail button p {{ font-size: 15px; }}
+[data-testid="stMainBlockContainer"]:has(.st-key-plan) [data-testid="stCaptionContainer"] p {{ font-size: 12px;
+  color: var(--fl-ink-3); overflow-wrap: anywhere; line-height: 1.8; }}
+@container plan (max-width: 900px) {{
+  .st-key-plan-layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {{ grid-template-columns: minmax(0, 1fr); }}
+  .st-key-plan-layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+    flex: 1 1 100%; width: 100%; min-width: 0;
+  }}
+  .st-key-plan .st-key-doc {{ padding: 28px 24px; }}
+}}
+@media (max-width: 600px) {{
+  .fl-plan-kpi-values {{ grid-template-columns: 1fr; }}
+  .fl-plan-program {{ grid-template-columns: 1fr; gap: 6px; }}
+  .fl-plan-kpi-head {{ flex-wrap: wrap; gap: 4px; }}
+  .fl-plan-section h2 {{ font-size: 19.8px; }}
+  .fl-plan-table td, .fl-plan-table th {{ padding: 10px 8px; }}
+}}
+
 /* 아이디어 요약 목록과 오른쪽 상세 패널 */
 .fl-idea-summary {{ display: grid; gap: 18px; padding: 20px 0; margin-top: 12px;
   border-top: 1px solid var(--fl-line); }}
 .fl-idea-summary-row {{ display: grid; grid-template-columns: 74px 1fr; gap: 10px; }}
-.fl-idea-summary-label {{ font-size: 12px; color: var(--fl-ink-3); padding-top: 3px; }}
-.fl-idea-summary-row b {{ display: block; font-size: 14px; line-height: 1.6;
+.fl-idea-summary-label {{ font-size: 10.8px; color: var(--fl-ink-3); padding-top: 3px; }}
+.fl-idea-summary-row b {{ display: block; font-size: 12.6px; line-height: 1.6;
   font-weight: 600; margin-top: 4px; word-break: keep-all; }}
-[class*="st-key-card-idea-"] h3 {{ font-size: 22px; line-height: 1.4; }}
+[class*="st-key-card-idea-"] h3 {{ font-size: 19.8px; line-height: 1.4; }}
 [class*="st-key-detail_"] button {{ width: 100%; background: var(--fl-ink);
   color: white; border-color: var(--fl-ink); }}
 [class*="st-key-detail_"] button:hover {{ background: #2b2b2b; color: white; border-color: #2b2b2b; }}
@@ -326,7 +557,7 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   background: var(--fl-surface); box-shadow: -16px 0 64px rgba(18, 18, 18, .14); }}
 [role="dialog"]:has(.fl-idea-detail) [data-testid="stDialogContent"] {{
   max-height: calc(100dvh - 80px); overflow-y: auto; padding-bottom: 12px; }}
-[role="dialog"]:has(.fl-idea-detail) h3 {{ font-size: 28px; word-break: keep-all; }}
+[role="dialog"]:has(.fl-idea-detail) h3 {{ font-size: 25.2px; word-break: keep-all; }}
 [class*="st-key-pick_"] button {{ background: var(--fl-accent); color: #fff;
   border-color: var(--fl-accent); }}
 [class*="st-key-pick_"] button:hover {{ background: #ff7a22; color: #fff;
@@ -336,28 +567,28 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 [role="dialog"]:has(.fl-idea-detail) {{ padding: 32px 40px; }}
 [role="dialog"]:has(.fl-idea-detail) h2 {{ display: none; }}
 .fl-idea-detail {{ font-family: {_FONT}; color: var(--fl-ink); }}
-.fl-idea-detail h1 {{ font-size: 28px; line-height: 1.35; letter-spacing: -.04em;
+.fl-idea-detail h1 {{ font-size: 25.2px; line-height: 1.35; letter-spacing: -.04em;
   margin: 26px 0 12px; padding: 0; word-break: keep-all; }}
-.fl-detail-concept {{ font-size: 16px; line-height: 1.7; color: var(--fl-ink-2); margin: 0; }}
+.fl-detail-concept {{ font-size: 14.4px; line-height: 1.7; color: var(--fl-ink-2); margin: 0; }}
 .fl-detail-section {{ margin-top: 28px; }}
 [role="dialog"] .fl-detail-section h3 {{ display: flex; align-items: center; flex-wrap: wrap;
-  gap: 10px; font-size: 17px; line-height: 1.5; margin: 0 0 16px; padding: 0; }}
+  gap: 10px; font-size: 15.3px; line-height: 1.5; margin: 0 0 16px; padding: 0; }}
 .fl-detail-section h3 .fl-tag {{ margin: 0; }}
-.fl-detail-copy {{ font-size: 14px; line-height: 1.85; margin: 0; word-break: keep-all; }}
+.fl-detail-copy {{ font-size: 12.6px; line-height: 1.85; margin: 0; word-break: keep-all; }}
 .fl-detail-metrics {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
 .fl-detail-metrics > div {{ background: var(--fl-surface-2); border-radius: 18px; padding: 18px 16px; }}
-.fl-detail-metrics strong {{ display: block; font-size: 34px; line-height: 1.25;
+.fl-detail-metrics strong {{ display: block; font-size: 30.6px; line-height: 1.25;
   letter-spacing: -.04em; font-weight: 700; }}
-.fl-detail-metrics small {{ display: block; color: var(--fl-ink-2); font-size: 11px;
+.fl-detail-metrics small {{ display: block; color: var(--fl-ink-2); font-size: 9.9px;
   line-height: 1.5; margin-top: 6px; word-break: keep-all; }}
-.fl-detail-note {{ color: var(--fl-ink-3); font-size: 11px; line-height: 1.6; margin: 10px 0 0; }}
+.fl-detail-note {{ color: var(--fl-ink-3); font-size: 9.9px; line-height: 1.6; margin: 10px 0 0; }}
 .fl-detail-row {{ display: flex; align-items: baseline; justify-content: space-between;
-  gap: 20px; font-size: 14px; line-height: 1.7; padding: 8px 0; }}
+  gap: 20px; font-size: 12.6px; line-height: 1.7; padding: 8px 0; }}
 .fl-detail-row span {{ color: var(--fl-ink-2); word-break: keep-all; }}
 .fl-detail-row b {{ font-weight: 600; text-align: right; flex-shrink: 0; }}
 .fl-detail-budget {{ display: grid; gap: 16px; margin-bottom: 16px; }}
 .fl-budget-row {{ display: grid; grid-template-columns: 96px minmax(30px, 1fr) 88px;
-  gap: 12px; align-items: center; font-size: 12px; }}
+  gap: 12px; align-items: center; font-size: 10.8px; }}
 .fl-budget-row > span {{ color: var(--fl-ink-2); }}
 .fl-budget-row > b {{ font-weight: 500; }}
 .fl-budget-track {{ height: 14px; }}
@@ -365,16 +596,16 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .fl-budget-track .input {{ background: var(--fl-accent); }}
 .fl-budget-track .median {{ background: var(--fl-line); }}
 .fl-detail-interest {{ display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px;
-  font-size: 13px; line-height: 1.8; color: var(--fl-ink-2); }}
+  font-size: 11.7px; line-height: 1.8; color: var(--fl-ink-2); }}
 .fl-detail-disclaimer {{ display: flex; align-items: baseline; gap: 10px; margin-top: 26px;
   padding: 18px; background: var(--fl-pending-soft); border-radius: 18px;
-  font-size: 12px; color: var(--fl-ink-2); line-height: 1.8; }}
+  font-size: 10.8px; color: var(--fl-ink-2); line-height: 1.8; }}
 .fl-detail-disclaimer .fl-tag {{ flex-shrink: 0; }}
 @media (max-width: 480px) {{
   [role="dialog"]:has(.fl-idea-detail) {{ padding: 24px 20px; }}
   .fl-detail-metrics {{ gap: 8px; }}
   .fl-detail-metrics > div {{ padding: 14px 10px; }}
-  .fl-detail-metrics strong {{ font-size: 28px; }}
+  .fl-detail-metrics strong {{ font-size: 25.2px; }}
   .fl-budget-row {{ grid-template-columns: 76px minmax(20px, 1fr) 70px; gap: 8px; }}
 }}
 @media (max-width: 640px) {{
@@ -386,54 +617,54 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 }}
 .st-key-verification {{ gap: 28px; }}
 .st-key-verification .fl-head {{ margin: 0; }}
-.st-key-verification .fl-h1 {{ font-size: 48px; }}
-.st-key-verification .fl-desc {{ font-size: 17px; max-width: none; line-height: 1.6; }}
+.st-key-verification .fl-h1 {{ font-size: 43.2px; }}
+.st-key-verification .fl-desc {{ font-size: 15.3px; max-width: none; line-height: 1.6; }}
 .fl-check-selection {{ position: relative; overflow: hidden; background: var(--fl-surface);
   border-radius: 24px; padding: 24px 28px 24px 32px; display: flex; flex-direction: column; gap: 8px; }}
 .fl-check-selection::before {{ content: ""; position: absolute; inset: 0 auto 0 0; width: 6px;
   background: var(--fl-accent); }}
-.fl-check-selection-label {{ font-size: 13px; font-weight: 600; color: #c4561a; }}
+.fl-check-selection-label {{ font-size: 11.7px; font-weight: 600; color: #c4561a; }}
 .fl-check-selection-body {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }}
-.fl-check-selection h2 {{ margin: 0; padding: 0; font-size: 26px; font-weight: 700;
+.fl-check-selection h2 {{ margin: 0; padding: 0; font-size: 23.4px; font-weight: 700;
   letter-spacing: -.03em; line-height: 1.3; }}
 .fl-check-selection .fl-format {{ margin: 0; }}
-.fl-check-selection p {{ margin: 0; font-size: 15px; line-height: 1.6; color: var(--fl-ink-2); }}
+.fl-check-selection p {{ margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--fl-ink-2); }}
 .fl-plan-strip {{ display: grid; grid-template-columns: 1.1fr 1fr 1.4fr .8fr; align-items: stretch;
   background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: 20px; overflow: hidden; }}
 .fl-plan-strip > div {{ display: flex; flex-direction: column; justify-content: center; gap: 6px;
   padding: 16px 24px; min-width: 0; }}
 .fl-plan-strip > div + div {{ border-left: 1px solid var(--fl-line); }}
-.fl-plan-strip small {{ font-size: 12px; color: var(--fl-ink-3); }}
-.fl-plan-strip b {{ font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }}
+.fl-plan-strip small {{ font-size: 10.8px; color: var(--fl-ink-3); }}
+.fl-plan-strip b {{ font-size: 15.3px; font-weight: 600; overflow-wrap: anywhere; }}
 .fl-plan-strip-name {{ background: var(--fl-surface-2); }}
 .fl-plan-strip-name .fl-badge {{ align-self: flex-start; }}
 @media (max-width: 700px) {{
   .fl-check-selection {{ padding: 20px 20px 20px 26px; }}
-  .fl-check-selection h2 {{ font-size: 22px; }}
+  .fl-check-selection h2 {{ font-size: 19.8px; }}
   .fl-plan-strip {{ grid-template-columns: 1fr 1fr; }}
   .fl-plan-strip > div + div {{ border-left: none; }}
   .fl-plan-strip > div {{ border-top: 1px solid var(--fl-line); }}
   .fl-plan-strip > div:nth-child(-n+2) {{ border-top: none; }}
   .fl-plan-strip > div:nth-child(even) {{ border-left: 1px solid var(--fl-line); }}
 }}
-.st-key-verification [data-testid="stCaptionContainer"] p {{ color: var(--fl-ink-2); font-size: 14px; line-height: 1.6; }}
-.st-key-verification h3 {{ font-size: 24px; padding: 0; line-height: 1.5; }}
+.st-key-verification [data-testid="stCaptionContainer"] p {{ color: var(--fl-ink-2); font-size: 12.6px; line-height: 1.6; }}
+.st-key-verification h3 {{ font-size: 21.6px; padding: 0; line-height: 1.5; }}
 .st-key-verification [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{ gap: 16px; }}
 .st-key-verification [class*="st-key-res-"] {{
   border: none; box-shadow: none; padding: 24px; gap: 16px;
 }}
 .st-key-verification [class*="st-key-res-"] p {{
-  font-size: 14px; line-height: 1.6; overflow-wrap: anywhere;
+  font-size: 12.6px; line-height: 1.6; overflow-wrap: anywhere;
 }}
 .st-key-verification .fl-check-head {{ gap: 12px; align-items: center; margin: 0; }}
 .st-key-verification .fl-check-head > span {{ display: flex; gap: 6px; flex-wrap: wrap; }}
-.st-key-verification .fl-check-head b {{ font-size: 18px; font-weight: 600; }}
+.st-key-verification .fl-check-head b {{ font-size: 16.2px; font-weight: 600; }}
 .st-key-verification [class*="st-key-check-numbers-"] {{ gap: 6px; }}
 .st-key-verification [class*="st-key-check-numbers-"] p {{
-  font-size: 12px; line-height: 1.5; color: var(--fl-ink-2);
+  font-size: 10.8px; line-height: 1.5; color: var(--fl-ink-2);
 }}
 .st-key-verification [class*="st-key-check-source-"] p {{
-  font-size: 10px; line-height: 1.6; color: var(--fl-ink-3);
+  font-size: 9px; line-height: 1.6; color: var(--fl-ink-3);
 }}
 .st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] details {{
   border: none; border-radius: 0; background: transparent;
@@ -442,17 +673,17 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   padding: 8px 0 0; color: var(--fl-ink-2);
 }}
 .st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] summary p {{
-  font-size: 12px;
+  font-size: 10.8px;
 }}
 .st-key-verification [class*="st-key-chg-"] {{
   border: none; border-radius: 16px; background: var(--fl-sea-soft);
   box-shadow: none; padding: 16px; gap: 6px;
 }}
 .st-key-verification [class*="st-key-chg-"] p {{
-  color: var(--fl-sea); font-size: 14px; line-height: 1.6;
+  color: var(--fl-sea); font-size: 12.6px; line-height: 1.6;
 }}
 .st-key-verification [class*="st-key-chg-"] [data-testid="stCaptionContainer"] p {{
-  font-size: 12px;
+  font-size: 10.8px;
 }}
 .st-key-verification [data-testid="stTabs"] [data-baseweb="tab-list"] {{
   gap: 16px; background: transparent; margin-bottom: 28px;
@@ -479,7 +710,7 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   color: rgba(255, 255, 255, .6); cursor: pointer; transition: background .15s, color .15s;
 }}
 .st-key-verification [data-testid="stTab"] p {{
-  font-size: 15px; font-weight: 500; color: inherit; margin: 0;
+  font-size: 13.5px; font-weight: 500; color: inherit; margin: 0;
 }}
 .st-key-verification [data-testid="stTab"]:hover {{ color: #fff; }}
 .st-key-verification [data-testid="stTab"][data-selected="true"] {{
@@ -494,19 +725,19 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   background: var(--fl-surface); padding: 18px 20px; min-height: 108px;
 }}
 .st-key-verification [class*="st-key-check-field-"] [data-testid="stWidgetLabel"] p {{
-  font-size: 12px; color: var(--fl-ink-3);
+  font-size: 10.8px; color: var(--fl-ink-3);
 }}
 .st-key-verification [class*="st-key-check-field-"] [data-baseweb="select"] > div {{
   border: none; background: transparent; padding-left: 0;
 }}
 .st-key-verification [class*="st-key-check-field-"] [data-baseweb="select"] {{
-  font-size: 18px; font-weight: 600;
+  font-size: 16.2px; font-weight: 600;
 }}
 .st-key-verification [data-testid="stFormSubmitButton"] button {{
   background: transparent; border: 1px solid var(--fl-ink); color: var(--fl-ink);
 }}
 .st-key-verification button[data-testid^="stBaseButton"] {{
-  border-radius: 8px; min-height: 40px; font-size: 13px; font-weight: 400;
+  border-radius: 8px; min-height: 40px; font-size: 11.7px; font-weight: 400;
 }}
 .st-key-verification .st-key-check-proceed button {{
   background: var(--fl-accent); border-color: var(--fl-accent); color: var(--fl-ink);
@@ -515,7 +746,7 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-verification [data-testid="stSpinner"] {{
   padding: 16px; border-radius: 16px; background: var(--fl-sea-soft); color: var(--fl-sea);
 }}
-.st-key-verification [data-testid="stAlert"] {{ font-size: 14px; }}
+.st-key-verification [data-testid="stAlert"] {{ font-size: 12.6px; }}
 /* 확인 과정과 바뀐 점: 회차 줄 → 바꾼 점 상자 → 다음 회차 줄 (세로 타임라인) */
 .st-key-verification [class*="st-key-timeline-"] {{
   position: relative; gap: 14px; padding: 24px 28px; background: var(--fl-surface);
@@ -530,11 +761,11 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .fl-round-dot {{ position: absolute; left: 0; top: 50%; width: 12px; height: 12px; margin-top: -6px;
   border-radius: 50%; background: var(--fl-surface); border: 2px solid var(--fl-ink-3); }}
 .fl-round.last .fl-round-dot {{ background: var(--fl-accent); border-color: var(--fl-accent); }}
-.fl-round > b {{ font-size: 15px; font-weight: 700; white-space: nowrap; }}
-.fl-round-now {{ font-size: 11px; font-weight: 600; color: #c4561a; background: var(--fl-accent-soft);
+.fl-round > b {{ font-size: 13.5px; font-weight: 700; white-space: nowrap; }}
+.fl-round-now {{ font-size: 9.9px; font-weight: 600; color: #c4561a; background: var(--fl-accent-soft);
   padding: 2px 8px; border-radius: 999px; }}
 .fl-round-items {{ display: flex; flex-wrap: wrap; gap: 6px 14px; margin-left: auto; }}
-.fl-round-item {{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+.fl-round-item {{ display: inline-flex; align-items: center; gap: 6px; font-size: 11.7px;
   color: var(--fl-ink-2); }}
 .st-key-verification [class*="st-key-timeline-"] [class*="st-key-chg-"] {{ margin-left: 28px; }}
 .st-key-verification [class*="st-key-timeline-"] [data-testid="stMarkdownContainer"] {{ margin: 0; }}
@@ -564,13 +795,13 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   background: var(--fl-fail-soft); color: var(--fl-fail); border-radius: 12px; padding: 12px 16px;
 }}
 .st-key-check-blocked [data-testid="stAlertContent"] p {{
-  color: var(--fl-fail); font-size: 15px; font-weight: 600;
+  color: var(--fl-fail); font-size: 13.5px; font-weight: 600;
 }}
 /* Streamlit 기본값(margin-bottom: -16px) 때문에 상자 높이가 글자보다 작아지는 것을 막는다 */
 .st-key-check-blocked [data-testid="stMarkdownContainer"],
 .st-key-check-blocked [data-testid="stCaptionContainer"] {{ margin: 0; }}
 .st-key-check-blocked [data-testid="stMarkdownContainer"] p {{
-  margin: 0; font-size: 14px; line-height: 1.7; color: var(--fl-ink-2);
+  margin: 0; font-size: 12.6px; line-height: 1.7; color: var(--fl-ink-2);
 }}
 .st-key-check-blocked [data-testid="stMarkdownContainer"] p strong {{ color: var(--fl-ink); }}
 .st-key-verification [class*="st-key-check-blocked-fix-"] {{
@@ -583,7 +814,7 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   color: #c4561a;
 }}
 .st-key-check-blocked [data-testid="stCaptionContainer"] p {{
-  font-size: 12px; color: var(--fl-ink-3); padding-top: 8px; border-top: 1px solid var(--fl-line);
+  font-size: 10.8px; color: var(--fl-ink-3); padding-top: 8px; border-top: 1px solid var(--fl-line);
 }}
 @media (max-width: 700px) {{
   .st-key-verification .st-key-check-blocked {{ padding: 20px 18px 20px 24px; }}
@@ -591,8 +822,8 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-verification [class*="st-key-check-field-"] .react-aria-ComboBox > div {{ background: transparent; border-color: transparent; }}
 
 @media (max-width: 700px) {{
-  .st-key-verification .fl-h1 {{ font-size: 32px; }}
-  .st-key-verification .fl-desc {{ font-size: 15px; }}
+  .st-key-verification .fl-h1 {{ font-size: 28.8px; }}
+  .st-key-verification .fl-desc {{ font-size: 13.5px; }}
   .st-key-verification {{ gap: 20px; }}
   .st-key-verification [data-testid="stTabs"] [data-baseweb="tab-list"] {{ gap: 8px; }}
   .st-key-verification [data-testid="stTabs"] [data-baseweb="tab"] {{ padding: 10px 14px; }}
@@ -600,7 +831,7 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 
 /* Figma 03: 시기·장소 2열, 대상·위험·규모 3열 */
 [data-testid="stMainBlockContainer"]:has(.st-key-verification) {{ max-width: 1312px; }}
-.st-key-verification .fl-h1 {{ font-size: 44px; }}
+.st-key-verification .fl-h1 {{ font-size: 39.6px; }}
 .st-key-verification [class*="st-key-check-row-"] [data-testid="stHorizontalBlock"] {{
   align-items: stretch;
 }}
@@ -614,25 +845,25 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .fl-check-icon img {{ display: block; }}
 .fl-check-metric {{ display: flex; align-items: center; gap: 12px; padding: 16px;
   background: var(--fl-surface-2); border-radius: 16px; min-height: 72px; }}
-.fl-check-metric strong {{ font-size: 28px; font-weight: 700; line-height: 1.25; white-space: nowrap;
+.fl-check-metric strong {{ font-size: 25.2px; font-weight: 700; line-height: 1.25; white-space: nowrap;
   letter-spacing: -.03em; }}
 .fl-check-metric > div {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }}
-.fl-check-metric > div > span:last-child {{ color: var(--fl-ink-2); font-size: 12px; line-height: 1.5; }}
+.fl-check-metric > div > span:last-child {{ color: var(--fl-ink-2); font-size: 10.8px; line-height: 1.5; }}
 .fl-check-metric .fl-tag {{ align-self: flex-start; }}
 .fl-check-warning {{ background: var(--fl-warn-soft); padding: 12px; border-radius: 8px; }}
 .fl-check-warning-title {{ display: flex; gap: 6px; align-items: center;
-  font-size: 12px; font-weight: 500; color: var(--fl-warn); margin-bottom: 8px; }}
+  font-size: 10.8px; font-weight: 500; color: var(--fl-warn); margin-bottom: 8px; }}
 .fl-check-warning-title .fl-check-icon {{ width: 14px; height: 14px; background: transparent; }}
 .st-key-verification [class*="st-key-res-"] .fl-check-warning p {{
-  margin: 0; font-size: 12px; line-height: 1.6; color: var(--fl-ink-2);
+  margin: 0; font-size: 10.8px; line-height: 1.6; color: var(--fl-ink-2);
 }}
 .st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] {{ margin-top: auto; }}
 .st-key-verification [class*="st-key-res-"] [data-testid="stExpander"] [data-testid="stCaptionContainer"] p {{
-  font-size: 12px;
+  font-size: 10.8px;
 }}
 @media (max-width: 700px) {{
-  .st-key-verification .fl-h1 {{ font-size: 32px; }}
-  .fl-check-metric strong {{ font-size: 24px; }}
+  .st-key-verification .fl-h1 {{ font-size: 28.8px; }}
+  .fl-check-metric strong {{ font-size: 21.6px; }}
   .st-key-verification [class*="st-key-res-"] {{ height: auto; }}
 }}
 
@@ -661,13 +892,13 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
   content: ""; flex: none; width: 20px; height: 20px; background: url("{_icon_uri("warning")}") center / contain no-repeat;
 }}
 .st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] p {{
-  font-size: 15px; line-height: 1.5; color: var(--fl-ink); margin: 0;
+  font-size: 13.5px; line-height: 1.5; color: var(--fl-ink); margin: 0;
 }}
 .st-key-promo .st-key-promo-notice-synthetic {{ max-width: 960px; }}
 .st-key-promo .st-key-card-poster {{ padding: 0; overflow: hidden; border: none; border-radius: 4px;
   box-shadow: 0 24px 48px rgba(18, 18, 18, .10); }}
 .st-key-promo .st-key-card-poster img {{ display: block; width: 100%; height: auto; }}
-.st-key-promo [data-testid="stCaptionContainer"] p {{ font-size: 13px; color: var(--fl-ink-3); }}
+.st-key-promo [data-testid="stCaptionContainer"] p {{ font-size: 11.7px; color: var(--fl-ink-3); }}
 .st-key-promo .st-key-poster-download button,
 .st-key-promo .st-key-promo-zip button {{
   border-radius: 8px; background: var(--fl-surface); border: 1.5px solid var(--fl-ink); color: var(--fl-ink);
@@ -677,33 +908,40 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-promo .st-key-card-checks {{ padding: 28px 32px; gap: 16px; }}
 .fl-card-head {{ display: flex; align-items: center; justify-content: space-between; gap: 12px;
   flex-wrap: wrap; }}
-.fl-card-head b {{ font-size: 20px; font-weight: 600; }}
-.fl-card-head small {{ font-size: 12px; color: var(--fl-ink-3); }}
+.fl-card-head b {{ font-size: 18px; font-weight: 600; }}
+.fl-card-head small {{ font-size: 10.8px; color: var(--fl-ink-3); }}
 .fl-card-head .fl-check-icon {{ background: transparent; width: 28px; height: 28px; }}
-.fl-count {{ font-size: 13px; padding: 4px 16px; border: 1px solid var(--fl-line); border-radius: 999px; }}
+.fl-count {{ font-size: 11.7px; padding: 4px 16px; border: 1px solid var(--fl-line); border-radius: 999px; }}
 .fl-sns-body {{ white-space: pre-wrap; background: var(--fl-surface-2); border-radius: 16px;
-  padding: 20px 24px; font-size: 15px; line-height: 1.75; color: var(--fl-ink); overflow-wrap: anywhere; }}
+  padding: 20px 24px; font-size: 13.5px; line-height: 1.75; color: var(--fl-ink); overflow-wrap: anywhere; }}
 .st-key-card-sns iframe {{ display: block; }}
 .fl-promo-checks {{ list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column;
-  gap: 10px; font-size: 14px; line-height: 1.6; }}
+  gap: 10px; font-size: 12.6px; line-height: 1.6; }}
 .fl-promo-checks li {{ display: flex; gap: 4px; }}
-.fl-promo-note {{ margin: 8px 0 0; font-size: 12px; color: var(--fl-ink-3); line-height: 1.6; }}
+.fl-promo-note {{ margin: 8px 0 0; font-size: 10.8px; color: var(--fl-ink-3); line-height: 1.6; }}
 .st-key-promo .st-key-promo-save button,
-.st-key-promo .st-key-promo-zip button {{ min-height: 64px; border-radius: 8px; font-size: 16px; }}
+.st-key-promo .st-key-promo-zip button {{ min-height: 64px; border-radius: 8px; font-size: 14.4px; }}
 .fl-promo-files {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }}
-.fl-promo-files small {{ font-size: 12px; color: var(--fl-ink-3); margin-right: 4px; }}
-.fl-promo-files span {{ font-size: 13px; padding: 8px 16px; background: var(--fl-surface);
+.fl-promo-files small {{ font-size: 10.8px; color: var(--fl-ink-3); margin-right: 4px; }}
+.fl-promo-files span {{ font-size: 11.7px; padding: 8px 16px; background: var(--fl-surface);
   border: 1px solid var(--fl-line); border-radius: 999px; }}
 .fl-promo-info {{ display: flex; align-items: center; gap: 16px; padding: 20px 24px;
-  background: var(--fl-sea-soft); border-radius: 16px; font-size: 15px; line-height: 1.7; color: var(--fl-ink); }}
+  background: var(--fl-sea-soft); border-radius: 16px; font-size: 13.5px; line-height: 1.7; color: var(--fl-ink); }}
 .fl-promo-info .fl-check-icon {{ background: transparent; width: 20px; height: 20px; }}
 @media (max-width: 700px) {{
   .st-key-promo .st-key-card-sns, .st-key-promo .st-key-card-checks {{ padding: 20px; }}
-  .fl-notice, .fl-promo-info {{ padding: 14px 16px; font-size: 14px; }}
+  .fl-notice, .fl-promo-info {{ padding: 14px 16px; font-size: 12.6px; }}
 }}
 
 </style>
 """
+
+
+def logo_html() -> str:
+    return (
+        f'<div class="fl-logo"><img class="fl-blob" src="{_BRAND_MARK_URI}" alt="">'
+        '<div><b>제주 축제 메이커</b><small>JEJU FESTIVAL MAKER</small></div></div>'
+    )
 
 
 def nav_html(step: int) -> str:
@@ -713,8 +951,7 @@ def nav_html(step: int) -> str:
         cls = "active" if i == step else "done" if i < step else ""
         tabs.append(f'<span class="fl-tab {cls}">{i:02d} {escape(name)}</span>')
     return (
-        f'<div class="fl-nav"><div class="fl-logo"><img class="fl-blob" src="{_BRAND_MARK_URI}" alt="">'
-        "<div><b>제주 축제 메이커</b><small>JEJU FESTIVAL MAKER</small></div></div>"
+        f'<div class="fl-nav">{logo_html()}'
         f'<div class="fl-steps">{"".join(tabs)}</div></div>'
     )
 
@@ -817,8 +1054,8 @@ def idea_detail_html(card) -> str:
     parts.append(section("예산", bars, "에이전트 해석"))
     parts.append(section("관광객 관심", f'<div class="fl-detail-interest">{interest}</div>'))
     parts.append(
-        '<div class="fl-detail-disclaimer">' + tag_html("주최 측 주장")
-        + '<span>축제 방문객 수는 지자체 자체 보고라 참고값으로만 보여주고 점수에는 쓰지 않아요.</span></div>'
+        '<div class="fl-detail-disclaimer">' + tag_html("참고 수치")
+        + '<span>축제별 집계 방식이 달라 단순 비교에 주의가 필요한 값이에요.</span></div>'
     )
     parts.append("</div>")
     return "".join(parts)
@@ -827,9 +1064,9 @@ def idea_detail_html(card) -> str:
 def evidence_legend_html() -> str:
     """하단에서 근거 배지의 의미를 한 번에 안내한다."""
     entries = (
-        ("사실", "데이터에서 나온 값"),
-        ("에이전트 해석", "에이전트의 판단"),
-        ("주최 측 주장", "축제 방문객 수는 지자체 자체 보고라 참고만 하고 점수에는 쓰지 않아요. 순위·점수는 보여주지 않아요."),
+        ("데이터", "출처 자료에서 확인한 값이에요."),
+        ("에이전트 해석", "데이터를 바탕으로 에이전트가 분석하고 제안한 내용이에요."),
+        ("참고 수치", "축제별 집계 방식이 달라 단순 비교에 주의가 필요한 값이에요."),
     )
     return '<div class="fl-evidence-legend" role="note" aria-label="근거 표시 안내">' + "".join(
         f"<span>{tag_html(kind)}<span>{escape(description)}</span></span>"
@@ -852,26 +1089,22 @@ def sidebar_html(has_llm: bool) -> str:
     state = "사용 가능" if has_llm else "설정 필요"
     title = "함께 기획할 준비가 됐어요" if has_llm else "예시 카드로 먼저 둘러보세요"
     description = (
-        "문장으로 조건을 정리하고, 아이디어와 기획서 문장을 만드는 데 AI를 사용해요."
+        "문장으로 조건을 정리하고, 아이디어와 기획서 문장을 만드는 데 AI를 사용합니다."
         if has_llm
         else "AI 설정이 없으면 한 문장 입력·새 카드·기획서는 안내 문구로 대신해요. "
         "예시 카드로 흐름을 볼 수 있어요."
     )
-    guide = ("조건을 정해요", "아이디어를 골라요", "제주 데이터로 확인해요", "기획서를 승인해요", "홍보물을 만들어요")
+    guide = ("원하는 축제를 적어주세요", "아이디어를 골라주세요", "제주 데이터로 확인할 수 있어요", "기획서를 확인하고 승인해주세요", "홍보물을 만들어줍니다")
     steps = "".join(f"<li><span>{i:02d}</span>{text}</li>" for i, text in enumerate(guide, 1))
     return (
         '<div class="fl-settings">'
-        f'<div class="fl-settings-brand"><img class="fl-blob" src="{_BRAND_MARK_URI}" alt="">'
-        '<div><b>제주 축제 메이커</b><small>JEJU FESTIVAL MAKER</small></div></div>'
-        '<div class="fl-settings-eyebrow">작업 공간</div>'
-        '<h2>설정</h2><p class="fl-settings-intro">축제를 준비하는 나의 작업 공간</p>'
+        '<h2>설정</h2>'
         '<section class="fl-settings-card" aria-label="AI 설정 상태">'
         '<div class="fl-settings-label">AI 설정'
         f'<span class="fl-settings-state{"" if has_llm else " off"}">{state}</span></div>'
-        f'<h3>{title}</h3><p>{description}</p>'
-        '<div class="fl-settings-privacy">API 키는 화면에 표시하지 않아요.</div></section>'
+        f'<h3>{title}</h3><p>{description}</p></section>'
         '<section class="fl-settings-guide" aria-label="이용 순서">'
-        f'<h3>이렇게 사용해요</h3><ol>{steps}</ol></section>'
+        f'<h3>이렇게 사용해주세요</h3><ol>{steps}</ol></section>'
         '<p class="fl-settings-foot">전국 축제에서 아이디어를 찾고,<br>'
         '제주 데이터로 우리 동네에 맞게 다듬어요.</p></div>'
     )
@@ -988,7 +1221,7 @@ def copy_button_html(text: str) -> str:
 <style>
   body {{ margin: 0; font-family: {_FONT}; }}
   button {{ background: #121212; color: #fff; border: none; border-radius: 8px;
-    padding: 0 20px; height: 40px; font: inherit; font-size: 13px; cursor: pointer; }}
+    padding: 0 20px; height: 40px; font: inherit; font-size: 11.7px; cursor: pointer; }}
   button:hover {{ background: #333; }}
 </style>
 <button id="copy" type="button">문구 복사</button>

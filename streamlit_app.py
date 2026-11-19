@@ -5,6 +5,7 @@
 st.session_state에는 모델을 model_dump(mode="json")로 저장하고 model_validate로 읽는다.
 """
 
+from importlib import reload
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +16,9 @@ from agent.draft_contracts import IdeaProposal, UserRequest, VerificationRun
 from analytics.flow_spec import EMD_CODES
 from app import screen, style
 from app.settings import Settings
+
+# 스타일 파일 수정은 서버 재시작 없이 이번 실행부터 반영한다.
+reload(style)
 
 
 class _EscapedText:
@@ -47,8 +51,9 @@ ss = st.session_state
 # ---------- 공통 ----------
 
 
-def footer() -> None:
-    st.html(style.evidence_legend_html())
+def footer(*, show_evidence: bool = False) -> None:
+    if show_evidence:
+        st.html(style.evidence_legend_html())
     with st.container(key="foot"):
         ui.caption("데이터 출처")
         ui.caption(" · ".join(screen.DATA_SOURCES))
@@ -81,11 +86,6 @@ def goto(step: int) -> None:
     ss["step"] = step
     ss["scroll_top"] = True
     st.rerun()
-
-
-def back_button(step: int) -> None:
-    if st.button("← 이전 단계로", key=f"back_{step}"):
-        goto(step - 1)
 
 
 def tools():
@@ -359,31 +359,57 @@ def make_ideas(request: UserRequest) -> None:
 # ---------- ② 아이디어 ----------
 
 
+def stage_navigation(step: int) -> None:
+    """완료한 단계 탭으로 돌아간다. 앞으로의 단계는 이동할 수 없다."""
+    with st.container(key="idea-nav", horizontal=True,
+                      horizontal_alignment="distribute", vertical_alignment="center"):
+        st.html(style.logo_html(), width="content")
+        with st.container(key="idea-step-tabs", width="content", horizontal=True,
+                          vertical_alignment="center", gap=None):
+            for i, name in enumerate(screen.STEPS, start=1):
+                if st.button(
+                    f"{i:02d} {name}", key=f"nav_{i}",
+                    type="primary" if i == step else "tertiary",
+                    disabled=i >= step,
+                    help=f"{name} 단계로 돌아갑니다" if i < step else None,
+                ):
+                    goto(i)
+        st.html('<span class="fl-nav-balance"></span>', width="content")
+
+
 def step_ideas(request: UserRequest) -> None:
     st.html(style.head_html(2))
-    st.html(style.request_chips(request))
+    with st.container(key="idea-conditions", horizontal=True, vertical_alignment="center"):
+        st.html(style.request_chips(request), width="content")
+        if st.button("조건 수정", key="back_2", type="tertiary"):
+            goto(1)
     if conflict := screen.season_conflict(request):
         ui.warning(f"⚠️ {conflict}")
     proposal = IdeaProposal.model_validate(ss["proposal"])
     if proposal.is_demo:
         diffs = screen.demo_differences(proposal, request)
-        ui.warning(screen.demo_warning_text(ss.get("demo_reason"), diffs))
-    for notice in proposal.notices:
-        ui.info(notice)
+        with st.container(key="idea-demo-notice"), st.expander("예시 카드예요", expanded=False):
+            ui.markdown(screen.demo_warning_text(ss.get("demo_reason"), diffs))
+            for notice in proposal.notices:
+                ui.write(notice)
+    else:
+        for notice in proposal.notices:
+            ui.info(notice)
 
-    cols = st.columns(3)
-    for col, card in zip(cols, proposal.ideas, strict=True):  # rank 순서, rank·score는 숨김
-        with col, st.container(key=f"card-idea-{card.idea_id}"):
-            st.html(style.format_html(f"{card.format} × {card.material}"))
-            st.subheader(card.title)
-            ui.write(card.concept)
-            st.html(style.idea_summary_html(screen.idea_summary(card)))
-            with st.container(key=f"soft-hyp-{card.idea_id}"):
-                ui.caption("고르면 확인할 것")
-                for h in card.hypotheses[:2]:
-                    ui.write(f"- {screen.check_phrase(h)}")
-            if st.button("자세히 보기", key=f"detail_{card.idea_id}", use_container_width=True):
-                ss["detail_idea"] = card.idea_id
+    with st.container(key="idea-cards"):
+        cols = st.columns(3)
+        for col, card in zip(cols, proposal.ideas, strict=True):  # rank 순서, rank·score는 숨김
+            with col, st.container(key=f"card-idea-{card.idea_id}"):
+                st.html(style.format_html(f"{card.format} × {card.material}"))
+                st.subheader(card.title)
+                ui.write(card.concept)
+                st.html(style.idea_summary_html(screen.idea_summary(card)))
+                with st.container(key=f"soft-hyp-{card.idea_id}"):
+                    ui.caption("고르면 확인할 것")
+                    for h in card.hypotheses[:2]:
+                        ui.write(f"- {screen.check_phrase(h)}")
+                if st.button("자세히 보기", key=f"detail_{card.idea_id}", use_container_width=True):
+                    ss["detail_idea"] = card.idea_id
     detail = next((c for c in proposal.ideas if c.idea_id == ss.get("detail_idea")), None)
     if detail is not None:
         idea_details(detail)
@@ -628,8 +654,10 @@ def step_plan(request: UserRequest) -> None:
             approve_plan,
             generate_plan,
             plan_to_markdown,
-            save_plan,
         )
+        from app import plan_view
+
+        reload(plan_view)
     except ImportError:
         ui.info("기획서 기능 준비 중이에요.")
         return
@@ -649,49 +677,96 @@ def step_plan(request: UserRequest) -> None:
         except Exception as e:  # noqa: BLE001
             ui.error(str(e))
             return
-        md_path, _ = save_plan(plan)
         ss["plan"] = plan.model_dump(mode="json")
-        ss["plan_path"] = str(md_path)
+        ss.pop("plan_path", None)
         ss.pop("promo", None)
         if ss.pop("plan_error", None):
             st.rerun()  # 다시 만들기에 성공하면 지난 실패 안내와 버튼을 지우고 다시 그린다
     plan = current_plan()
-    doc, rail = st.columns([3, 1], gap="large")
-    with rail, st.container(key="card-rail"):
-        st.html(style.section_html("승인 전 확인" if plan.status != "approved" else "승인 완료"))
-        state = "승인" if plan.status == "approved" else "승인 전"
-        st.html(
-            style.chips_html(
-                [f"v{plan.version} {'승인본' if plan.status == 'approved' else '초안'}", state],
-                light_from=1,
-            )
-        )
-        ui.success(f"{ss['approved']}으로 기획서를 만들었어요.")
-        if plan.is_synthetic:
-            ui.warning("🧪 가상 데이터가 섞인 확인 결과로 만든 기획서예요.")
-        ui.caption(f"저장: {ss.get('plan_path', '')}")
-    with doc, st.container(key="doc"):
-        ui.markdown(plan_to_markdown(plan))
-    with rail:
-        step_plan_actions(plan, approve_plan, save_plan)
+    with st.container(key="plan-layout"):
+        doc, rail = st.columns([896, 320], gap="large")
+        with doc, st.container(key="doc"):
+            preview_tab, edit_tab = st.tabs(["Preview", "Edit"])
+            source = plan_to_markdown(plan)
+            editor_key = f"plan_markdown_{plan.plan_id}_{plan.version}"
+            with preview_tab:
+                st.html(plan_view.document_html(plan))
+            with edit_tab:
+                st.caption("마크다운으로 수정할 수 있어요. 항목 제목과 표 형식을 유지한 뒤 적용해주세요.")
+                edited = st.text_area("기획서 Markdown", value=source, height=720, key=editor_key,
+                                      label_visibility="collapsed")
+                save_col, download_col, json_col = st.columns(3)
+                with save_col:
+                    if st.button("수정 내용 적용", type="primary", key="save_plan_markdown"):
+                        from agent.plan_edit import edit_plan
+
+                        try:
+                            revised = edit_plan(plan, edited)
+                        except ValueError as error:
+                            st.error(str(error))
+                        else:
+                            ss["plan"] = revised.model_dump(mode="json")
+                            ss.pop("promo", None)
+                            ss["plan_edit_saved"] = True
+                            st.rerun()
+                with download_col:
+                    st.download_button(".md 다운로드", data=source,
+                                       file_name=f"{plan.plan_id}_v{plan.version}.md",
+                                       mime="text/markdown", key="download_plan_markdown",
+                                       disabled=edited.strip() != source.strip(), use_container_width=True)
+                with json_col:
+                    st.download_button(".json 다운로드", data=plan.model_dump_json(indent=2),
+                                       file_name=f"{plan.plan_id}_v{plan.version}.json",
+                                       mime="application/json", key="download_plan_json",
+                                       disabled=edited.strip() != source.strip(), use_container_width=True)
+                if ss.pop("plan_edit_saved", False):
+                    st.success("수정 내용을 적용했어요. Preview에서 확인해주세요. 파일은 다운로드 버튼으로 받을 수 있어요.")
+            has_unsaved = edited.strip() != source.strip()
+        with rail, st.container(key="card-rail"):
+            st.html(plan_view.rail_html(plan, ss["approved"]))
+            step_plan_actions(plan, approve_plan, has_unsaved=has_unsaved)
 
 
-def step_plan_actions(plan, approve_plan, save_plan) -> None:
+@st.cache_data(show_spinner=False)
+def plan_download_files(markdown: str) -> tuple[bytes, bytes]:
+    from app.plan_export import to_docx, to_hwpx
+
+    return to_docx(markdown), to_hwpx(markdown)
+
+
+def step_plan_actions(plan, approve_plan, *, has_unsaved=False) -> None:
     """기획서 오른쪽: 최종 승인 → 홍보물 만들러 가기."""
+    if has_unsaved:
+        st.info("Edit의 수정 내용을 적용한 뒤 진행해주세요.")
+    from agent.plan import plan_to_markdown
+
+    docx, hwpx = plan_download_files(plan_to_markdown(plan))
+    with st.container(key="plan-downloads"):
+        st.html('<div class="fl-plan-download-title">파일로 저장하기</div>')
+        word_col, hangul_col = st.columns(2, gap="small")
+        name = f"{plan.plan_id}_v{plan.version}"
+        word_col.download_button(
+            "Word (.docx)", data=docx, file_name=f"{name}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            disabled=has_unsaved, use_container_width=True, key="download_plan_docx",
+        )
+        hangul_col.download_button(
+            "한글 (.hwpx)", data=hwpx, file_name=f"{name}.hwpx",
+            mime="application/hwp+zip", disabled=has_unsaved,
+            use_container_width=True, key="download_plan_hwpx",
+        )
+
+    st.html('<hr class="fl-plan-approve-divider">')
     if plan.status != "approved":
-        ui.info("기획서를 최종 승인하면 홍보물을 만들 수 있어요.")
-        if st.button("기획서 최종 승인", type="primary"):
+        if st.button("기획서 최종 승인", type="primary", use_container_width=True, disabled=has_unsaved):
             plan = approve_plan(plan)
-            md_path, _ = save_plan(plan)  # 같은 파일 이름으로 승인본을 덮어쓴다
             ss["plan"] = plan.model_dump(mode="json")
-            ss["plan_path"] = str(md_path)
             ss.pop("promo", None)
             goto(5)
     else:
         ui.success("기획서를 최종 승인했어요.")
-        if st.button("홍보물 만들러 가기", type="primary"):
+        if st.button("홍보물 만들러 가기", type="primary", use_container_width=True, disabled=has_unsaved):
             goto(5)
-
 
 # ---------- ⑤ 홍보물 ----------
 
@@ -809,7 +884,10 @@ making = "idea_job" in ss and current_request() is not None
 step = 2 if making else min(ss.get("step", 1), reachable_step())  # 갈 수 없는 단계면 앞으로 돌린다
 ss["step"] = step
 request = current_request()
-st.html(style.nav_html(step))
+if step >= 2 and not making:
+    stage_navigation(step)
+else:
+    st.html(style.nav_html(step))
 with st.container(key="sr-only"):  # 화면 읽기 프로그램용 (눈에는 위 단계 탭과 칩으로 보인다)
     ui.write(
         "전국 축제 트렌드와 제주 데이터로 우리 동네 축제 아이디어를 만들고, 제주 데이터로 확인해요."
@@ -817,19 +895,19 @@ with st.container(key="sr-only"):  # 화면 읽기 프로그램용 (눈에는 �
     ui.markdown(screen.progress_text(step))
     if step >= 2 and request is not None:
         ui.caption(screen.selection_summary(request, current_card() if step >= 3 else None))
-if step >= 2 and not making:
-    back_button(step)
 
 if making:
     make_ideas(request)
 elif step == 1:
     step_request()
 elif step == 2:
-    step_ideas(request)
+    with st.container(key="ideas"):
+        step_ideas(request)
 elif step == 3:
     step_check(request, current_card())
 elif step == 4:
-    step_plan(request)
+    with st.container(key="plan"):
+        step_plan(request)
 else:
     step_promo()
-footer()
+footer(show_evidence=step == 2 and not making)
