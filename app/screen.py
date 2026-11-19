@@ -500,14 +500,73 @@ def key_numbers(r: CheckResult) -> list[str]:
     return out
 
 
+def _index_text(v: float) -> str:
+    from analytics.check_timing import INDEX_THRESHOLDS, precise_text
+
+    return precise_text(float(v), INDEX_THRESHOLDS)
+
+
+def _timing_summary(indices: dict, month_checks: list[dict]) -> tuple[str, str]:
+    """시기 카드 대표 수치. 한 달이면 그 달 지수, 여러 달이면 "N개월 중 M개월 통과"와 가장 낮은 달.
+
+    값·라벨 문자열만 만든다 (카드가 좁아 긴 라벨은 세로로 깨진다).
+    """
+    months = {int(m): float(v) for m, v in indices.items()}
+    if len(months) == 1:
+        [(m, v)] = months.items()
+        return _index_text(v), f"{m}월 관광 지표 · 연평균 1"
+    passed = sum(1 for c in month_checks if c.get("status") == "pass")
+    low_month = min(months, key=months.get)
+    return (
+        _index_text(months[low_month]),
+        f"{len(months)}개월 중 {passed}개월 통과 · 가장 낮은 {low_month}월",
+    )
+
+
+def timing_year_rows(card, request, data=None) -> list[dict]:
+    """12개월 한눈에 보기: 같은 행정동·소재로 1~12월을 한 달씩 check_timing (AI 호출 없음).
+
+    지역이 없거나 자료가 없어 판정할 수 없으면 빈 목록.
+    """
+    from analytics.check_timing import SEASON_MONTHS, check_timing, load_timing_data
+
+    data = data or load_timing_data()
+    in_season = SEASON_MONTHS.get(request.season or "", ())
+    rows = []
+    for m in range(1, 13):
+        timing = card.timing.model_copy(update={"recommended_months": [m]})
+        r = check_timing(card.model_copy(update={"timing": timing}), request, data)
+        checks = (r.evidence or {}).get("month_checks") or []
+        if r.status == "pending" or not checks:
+            return []
+        mc = checks[0]
+        bad, total = (
+            len(mc.get("bad_weeks", [])),
+            len(mc.get("bad_weeks", [])) + len(mc.get("good_weeks", [])),
+        )
+        near = [f["name"] for f in mc.get("near_festivals") or []]
+        others = [n for n in mc.get("overlapping_festivals") or [] if n not in near]
+        festivals = [f"{n}(가까움)" for n in near] + others
+        rows.append(
+            {
+                "월": f"{m}월",
+                "입력 계절": "●" if m in in_season else "",
+                "외지인 지수": _index_text(mc["outsider_visitors_index"]),
+                "날씨 나쁜 주": f"{bad}/{total}주" if bad else "없음",
+                "같은 재료 축제": ", ".join(festivals) or "없음",
+                "판정": STATUS_ICONS[r.status],
+            }
+        )
+    return rows
+
+
 def check_card_summary(r: CheckResult) -> dict:
     """첫 화면의 대표 수치. 상세 원문·출처는 펼친 영역에 보존한다."""
     e = r.evidence or {}
     value, label = WAITING, "자료가 준비되면 확인할 수 있어요"
     synthetic = r.is_synthetic
     if r.check == "check_timing" and (indices := e.get("outsider_visitors_index")):
-        value = " · ".join(f"{v:.2f}" for v in indices.values())
-        label = months_text([int(m) for m in indices]) + " 관광 목적 사용량 지표 · 연평균 1"
+        value, label = _timing_summary(indices, e.get("month_checks") or [])
     elif r.check == "check_venue" and (places := e.get("candidate_places")):
         first = places[0]
         distance = first.get("stop_distance_m")
