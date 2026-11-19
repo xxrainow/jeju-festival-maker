@@ -31,6 +31,7 @@ class FlowData:
     is_synthetic: bool
     path: Path
     period: tuple[str, str] | None
+    fallback_reason: str | None = None  # 센터 파일을 읽지 못해 가상 데이터로 대신한 이유
 
     @property
     def label(self) -> str:
@@ -49,16 +50,52 @@ def find_flow_file() -> tuple[Path, bool] | None:
     return (demo[-1], True) if demo else None
 
 
+def _validate(path: Path):
+    """읽고 검사한다. 2025-05-12 같은 날짜는 명세서 형식(20250512)으로 바꿔 읽는다."""
+    from analytics.center_data import normalize_dates
+    from analytics.validate_flow import (
+        ERROR,
+        ValidationReport,
+        read_flow_csv,
+        validate_flow_frame,
+    )
+
+    df, error = read_flow_csv(path)
+    if error:
+        report = ValidationReport()
+        report.add(ERROR, error)
+        return report
+    try:
+        return validate_flow_frame(normalize_dates(df))
+    except Exception as exc:  # noqa: BLE001 - 예상 못 한 형식도 앱이 멈추지 않게
+        report = ValidationReport()
+        report.add(ERROR, f"검사 중 예상하지 못한 문제가 생겼어요 ({type(exc).__name__})")
+        return report
+
+
 @lru_cache(maxsize=1)
 def load_flow() -> FlowData | None:
-    from analytics.validate_flow import validate_flow
+    """실데이터(data/raw/)가 있으면 그것, 없거나 읽지 못하면 가상 데이터(data/demo/).
 
+    실데이터를 읽지 못하면 fallback_reason에 이유를 남긴다 (화면 안내).
+    """
     found = find_flow_file()
     if found is None:
         return None
     path, synthetic = found
-    report = validate_flow(path)
+    report = _validate(path)
+    reason = None
     if report.data is None:
-        return None
+        if synthetic:
+            return None
+        error = next((f.message for f in report.findings if f.level == "오류"), "형식 오류")
+        reason = f"4-11 유동인구 파일: {error.split('. ')[0].rstrip('.')}"
+        demo = sorted(DEMO_DIR.glob("flow_demo_*.csv*"))
+        if not demo:
+            return None
+        path, synthetic = demo[-1], True
+        report = _validate(path)
+        if report.data is None:
+            return None
     data = report.data.assign(age_band=report.data["age"].map(AGE_BANDS))
-    return FlowData(data, synthetic, path, report.period)
+    return FlowData(data, synthetic, path, report.period, reason)

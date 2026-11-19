@@ -41,7 +41,10 @@ NIGHT_HOURS = (21, 22, 23)  # 야간 귀가 (3-04는 시 단위)
 WEEKEND = ("토", "일")
 
 
-def _nfc_find(keys, directory: Path = RAW_DIR) -> Path | None:
+def _nfc_find(keys, directory: Path | None = None) -> Path | None:
+    directory = (
+        RAW_DIR if directory is None else directory
+    )  # 실행할 때의 RAW_DIR (테스트에서 바꿔 끼움)
     hits = sorted(
         p for p in directory.glob("*.csv*")
         if any(k in unicodedata.normalize("NFC", p.name) for k in keys)
@@ -112,6 +115,7 @@ class StationHourly:
     data: pd.DataFrame  # bus_station_id, base_date, hour, get_on_off_type, user_count
     is_synthetic: bool
     path: Path
+    fallback_reason: str | None = None  # 센터 파일을 읽지 못해 가상 데이터로 대신한 이유
 
     @property
     def label(self) -> str:
@@ -132,12 +136,31 @@ def load_station_hourly() -> StationHourly | None:
     if found is None:
         return None
     path, synthetic = found
-    df = pd.read_csv(
-        path,
-        dtype={"bus_station_id": str, "base_date": str},
-        usecols=["base_date", "base_hour", "bus_station_id", "get_on_off_type", "user_count"],
-        encoding="utf-8-sig",
-    )
+    try:
+        return _read_station_hourly(path, synthetic)
+    except Exception as exc:  # noqa: BLE001 - 센터 파일 형식이 달라도 앱이 멈추지 않게
+        if synthetic:
+            return None
+        from analytics.center_data import reason_text
+
+        demo = sorted(DEMO_DIR.glob("bus_station_hourly_demo_*.csv*"))
+        if not demo:
+            return None
+        data = _read_station_hourly(demo[-1], True)
+        data.fallback_reason = reason_text(exc, "3-04 버스 정류소별 이용")
+        return data
+
+
+STATION_COLUMNS = ["base_date", "base_hour", "bus_station_id", "get_on_off_type", "user_count"]
+
+
+def _read_station_hourly(path: Path, synthetic: bool) -> StationHourly:
+    """UTF-8·CP949 모두 읽는다. 필수 열이 없으면 ValueError (이유는 화면 안내에 쓴다)."""
+    from analytics.center_data import read_csv_any, require_columns
+
+    df = read_csv_any(path, dtype={"bus_station_id": str, "base_date": str})
+    require_columns(df, STATION_COLUMNS, "3-04 버스 정류소별 이용")
+    df = df[STATION_COLUMNS].copy()
     df["hour"] = pd.to_numeric(df["base_hour"])
     return StationHourly(df.drop(columns="base_hour"), synthetic, path)
 
