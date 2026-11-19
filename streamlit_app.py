@@ -717,10 +717,11 @@ def step_plan(request: UserRequest) -> None:
             ui.warning(error)
             if not st.button(screen.RETRY_PLAN_LABEL, type="primary", key="retry_plan"):
                 return
-        # 장소 후보를 기획서에 넘기는 방식은 A와 정할 예정. 지금은 고른 안의 확인 결과 그대로 넘긴다
         try:
             with st.spinner("기획서를 쓰는 중이에요…"):
                 plan = generate_plan(approved_run, request, approved=True)
+            # 장소를 정하지 않았으면 "직접 고쳐서 다시 확인"의 장소 선택지와 같은 후보를 장소 칸에 함께 적는다
+            plan = screen.with_venue_candidates(plan, VerificationRun.model_validate(ss["run"]))
         except PlanGenerationError as e:
             ss["plan_error"] = screen.plan_failure_reason(e)
             st.rerun()  # 이유와 "다시 만들기" 버튼을 보여준다

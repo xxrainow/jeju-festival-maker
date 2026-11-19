@@ -714,6 +714,95 @@ def test_jungang_dong_neighbor_venue_on_screen(no_llm):
     assert any("약" in o and "km" in o for o in place.options)  # 인접 동네 후보는 동네·거리 표시
 
 
+def _venue_run(candidates, neighbors=(), region="제주시 애월읍"):
+    from agent.draft_contracts import CheckRound
+
+    venue = CheckResult(check="check_venue", status="pass" if candidates else "fail", reason="r",
+                        evidence={"region": region, "candidate_places": list(candidates),
+                                  "neighbor_candidates": list(neighbors)})  # fmt: skip
+    outcome = "ready_for_approval" if candidates else "needs_other_idea"  # 후보 0곳이면 장소 ❌
+    return VerificationRun(original=CARD, final=CARD, outcome=outcome,
+                           rounds=[CheckRound(round=1, results=[venue], changes=[])])  # fmt: skip
+
+
+AEWOL_PLACES = [{"name": n, "admin_area": "제주시 애월읍"} for n in
+                ("곽지과물해변", "애월국민체육센터", "금산공원", "네번째공원")]  # fmt: skip
+
+
+def test_plan_venue_text_lists_candidates_like_manual_choices():
+    """장소를 정하지 않은 기획서: 선택지와 같은 목록·순서로 최대 3곳, 인접 동네는 동네 표시."""
+    run = _venue_run(AEWOL_PLACES)
+    assert [c["name"] for c in screen.venue_choices(run)][:3] == [
+        "곽지과물해변",
+        "애월국민체육센터",
+        "금산공원",
+    ]
+    assert screen.plan_venue_text(run) == (
+        "미확인 (후보: 곽지과물해변 · 애월국민체육센터 · 금산공원 — 관광 수요·버스 접근성 기준)"
+    )
+    near = [{"name": "이중섭거리", "admin_area": "서귀포시 정방동", "distance_km": 0.5}]
+    assert screen.plan_venue_text(_venue_run([], near, region="서귀포시 중앙동")) == (
+        "미확인 (후보: 이중섭거리(정방동) — 관광 수요·버스 접근성 기준)"
+    )
+    assert screen.plan_venue_text(_venue_run([])) is None  # 후보 0곳
+
+
+def _plan():
+    from agent.draft_contracts import UserRequest
+    from agent.fake_checks import FAKE_TOOLS
+    from agent.plan import generate_plan
+    from agent.verify import verify_idea
+    from analytics.real_checks import REAL_TOOLS
+
+    request = UserRequest(region="제주시 애월읍", purpose="지역 상권 활성화", interest="감귤",
+                          season="겨울", target="가족", budget_max_krw=10_000_000)  # fmt: skip
+    run = verify_idea(CARD, request, {**FAKE_TOOLS, **REAL_TOOLS})
+    return generate_plan(run, request, FakePlanLLM(), approved=True), run
+
+
+def test_plan_venue_candidates_in_all_outputs_but_not_promo(tmp_path):
+    """장소 미정: 기획서 화면·Markdown·Word·한글이 같은 후보 문구, 홍보물은 "장소는 추후 공지" 그대로."""
+    import zipfile
+    from io import BytesIO
+
+    from agent.plan import plan_to_markdown
+    from app import plan_view, promo
+    from app.plan_export import to_docx, to_hwpx
+
+    plan, run = _plan()
+    assert plan.overview.venue == "미확인"  # 기획서 생성 결과 (agent/plan.py)
+    plan = screen.with_venue_candidates(plan, run)
+    text = plan.overview.venue
+    assert text.startswith("미확인 (후보: ") and text.endswith("— 관광 수요·버스 접근성 기준)")
+    assert "확정" not in text
+    md = plan_to_markdown(plan)
+    assert f"| 장소 | {text} |" in md
+    from html import escape
+
+    assert escape(text) in plan_view.document_html(plan)  # 기획서 화면
+    from docx import Document
+
+    doc = Document(BytesIO(to_docx(md)))
+    cells = [c.text for t in doc.tables for row in t.rows for c in row.cells]
+    assert text in cells
+    with zipfile.ZipFile(BytesIO(to_hwpx(md))) as zf:
+        xml = "".join(
+            zf.read(n).decode("utf-8", "ignore") for n in zf.namelist() if n.endswith(".xml")
+        )
+    assert "곽지과물해변" in xml and "관광 수요·버스 접근성 기준" in xml
+    # 홍보물: 후보를 쓰지 않는다
+    assert promo.fixed_texts(plan)["place"] == "제주시 애월읍 · 장소 추후 공지"
+    assert promo.sns_info(plan)["where"] == "제주시 애월읍 (장소는 추후 공지)"
+
+
+def test_plan_venue_kept_when_chosen_or_no_candidates():
+    plan, run = _plan()
+    chosen = plan.model_copy(update={"overview": plan.overview.model_copy(
+        update={"venue": "곽지과물해변 (사용자 선택, 대관 조건 미확인)"})})  # fmt: skip
+    assert screen.with_venue_candidates(chosen, run) is chosen  # 정한 장소는 그대로
+    assert screen.with_venue_candidates(plan, _venue_run([])).overview.venue == "미확인"
+
+
 def test_streamlit_config_is_headless_and_local():
     """첫 실행 때 영어 이메일 질문이 안 뜨게 headless, 서버는 이 컴퓨터에서만."""
     import tomllib

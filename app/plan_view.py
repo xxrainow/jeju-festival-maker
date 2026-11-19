@@ -122,7 +122,7 @@ def document_html(plan: FestivalPlan) -> str:
         ("목적", overview.purpose or UNCONFIRMED), ("주최·주관", overview.organizer),
     ], "overview")
     hints = list(notes["timing"])
-    if overview.venue == UNCONFIRMED:
+    if overview.venue.startswith(UNCONFIRMED):  # "미확인 (후보: …)" 포함
         venue = next((c for c in plan.checks if c.check == "check_venue"), None)
         candidates = (venue.evidence.get("candidate_places") or []) if venue else []
         names = [p["name"] for p in candidates if isinstance(p, dict) and p.get("name")]
