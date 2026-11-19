@@ -61,7 +61,7 @@ cp .env.example .env
 uv run streamlit run streamlit_app.py
 ```
 
-브라우저는 자동으로 열리지 않습니다. **브라우저에서 http://localhost:8501 을 직접 여세요** (안 되면 http://127.0.0.1:8501).
+브라우저는 자동으로 열리지 않습니다. **브라우저에서 http://127.0.0.1:8501 을 직접 여세요** (터미널에 찍히는 주소와 같습니다).
 첫 실행 때 이메일을 묻는 영어 질문은 나오지 않습니다 (`.streamlit/config.toml`의 `headless = true`).
 종료: 실행한 터미널에서 Ctrl+C.
 
