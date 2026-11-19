@@ -174,6 +174,9 @@ uv run python -m research.materials --publish
 | Shapely | 좌표·경계 계산 | BSD-3-Clause |
 | Plotly | 분석 그래프 | MIT |
 | openpyxl, xlrd | 엑셀 읽기 | MIT, BSD-3-Clause |
+| python-docx | 기획서 Word(.docx) 내려받기 | MIT |
+| python-hwpx | 기획서 한글(.hwpx) 내려받기 | Apache-2.0 |
+| markdown-it-py | 기획서 Markdown 읽기 | MIT |
 | pytest, Ruff (개발용) | 테스트, 코드 검사 | MIT |
 | uv | 설치·실행 도구 | Apache-2.0 / MIT |
 | Noto Sans KR Bold (`assets/fonts/`) | 포스터 한글 글꼴 | SIL Open Font License 1.1 (`OFL.txt` 함께 둠) |
