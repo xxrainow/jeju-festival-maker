@@ -25,6 +25,7 @@ DOCS = [
     ("docs/submission/manual.md", "03_사용매뉴얼.pdf", "사용 매뉴얼"),
     ("docs/submission/troubleshooting.md", "04_오류와제약.pdf", "오류와 제약"),
     ("docs/submission/data-spec.md", "05_데이터활용명세.pdf", "데이터 활용 명세"),
+    ("docs/submission/prompts-models.md", "06_프롬프트와모델.pdf", "프롬프트·모델"),
 ]
 PDF_BY_NAME = {Path(src).name: pdf for src, pdf, _ in DOCS}
 

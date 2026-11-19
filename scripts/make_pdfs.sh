@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 제출 문서(md) → PDF 5개 (submission_pdf/). md 원본은 바꾸지 않는다.
+# 제출 문서(md) → PDF (submission_pdf/, 목록은 scripts/pdf_build_html.py의 DOCS). md 원본은 바꾸지 않는다.
 # 실행 (프로그램 폴더 어디서나): bash scripts/make_pdfs.sh
 #
 # 필요한 것
