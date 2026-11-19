@@ -139,8 +139,33 @@ def test_md_escapes_tildes_for_markdown():
 
 def test_won():
     assert screen.won(10_000_000) == "1,000만 원"
-    assert screen.won(278_000_000) == "2.78억 원"
+    assert screen.won(278_000_000) == "2억 7,800만 원"  # 기획서와 같은 "억 + 만" 표기
+    assert screen.won(100_000_000) == "1억 원"
     assert screen.won(None) == "미정"
+
+
+@pytest.mark.parametrize(
+    ("krw", "hint"),
+    [(10_000_000, "= 1,000만 원"), (150_000_000, "= 1억 5,000만 원"), (500_000, "= 50만 원"),
+     (0, ""), (None, "")],
+)  # fmt: skip
+def test_budget_hint_reads_amount_in_korean(krw, hint):
+    """① 예산 칸 아래 회색 글씨: 원 단위 숫자를 한국어 단위로 (0·빈 값은 표시 안 함)."""
+    assert screen.budget_hint(krw) == hint
+
+
+def test_budget_hint_on_screen_keeps_value_in_won(no_llm):
+    """표시만 추가: 입력칸·저장 값은 원 단위 숫자 그대로."""
+    from agent.draft_contracts import UserRequest
+
+    at = confirm(budget=150_000_000)
+    assert any('class="fl-budget-hint"' in h.proto.body for h in at.get("html"))
+    click(at, "아이디어 보기")
+    assert UserRequest.model_validate(at.session_state["request"]).budget_max_krw == 150_000_000
+    at = confirm()  # 빈 값이면 글씨 없음
+    assert any(
+        h.proto.body.endswith("></div>") for h in at.get("html") if "fl-budget-hint" in h.proto.body
+    )
 
 
 def test_key_numbers_and_venue_table():
@@ -637,7 +662,10 @@ def test_jungang_dong_neighbor_venue_on_screen(no_llm):
     assert first.status == "fail" and first.evidence["neighbor_candidates"]
     assert last.status != "fail" and last.evidence["chosen_venue"] is True
     assert {v.admin_area for v in run.final.venue} <= {
-        "서귀포시 정방동", "서귀포시 천지동", "서귀포시 동홍동", "서귀포시 서홍동"
+        "서귀포시 정방동",
+        "서귀포시 천지동",
+        "서귀포시 동홍동",
+        "서귀포시 서홍동",
     }
     place = next(s for s in at.selectbox if s.label.startswith("장소"))
     assert len(place.options) > 1  # "(정하지 않음)"만 있지 않다

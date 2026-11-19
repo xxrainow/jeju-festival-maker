@@ -98,12 +98,28 @@ DATA_SOURCES = [
 ]
 
 
+def korean_won(krw: int) -> str:
+    """원 단위 금액을 한국어 단위로: 150000000 → "1억 5,000만 원", 10000000 → "1,000만 원".
+
+    만 원 아래는 반올림한다 (1만 원 미만이면 "5,000원"). 기획서의 금액 표기와 같은 방식.
+    """
+    krw = int(krw)
+    if krw < 10_000:
+        return f"{krw:,}원"
+    # 만 원 단위로 반올림(0.5는 올림, 화면 스크립트와 같게)한 뒤 억·만으로 나눈다
+    eok, man = divmod(int(krw / 10_000 + 0.5), 10_000)
+    parts = ([f"{eok:,}억"] if eok else []) + ([f"{man:,}만"] if man else [])
+    return " ".join(parts) + " 원"
+
+
 def won(krw: int | None) -> str:
-    if krw is None:
-        return "미정"
-    if krw >= 100_000_000:
-        return f"{krw / 100_000_000:,.2f}".rstrip("0").rstrip(".") + "억 원"
-    return f"{krw / 10_000:,.0f}만 원"
+    """화면 금액 표기. 값이 없으면 "미정" (표기는 korean_won과 같음)."""
+    return "미정" if krw is None else korean_won(krw)
+
+
+def budget_hint(krw) -> str:
+    """① 예산 칸 아래 회색 글씨: 10000000 → "= 1,000만 원". 0이나 빈 값이면 빈 문자열."""
+    return f"= {korean_won(krw)}" if krw else ""
 
 
 def ordered_months(months: list[int]) -> list[int]:

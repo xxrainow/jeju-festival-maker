@@ -178,6 +178,31 @@ def fill_demo_conditions() -> None:
     ss.pop("parse_error", None)
 
 
+# screen.budget_hint와 같은 규칙 (만 원 단위 반올림, 억·만). 예산 칸에 입력할 때마다 회색 글씨를 바꾼다
+BUDGET_HINT_SCRIPT = """<script>
+const doc = window.parent.document;
+function koreanWon(v) {
+  if (!v || v <= 0) return "";
+  if (v < 10000) return "= " + v.toLocaleString("ko-KR") + "원";
+  const man = Math.round(v / 10000), eok = Math.floor(man / 10000), rest = man % 10000;
+  const parts = [];
+  if (eok) parts.push(eok.toLocaleString("ko-KR") + "억");
+  if (rest) parts.push(rest.toLocaleString("ko-KR") + "만");
+  return "= " + parts.join(" ") + " 원";
+}
+function bind() {
+  const input = doc.querySelector('[class*="st-key-fieldcard-budget_max_krw"] input');
+  const hint = doc.querySelector(".fl-budget-hint");
+  if (!input || !hint || input.dataset.budgetHint) return;
+  input.dataset.budgetHint = "1";
+  const update = () => { hint.textContent = koreanWon(Number(String(input.value).replace(/[^0-9]/g, ""))); };
+  input.addEventListener("input", update);
+}
+setInterval(bind, 500);
+bind();
+</script>"""
+
+
 def step_request() -> None:
     error = ss.pop("parse_error", None)
     st.html(style.HERO)
@@ -265,7 +290,8 @@ def step_request() -> None:
             placeholder="가족, 청년, 어르신 …",
             label_visibility="collapsed",
         )
-        budget = field(c6, "budget_max_krw", "예산 상한 (원)").number_input(
+        budget_box = field(c6, "budget_max_krw", "예산 상한 (원)")
+        budget = budget_box.number_input(
             "예산 상한 (원)",
             min_value=1,
             value=draft.get(
@@ -275,11 +301,18 @@ def step_request() -> None:
             placeholder="예: 10000000, 모르면 비워두세요",
             label_visibility="collapsed",
         )
+        # 입력한 금액을 한국어 단위로 (표시만. 저장 값은 원 단위 숫자 그대로)
+        budget_box.html(
+            '<div class="fl-budget-hint" style="font-size:11.7px;color:var(--fl-ink-3);'
+            f'min-height:1.2em;margin-top:4px">{screen.budget_hint(budget)}</div>'
+        )
         ui.info(
             "대상을 비우면 ‘대상’ 확인은 데이터 대기로 남아요. "
             "계절과 소재가 맞지 않으면 막지 않고 알려만 드려요."
         )
         confirmed = st.form_submit_button("아이디어 보기", type="primary")
+    # 입력 양식 안의 숫자는 버튼을 누르기 전엔 서버로 오지 않아, 입력하는 동안은 브라우저에서 바로 바꾼다
+    components.html(BUDGET_HINT_SCRIPT, height=0)
     if confirmed:
         try:
             request = UserRequest(
