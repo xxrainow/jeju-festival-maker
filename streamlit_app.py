@@ -571,6 +571,8 @@ def verification_content(request: UserRequest, card) -> None:
         ss["run"] = run.model_dump(mode="json")
     run = VerificationRun.model_validate(ss["run"])
     manual = VerificationRun.model_validate(ss["manual_run"]) if "manual_run" in ss else None
+    for notice in screen.center_data_notices():  # 센터 파일을 읽지 못해 가상 데이터로 대신했을 때
+        ui.warning(f"⚠️ {notice}")
 
     def strip(name: str, r: VerificationRun) -> None:
         st.html(style.plan_strip_html(name, r.final, r.outcome == "ready_for_approval"))
