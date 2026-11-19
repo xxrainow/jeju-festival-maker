@@ -580,12 +580,68 @@ def test_timing_card_summary_for_many_months_is_short():
     })  # fmt: skip
     summary = screen.check_card_summary(r)
     assert summary["value"] == "0.68"
-    assert summary["label"] == "7개월 중 1개월 통과 · 가장 낮은 4월"
+    assert summary["label"] == "통과 1 · 조건부 3 · 실패 3 · 가장 낮은 4월"  # 판정이 섞이면 개수
     one = CheckResult(check="check_timing", status="fail", reason="r", evidence={
         "outsider_visitors_index": {12: 0.798}, "month_checks": [{"month": 12, "status": "fail"}],
     })  # fmt: skip
     assert screen.check_card_summary(one)["value"] == "0.798"  # 0.80으로 반올림하지 않음
     assert screen.check_card_summary(one)["label"] == "12월 관광 지표 · 연평균 1"
+
+
+def test_card_summaries_follow_actual_results():
+    """시기: 모두 같은 판정이면 "2개월 모두 조건부", 장소: 후보 0곳이면 "데이터 대기"가 아니라 사실대로."""
+    timing = CheckResult(check="check_timing", status="conditional", reason="r", evidence={
+        "outsider_visitors_index": {7: 0.97, 8: 0.92},
+        "month_checks": [{"month": 7, "status": "conditional"}, {"month": 8, "status": "conditional"}],
+    })  # fmt: skip
+    assert screen.check_card_summary(timing)["label"] == "2개월 모두 조건부 · 가장 낮은 8월"
+    mixed = timing.model_copy(update={"evidence": {
+        "outsider_visitors_index": {7: 1.27, 8: 0.97},
+        "month_checks": [{"month": 7, "status": "pass"}, {"month": 8, "status": "conditional"}],
+    }})  # fmt: skip
+    assert screen.check_card_summary(mixed)["label"] == "통과 1 · 조건부 1 · 가장 낮은 8월"
+    venue = CheckResult(check="check_venue", status="fail", reason="r", evidence={
+        "region": "서귀포시 중앙동", "candidate_places": [],
+        "neighbor_candidates": [{"name": "이중섭거리"}, {"name": "아랑조을거리"}, {"name": "외돌개"}],
+    })  # fmt: skip
+    summary = screen.check_card_summary(venue)
+    assert (summary["value"], summary["label"]) == ("후보 0곳", "인접 동네 후보 3곳")
+    assert summary["value"] != screen.WAITING
+
+
+def test_venue_choices_include_neighbor_candidates_with_distance():
+    """원래 동네 후보가 0곳이면 직접 고르기 선택지에 인접 동네 후보를 "· 동네 약 Nkm"과 함께."""
+    from agent.draft_contracts import CheckRound
+
+    venue = CheckResult(check="check_venue", status="fail", reason="r", evidence={
+        "region": "서귀포시 중앙동", "candidate_places": [],
+        "neighbor_candidates": [
+            {"name": "아시아CGI애니메이션센터", "admin_area": "서귀포시 동홍동", "distance_km": 0.3},
+            {"name": "이중섭거리", "admin_area": "서귀포시 정방동", "distance_km": 0.5},
+        ],
+    })  # fmt: skip
+    run = VerificationRun(original=CARD, final=CARD, outcome="needs_other_idea",
+                          rounds=[CheckRound(round=1, results=[venue], changes=[])])  # fmt: skip
+    choices = screen.venue_choices(run)
+    assert [c["name"] for c in choices] == ["아시아CGI애니메이션센터", "이중섭거리"]
+    assert choices[1]["label"] == "이중섭거리 · 정방동 약 0.5km"
+    assert choices[1]["admin_area"] == "서귀포시 정방동"
+
+
+def test_jungang_dong_neighbor_venue_on_screen(no_llm):
+    """중앙동(장소 0곳): 에이전트가 인접 동네 후보로 바꾸면 장소 판정이 그 장소 기준이라 진행할 수 있다."""
+    at = to_results("서귀포시 중앙동")
+    run = VerificationRun.model_validate(at.session_state["run"])
+    first = next(r for r in run.rounds[0].results if r.check == "check_venue")
+    last = next(r for r in run.rounds[-1].results if r.check == "check_venue")
+    assert first.status == "fail" and first.evidence["neighbor_candidates"]
+    assert last.status != "fail" and last.evidence["chosen_venue"] is True
+    assert {v.admin_area for v in run.final.venue} <= {
+        "서귀포시 정방동", "서귀포시 천지동", "서귀포시 동홍동", "서귀포시 서홍동"
+    }
+    place = next(s for s in at.selectbox if s.label.startswith("장소"))
+    assert len(place.options) > 1  # "(정하지 않음)"만 있지 않다
+    assert any("약" in o and "km" in o for o in place.options)  # 인접 동네 후보는 동네·거리 표시
 
 
 def test_streamlit_config_is_headless_and_local():

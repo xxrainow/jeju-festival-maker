@@ -515,12 +515,15 @@ def _timing_summary(indices: dict, month_checks: list[dict]) -> tuple[str, str]:
     if len(months) == 1:
         [(m, v)] = months.items()
         return _index_text(v), f"{m}월 관광 지표 · 연평균 1"
-    passed = sum(1 for c in month_checks if c.get("status") == "pass")
     low_month = min(months, key=months.get)
-    return (
-        _index_text(months[low_month]),
-        f"{len(months)}개월 중 {passed}개월 통과 · 가장 낮은 {low_month}월",
-    )
+    statuses = [c.get("status") for c in month_checks if int(c.get("month", 0)) in months]
+    words = {"pass": "통과", "conditional": "조건부", "fail": "실패"}
+    counts = {w: statuses.count(k) for k, w in words.items() if statuses.count(k)}
+    if len(counts) == 1:  # 모두 같은 판정: "2개월 모두 조건부"
+        judged = f"{len(months)}개월 모두 {next(iter(counts))}"
+    else:  # 섞이면 판정별 개수: "통과 1 · 조건부 1"
+        judged = " · ".join(f"{w} {n}" for w, n in counts.items()) or f"{len(months)}개월"
+    return _index_text(months[low_month]), f"{judged} · 가장 낮은 {low_month}월"
 
 
 def timing_year_rows(card, request, data=None) -> list[dict]:
@@ -567,6 +570,10 @@ def check_card_summary(r: CheckResult) -> dict:
     synthetic = r.is_synthetic
     if r.check == "check_timing" and (indices := e.get("outsider_visitors_index")):
         value, label = _timing_summary(indices, e.get("month_checks") or [])
+    elif r.check == "check_venue" and r.status == "fail" and not e.get("candidate_places"):
+        # 후보 0곳으로 실패: "데이터 대기"가 아니라 사실대로
+        value = "후보 0곳"
+        label = f"인접 동네 후보 {len(e.get('neighbor_candidates') or [])}곳"
     elif r.check == "check_venue" and (places := e.get("candidate_places")):
         first = places[0]
         distance = first.get("stop_distance_m")
@@ -962,14 +969,31 @@ def edited_card(card, months: list[int], venue: dict | None, scale: str):
 
 
 def venue_choices(run) -> list[dict]:
-    """직접 고르기용 장소 후보 (마지막 확인의 장소 후보 표)."""
-    venue = next((r for r in run.rounds[-1].results if r.check == "check_venue"), None)
-    if venue is None:
-        return []
-    return [
-        {"name": c["name"], "admin_area": c["admin_area"]}
-        for c in (venue.evidence or {}).get("candidate_places") or []
-    ]
+    """직접 고르기용 장소 후보: 마지막 확인의 장소 후보 표 + (원래 동네에 후보가 없었으면) 인접 동네 후보.
+
+    인접 동네 후보는 label에 동네와 거리를 붙인다 ("이중섭거리 · 정방동 약 0.5km").
+    """
+    region = None
+    seen, out = set(), []
+    lists = []
+    for rd in reversed(run.rounds):  # 마지막 확인의 표를 먼저
+        venue = next((r for r in rd.results if r.check == "check_venue"), None)
+        if venue is None:
+            continue
+        e = venue.evidence or {}
+        region = region or e.get("region")
+        lists += [e.get("candidate_places") or [], e.get("neighbor_candidates") or []]
+    for c in (c for cands in lists for c in cands):
+        if c["name"] in seen:
+            continue
+        seen.add(c["name"])
+        label = c["name"]
+        if region and c["admin_area"] != region:
+            short = c["admin_area"].split()[-1]
+            km = c.get("distance_km")
+            label += f" · {short}" + (f" 약 {km:.1f}km" if km is not None else "")
+        out.append({"name": c["name"], "admin_area": c["admin_area"], "label": label})
+    return out
 
 
 # ---------- 단계별 화면, 예시 카드 이유 ----------
