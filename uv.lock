@@ -261,7 +261,7 @@ wheels = [
 ]
 
 [[package]]
-name = "jeju-festival-lab"
+name = "jeju-festival-maker"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

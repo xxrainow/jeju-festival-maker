@@ -1376,7 +1376,7 @@ HERO = (
     '<span class="tag" style="left:-30px;top:-14px">#애월 감귤</span>'
     '<span class="tag" style="right:-50px;top:40px">#대정 방어</span>'
     '<span class="tag" style="right:-6px;bottom:-16px">#성산 유채</span></div>'
-    '<div class="side right"><small>제주 축제랩</small><b>축제 만들기</b></div></div>'
+    '<div class="side right"><small>제주 축제 메이커</small><b>축제 만들기</b></div></div>'
     '<p class="fl-hero-desc">전국 축제 트렌드에서 아이디어를 찾고, 제주 데이터로 확인해서 '
     "기획서와 홍보물까지 만들어요.</p>"
     '<div class="fl-examples" aria-hidden="true">'

@@ -1,4 +1,4 @@
-# 제주 축제랩 (jeju-festival-maker)
+# 제주 축제 메이커 (jeju-festival-maker)
 
 개발자 A, B가 함께 쓰는 Claude Code 공용 지침이다.
 개인 취향(응답 말투, 코드 스타일 등)은 이 파일이 아니라 각자의 `~/.claude/CLAUDE.md`에 둔다.
