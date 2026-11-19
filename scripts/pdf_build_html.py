@@ -12,6 +12,7 @@ import html
 import json
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from markdown_it import MarkdownIt
 
@@ -41,14 +42,21 @@ def pdf_name(target: str) -> str | None:
     return PDF_BY_NAME.get(name)
 
 
-def rewrite(tokens) -> None:
-    """제출 문서 링크는 PDF 이름 글자로 바꾼다 (PDF 안의 상대 링크는 열리지 않으므로 글자로만)."""
+def rewrite(tokens, base: Path) -> None:
+    """제출 문서 링크는 PDF 이름 글자로 바꾼다 (PDF 안의 상대 링크는 열리지 않으므로 글자로만).
+
+    이미지는 HTML을 다른 폴더에 만들므로 원본 md 기준 절대 경로(file://)로 바꾼다.
+    """
     for tok in tokens:
         if tok.type != "inline" or not tok.children:
             continue
         out, i, kids = [], 0, tok.children
         while i < len(kids):
             k = kids[i]
+            src = k.attrGet("src") if k.type == "image" else None
+            if src and "://" not in src:
+                # markdown-it이 한글 파일 이름을 %인코딩해 두므로 풀어서 경로로 만든다
+                k.attrSet("src", (base / unquote(src)).resolve().as_uri())
             if k.type == "code_inline" and (pdf := pdf_name(k.content)):
                 k.content = pdf
             if k.type == "link_open" and (pdf := pdf_name(k.attrGet("href") or "")):
@@ -99,6 +107,11 @@ th { background: #eef3f1; font-weight: 700; }
 td code, th code { font-size: 7.8pt; padding: 0 2px; }
 blockquote { margin: 8px 0; padding: 4px 10px; border-left: 3px solid #1f6f5c; color: #444;
              background: #f7faf9; }
+img { display: block; max-width: 100%%; max-height: 225mm; margin: 10px auto 4px; border: 1px solid #d8dee4;
+      border-radius: 6px; break-inside: avoid; }
+p:has(> img) { break-inside: avoid; break-after: avoid; margin: 8px 0 0; }
+p:has(> img) + p > em:only-child { display: block; }
+em { font-style: normal; color: #57606a; font-size: 9pt; }
 hr { border: 0; border-top: 1px solid #d0d7de; margin: 16px 0; }
 """
 
@@ -110,7 +123,7 @@ def build(out_dir: Path, font_regular: Path) -> list[dict]:
     jobs = []
     for src, pdf, title in DOCS:
         tokens = md.parse((ROOT / src).read_text(encoding="utf-8"))
-        rewrite(tokens)
+        rewrite(tokens, (ROOT / src).parent)
         body = md.renderer.render(tokens, md.options, {})
         page = (
             f'<!doctype html><html lang="ko"><head><meta charset="utf-8">'
