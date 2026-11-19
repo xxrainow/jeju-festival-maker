@@ -22,6 +22,8 @@ from agent.idea_gen import (
 from agent.llm import LLMClient, LLMError
 
 MAX_HYPOTHESES = 3
+# AI 호출 횟수 (처음 1번 + 다시 요청 2번). 후보가 적으면 AI가 2개만 고를 때가 있어 3번으로 둔다
+CARD_ATTEMPTS = 3
 
 SYSTEM_PROMPT = f"""\
 당신은 제주 지역 축제 기획을 돕는 도우미입니다.
@@ -31,7 +33,9 @@ SYSTEM_PROMPT = f"""\
 규칙:
 1. <candidates>에 있는 candidate_id만 고르세요. 목록에 없는 조합을 만들지 마세요.
 2. {IDEA_COUNT}개의 형식(format)은 서로 달라야 합니다. 계절과 주 대상도 되도록 겹치지 않게 고르세요.
-3. 점수가 높은 후보를 우선하되, 실제 축제로 어색한 조합은 건너뛰세요.
+3. 반드시 정확히 {IDEA_COUNT}개를 고르세요. 점수가 높고 실제 축제로 자연스러운 후보를 우선하고,
+   어색한 조합은 자연스러운 후보가 모자랄 때만 고르세요.
+   이때는 이름과 컨셉을 소규모 축제로 말이 되게 다듬으세요 (예: 야간 형식이면 드론 대신 조명·산책).
 4. title, concept, pick_reason에는 수치를 쓰지 마세요. 일도2동 같은 지역 고유명의 숫자는 허용합니다.
    희망 지역이 있으면 title과 concept에 다른 지역명을 넣지 마세요.
    소규모 축제이므로 드론 쇼·불꽃 공연 대신 기존 조명, 산책, 지역 참여 프로그램을 제안하세요.
@@ -204,7 +208,7 @@ def generate_idea_cards(
     llm: LLMClient,
     *,
     materials: tuple[Material, ...] = SEED_MATERIALS,
-    max_attempts: int = 2,
+    max_attempts: int = CARD_ATTEMPTS,
     progress: Progress | None = None,
 ) -> IdeaProposal:
     """후보를 만들고 LLM이 3개를 고르게 한 뒤 카드 묶음을 돌려준다.

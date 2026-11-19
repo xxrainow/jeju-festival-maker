@@ -126,9 +126,26 @@ def test_generate_retries_with_problem_then_builds_cards(trend_data):
 
 
 def test_generate_gives_up_after_attempts(trend_data):
-    llm = FakeLLM("x", "y")
-    with pytest.raises(CardGenerationError, match="2회 시도"):
+    llm = FakeLLM("x", "y", "z")
+    with pytest.raises(CardGenerationError, match="3회 시도"):
         generate_idea_cards(REQUEST, trend_data, llm)
+    assert len(llm.calls) == 3
+
+
+def test_two_picks_then_three_on_third_try(trend_data):
+    """대정 방어 재현: AI가 두 번 연속 2개만 골라도 세 번째에 3개면 카드를 만든다."""
+    cset = build_candidates(REQUEST, trend_data)
+    ids = distinct_ids(cset)
+    two = picks_for(cset, ids[:2])
+    llm = FakeLLM(two, two, picks_for(cset, ids))
+    proposal = generate_idea_cards(REQUEST, trend_data, llm)
+    assert len(proposal.ideas) == 3
+    assert "후보를 3개가 아니라 2개 골랐어요" in llm.calls[2][1]
+
+
+def test_prompt_requires_exactly_three():
+    assert "반드시 정확히 3개" in SYSTEM_PROMPT
+    assert "건너뛰세요" not in SYSTEM_PROMPT
 
 
 def test_generate_wraps_llm_error(trend_data):
