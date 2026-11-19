@@ -887,16 +887,17 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContainer"] {{
   background: var(--fl-warn-soft); border-radius: 16px; padding: 16px 24px; color: var(--fl-ink);
 }}
-.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] {{
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid^="stAlertContent"] {{
   display: flex; align-items: center; gap: 12px;
 }}
-.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"]::before {{
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid^="stAlertContent"]::before {{
   content: ""; flex: none; width: 20px; height: 20px; background: url("{_icon_uri("warning")}") center / contain no-repeat;
 }}
-.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stAlertContent"] p {{
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+.st-key-promo [class*="st-key-promo-notice-"] [data-testid^="stAlertContent"] p {{
   font-size: 13.5px; line-height: 1.5; color: var(--fl-ink); margin: 0;
 }}
-.st-key-promo .st-key-promo-notice-synthetic {{ max-width: 960px; }}
+.st-key-promo .st-key-promo-notice-synthetic {{ max-width: 688px; }}
 .st-key-promo .st-key-card-poster {{ padding: 0; overflow: hidden; border: none; border-radius: 4px;
   box-shadow: 0 24px 48px rgba(18, 18, 18, .10); }}
 .st-key-promo .st-key-card-poster img {{ display: block; width: 100%; height: auto; }}
@@ -917,12 +918,13 @@ button[data-testid$="FormSubmit"]:hover, [class*="st-key-pick_"] button:hover {{
 .fl-sns-body {{ white-space: pre-wrap; background: var(--fl-surface-2); border-radius: 16px;
   padding: 20px 24px; font-size: 13.5px; line-height: 1.75; color: var(--fl-ink); overflow-wrap: anywhere; }}
 .st-key-card-sns iframe {{ display: block; }}
-.fl-promo-checks {{ list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column;
-  gap: 10px; font-size: 12.6px; line-height: 1.6; }}
+.st-key-card-checks ul.fl-promo-checks {{ list-style: none; margin: 4px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 5px; font-size: 12.6px; line-height: 1.6; }}
 .fl-promo-checks li {{ display: flex; gap: 4px; }}
+.fl-promo-checks .fl-check-ok {{ color: #E87629; font-weight: 700; }}
 .fl-promo-note {{ margin: 8px 0 0; font-size: 10.8px; color: var(--fl-ink-3); line-height: 1.6; }}
-.st-key-promo .st-key-promo-save button,
-.st-key-promo .st-key-promo-zip button {{ min-height: 64px; border-radius: 8px; font-size: 14.4px; }}
+.st-key-promo .st-key-promo-zip button {{ min-height: 52px; padding: 0 24px; border-radius: 8px;
+  font-size: 14.4px; font-weight: 600; }}
 .fl-promo-files {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }}
 .fl-promo-files small {{ font-size: 10.8px; color: var(--fl-ink-3); margin-right: 4px; }}
 .fl-promo-files span {{ font-size: 11.7px; padding: 8px 16px; background: var(--fl-surface);
@@ -1244,9 +1246,13 @@ btn.addEventListener("click", async () => {{
 """
 
 
+# 정보 일치 검사의 통과 표시: 초록 이모지 대신 브랜드 주황 "✓" 글자
+OK_MARK = '<span class="fl-check-ok" aria-label="통과">✓</span>'
+
+
 def promo_checks_html(checks) -> str:
     rows = "".join(
-        f'<li>{"✅" if c.ok else "⚠️"} <span>{escape(c.item)}: {escape(c.detail)}</span></li>'
+        f'<li>{OK_MARK if c.ok else "⚠️"} <span>{escape(c.item)}: {escape(c.detail)}</span></li>'
         for c in checks
     )
     return (
@@ -1258,8 +1264,8 @@ def promo_checks_html(checks) -> str:
     )
 
 
-def promo_files_html(has_sns: bool) -> str:
-    files = ["poster.png", *(["sns.txt"] if has_sns else []), "plan.md (ZIP만)"]
+def promo_files_html(files) -> str:
+    """ZIP 버튼 아래 "저장되는 파일" 칩. files는 실제 ZIP 안 파일 이름 (app.promo.ZIP_FILES)."""
     return (
         '<div class="fl-promo-files"><small>저장되는 파일</small>'
         + "".join(f"<span>{escape(f)}</span>" for f in files)
@@ -1270,7 +1276,8 @@ def promo_files_html(has_sns: bool) -> str:
 def promo_info_html() -> str:
     return (
         f'<div class="fl-promo-info">{check_icon_html("안내")}<span>'
-        "저장 위치는 outputs/ 폴더예요. 포스터와 SNS 문구는 같은 기획서 버전으로 묶어 저장해요. "
+        "ZIP에는 포스터와 기획서(Word·한글·Markdown)를 같은 기획서 버전으로 묶어 저장하고, "
+        "outputs/promo/ 폴더에도 같은 ZIP을 남겨요. SNS 글은 ‘문구 복사’로 가져가세요. "
         "에이전트는 SNS 게시, 메일 전송, 광고 등록을 하지 않아요.</span></div>"
     )
 

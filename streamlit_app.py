@@ -794,7 +794,8 @@ def step_promo() -> None:
     st.html(style.head_html(5))
     plan = current_plan()
     approved = plan is not None and plan.status == "approved"
-    if st.button("홍보물 만들기", type="primary", disabled=not approved):
+    # 만든 뒤에는 버튼을 숨긴다 (기획서·확인을 바꾸면 홍보물이 지워져 다시 나타난다)
+    if "promo" not in ss and st.button("홍보물 만들기", type="primary", disabled=not approved):
         try:
             require_approved(plan)
             with st.spinner("포스터와 SNS 글을 만드는 중이에요…"):
@@ -813,6 +814,7 @@ def step_promo() -> None:
             ui.error(str(e))
         else:
             ss["promo"] = result.model_dump(mode="json")
+            st.rerun()  # 다시 그려서 "홍보물 만들기" 버튼을 숨긴다
     if "promo" not in ss:
         return
     result = promo.PromoResult.model_validate(ss["promo"])
@@ -827,14 +829,14 @@ def promo_content(plan, result) -> None:
     if result.is_synthetic:
         with st.container(key="promo-notice-synthetic"):
             ui.warning("가상 데이터가 섞인 기획서로 만든 홍보물이에요.")
-    left, right = st.columns([2, 3], gap="large")
+    left, right = st.columns([2, 3], gap="medium")  # Figma 06-1: 두 칸 사이 약 36px
     with left:
         with st.container(key="card-poster"):
             st.image(result.poster_path)
         ui.caption("포스터 미리보기 (1200×1600)")
         with open(result.poster_path, "rb") as f:
             st.download_button(
-                "포스터 내려받기", f.read(), file_name="poster.png", mime="image/png",
+                "포스터 내려받기 (.png)", f.read(), file_name="poster.png", mime="image/png",
                 key="poster-download",
             )
         if result.poster_mode == "ai_text":
@@ -862,22 +864,19 @@ def promo_content(plan, result) -> None:
                 ui.warning(result.sns_notice)
         with st.container(key="card-checks"):
             st.html(style.promo_checks_html(result.checks))
-        save_col, zip_col = st.columns(2)
-        if save_col.button("＋ 포스터 · SNS 문구 저장", type="primary", key="promo-save",
-                           use_container_width=True):
-            saved = promo.save_promo_files(result)
-            ui.success("저장했어요: " + ", ".join(str(p) for p in saved))
         if plan is not None:
             from agent.plan import plan_to_markdown
 
-            data = promo.promo_zip_bytes(result, plan_to_markdown(plan))
-            zip_col.download_button(
+            markdown = plan_to_markdown(plan)
+            docx, hwpx = plan_download_files(markdown)  # ④와 같은 변환 결과 (캐시)
+            data = promo.promo_zip_bytes(result, markdown, docx=docx, hwpx=hwpx)
+            st.download_button(
                 "기획서와 함께 ZIP으로 저장", data,
                 file_name=f"{promo.promo_stem(result)}_promo.zip", mime="application/zip",
-                key="promo-zip", use_container_width=True,
+                key="promo-zip",  # Figma 06-1: 글자 폭 버튼, 왼쪽 정렬
                 on_click=promo.save_promo_zip, args=(result, data),
             )
-        st.html(style.promo_files_html(has_sns=bool(sns)))
+        st.html(style.promo_files_html(promo.ZIP_FILES))
         st.html(style.promo_info_html())
 
 

@@ -930,28 +930,32 @@ def promo_stem(result: PromoResult) -> str:
     return f"{result.plan_id}_v{result.plan_version}"
 
 
-def save_promo_files(result: PromoResult, out_dir: Path | None = None) -> list[Path]:
-    """포스터(이미 저장됨)와 SNS 문구를 같은 기획서 버전 이름으로 저장한다. 저장한 파일 목록."""
-    out_dir = OUTPUT_DIR if out_dir is None else out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    saved = [Path(result.poster_path)]
-    if text := sns_copy_text(result):
-        sns = out_dir / f"{promo_stem(result)}_sns.txt"
-        sns.write_text(text + "\n", encoding="utf-8")
-        saved.append(sns)
-    return saved
+# "기획서와 함께 ZIP으로 저장"에 들어가는 파일. 화면의 "저장되는 파일" 칩도 이 이름을 그대로 쓴다.
+# SNS 글은 넣지 않는다 (화면의 "문구 복사"로 가져간다)
+ZIP_FILES = ("poster.png", "plan.docx", "plan.hwpx", "plan.md")
 
 
-def promo_zip_bytes(result: PromoResult, plan_markdown: str) -> bytes:
-    """poster.png · sns.txt · plan.md를 묶은 ZIP. SNS 글이 없으면 sns.txt는 뺀다."""
+def promo_zip_bytes(
+    result: PromoResult, plan_markdown: str, docx: bytes | None = None, hwpx: bytes | None = None
+) -> bytes:
+    """포스터와 기획서(Word·한글·Markdown)를 묶은 ZIP. 파일 이름은 ZIP_FILES.
+
+    docx·hwpx를 넘기지 않으면 plan_markdown으로 만든다 (app.plan_export).
+    """
     import zipfile
 
+    if docx is None or hwpx is None:
+        from app.plan_export import to_docx, to_hwpx
+
+        docx = to_docx(plan_markdown) if docx is None else docx
+        hwpx = to_hwpx(plan_markdown) if hwpx is None else hwpx
+    poster = Path(result.poster_path).read_bytes()
+    contents = {"poster.png": poster, "plan.docx": docx, "plan.hwpx": hwpx,
+                "plan.md": plan_markdown.encode("utf-8")}  # fmt: skip
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(result.poster_path, "poster.png")
-        if text := sns_copy_text(result):
-            zf.writestr("sns.txt", text + "\n")
-        zf.writestr("plan.md", plan_markdown)
+        for name in ZIP_FILES:
+            zf.writestr(name, contents[name])
     return buf.getvalue()
 
 

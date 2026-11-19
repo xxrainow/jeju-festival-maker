@@ -8,7 +8,7 @@
 |---|---|---|
 | `uv: command not found` / `'uv'은(는) … 인식되지 않습니다` | uv 설치 직후 터미널이 새 경로를 모름 | 터미널(PowerShell)을 닫았다가 다시 엽니다 |
 | `uv sync --locked`에서 내려받기 오류 | 인터넷 연결 없음, 회사·센터 방화벽 | 인터넷이 되는 곳에서 설치합니다. 설치 뒤 확인 도구는 인터넷 없이 돌아갑니다 |
-| 실행했는데 브라우저가 안 열림 | 원래 자동으로 열지 않음 (`headless = true`) | 브라우저 주소창에 http://localhost:8501 을 직접 입력합니다. 안 되면 http://127.0.0.1:8501 |
+| 실행했는데 브라우저가 안 열림 | 원래 자동으로 열지 않음 (`headless = true`) | 브라우저 주소창에 http://127.0.0.1:8501 을 직접 입력합니다 (터미널의 `URL:` 줄과 같은 주소) |
 | `Port 8501 is already in use` | 이미 실행 중인 창이 있음 | 먼저 실행한 터미널에서 Ctrl + C로 끄거나, `uv run streamlit run streamlit_app.py --server.port 8502`로 실행합니다 |
 | 설정 패널에 "설정 필요"가 계속 나옴 | `.env`가 없거나, `LLM_PROVIDER`가 `gemini`가 아니거나, 키가 비어 있음 | `.env` 파일 이름(앞에 점, 확장자 없음)과 내용을 확인하고 프로그램을 다시 실행합니다 ([install.md](install.md) 2절) |
 

@@ -869,10 +869,16 @@ def test_promo_needs_final_approval_on_screen(no_llm, monkeypatch, tmp_path):
     assert any(
         c.value == "\n".join(result.poster_lines.values()) for c in at.code
     )  # 포스터 문구 6줄
-    # 저장: 포스터·SNS 문구는 outputs/promo에, ZIP은 내려받기 버튼 (AI 없음이라 SNS 글은 없음)
-    assert any(b.label == "기획서와 함께 ZIP으로 저장" for b in at.get("download_button"))
-    click(at, "＋ 포스터 · SNS 문구 저장")
-    assert any(result.poster_path in s for s in labels(at, "success"))
+    # 만든 뒤에는 "홍보물 만들기" 버튼을 숨긴다
+    assert not any(b.label == "홍보물 만들기" for b in at.button)
+    # 버튼: 포스터 내려받기 (.png), 문구 복사(SNS 글이 있을 때), ZIP. 따로 있던 저장 버튼은 없음
+    downloads = [b.label for b in at.get("download_button")]
+    assert downloads == ["포스터 내려받기 (.png)", "기획서와 함께 ZIP으로 저장"]
+    assert not any("SNS 문구 저장" in b.label or "포스터 · SNS" in b.label for b in at.button)
+    shown = " ".join(h.proto.body for h in at.get("html"))
+    for name in promo.ZIP_FILES:  # 저장되는 파일 칩 = ZIP 안 파일 이름
+        assert f"<span>{name}</span>" in shown
+    assert "sns.txt" not in shown and "✅" not in shown
     # ③으로 돌아가서 같은 안이면 그대로, 다시 확인하면 홍보물도 지워진다
     at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()
     at.button(key=f"nav_{at.session_state['step'] - 1}").click().run()

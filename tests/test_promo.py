@@ -3,6 +3,7 @@ import io
 import json
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 import pytest
@@ -456,24 +457,31 @@ def test_no_key_still_makes_plain_poster(plan, tmp_path):
     assert result.is_synthetic == plan.is_synthetic
 
 
-def test_save_promo_files_and_zip(plan, tmp_path):
+def test_zip_has_poster_and_plan_files_but_no_sns(plan, tmp_path):
+    """ZIP = 포스터 + 기획서 Word·한글·Markdown. SNS 글은 넣지 않는다 ("문구 복사"로 가져감)."""
+    import re
     import zipfile
+
+    from app import style
 
     result = promo.make_promo(plan, llm=FakeLLM(good_sns(plan)), out_dir=tmp_path)
     text = promo.sns_copy_text(result)
     assert text.startswith(result.sns_text) and text.endswith(" ".join(result.hashtags))
 
-    saved = promo.save_promo_files(result, out_dir=tmp_path)
-    assert saved[0] == tmp_path / f"{plan.plan_id}_v{plan.version}_poster.png"
-    assert saved[1].name == f"{plan.plan_id}_v{plan.version}_sns.txt"
-    assert saved[1].read_text(encoding="utf-8").strip() == text
-
     data = promo.promo_zip_bytes(result, "# 기획서")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        assert sorted(zf.namelist()) == ["plan.md", "poster.png", "sns.txt"]
+        names = zf.namelist()
+        assert names == list(promo.ZIP_FILES) == ["poster.png", "plan.docx", "plan.hwpx", "plan.md"]
+        assert not any("sns" in n for n in names)
         assert zf.read("plan.md").decode() == "# 기획서"
+        assert zf.read("poster.png") == Path(result.poster_path).read_bytes()
+        assert zf.read("plan.docx")[:2] == b"PK" and zf.read("plan.hwpx")[:2] == b"PK"
+    # 화면의 "저장되는 파일" 칩 이름 = ZIP 안 파일 이름
+    chips = re.findall(r"<span>([^<]+)</span>", style.promo_files_html(promo.ZIP_FILES))
+    assert chips == names
     path = promo.save_promo_zip(result, data, out_dir=tmp_path)
     assert path.name.endswith("_promo.zip") and path.read_bytes() == data
+    assert not hasattr(promo, "save_promo_files")  # 따로 있던 포스터·SNS 문구 저장은 없앰
 
 
 def test_zip_without_sns_text(plan, tmp_path):
@@ -481,6 +489,30 @@ def test_zip_without_sns_text(plan, tmp_path):
 
     result = promo.make_promo(plan, llm=None, out_dir=tmp_path)  # AI 없음: SNS 글 없음
     assert promo.sns_copy_text(result) == ""
-    assert promo.save_promo_files(result, out_dir=tmp_path) == [tmp_path / f"{plan.plan_id}_v{plan.version}_poster.png"]
     with zipfile.ZipFile(io.BytesIO(promo.promo_zip_bytes(result, "x"))) as zf:
-        assert sorted(zf.namelist()) == ["plan.md", "poster.png"]
+        assert zf.namelist() == list(promo.ZIP_FILES)
+
+
+def test_promo_checks_use_orange_check_mark():
+    """정보 일치 검사: 통과는 초록 이모지 대신 주황 "✓" 글자, 다른 곳은 ⚠️ 그대로. 세로 목록."""
+    from app import style
+
+    checks = [promo.PromoCheck(item="포스터 축제 이름", ok=True, detail="같음"),
+              promo.PromoCheck(item="SNS 기간", ok=False, detail="다름")]  # fmt: skip
+    html = style.promo_checks_html(checks)
+    assert "✅" not in html and html.count('class="fl-check-ok"') == 1 and "⚠️" in html
+    assert "<table" not in html and html.count("<li>") == 2
+    assert "<b>정보 일치 검사</b>" in html and "기획서와 같은지 · 포스터와 SNS 글 각각" in html
+    assert ".fl-promo-checks .fl-check-ok { color: #E87629;" in style.CSS  # 브랜드 주황
+
+
+def test_promo_layout_css_matches_figma_06_1():
+    """Figma 06-1 배치: 노란 띠 ⚠ 아이콘(Streamlit 1.66의 stAlertContentWarning), 검사 목록 들여쓰기 없음,
+    가상 데이터 띠 폭, ZIP 버튼 높이."""
+    from app import style
+
+    css = style.CSS
+    assert '[data-testid^="stAlertContent"]::before' in css  # stAlertContentWarning에도 아이콘
+    assert ".st-key-card-checks ul.fl-promo-checks { list-style: none; margin: 4px 0 0; padding: 0;" in css
+    assert ".st-key-promo .st-key-promo-notice-synthetic { max-width: 688px; }" in css
+    assert ".st-key-promo .st-key-promo-zip button { min-height: 52px;" in css
