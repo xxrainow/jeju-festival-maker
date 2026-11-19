@@ -581,6 +581,8 @@ def verification_content(request: UserRequest, card) -> None:
                 "장소 (위 장소 카드의 후보 중에서)",
                 place_names,
                 index=place_names.index(current_place) if current_place in place_names else 0,
+                # 인접 동네 후보는 "이중섭거리 · 정방동 약 0.5km"처럼 동네와 거리를 함께
+                format_func=lambda n: next((p["label"] for p in places if p["name"] == n), n),
             )
         with m3, st.container(key="check-field-scale"):
             scale = st.radio(

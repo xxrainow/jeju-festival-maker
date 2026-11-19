@@ -255,6 +255,40 @@ def test_venue_fail_suggests_neighbor():
     assert r.suggestion.value[0]["admin_area"] == OTHER
 
 
+def test_venue_judges_chosen_neighbor_place():
+    """원래 동네에 후보가 0곳이어도, 에이전트·사용자가 고른 인접 동네 장소 기준으로 판정 (중앙동 버그)."""
+    from agent.draft_contracts import VenueCandidate
+
+    tables = venue_tables(region_places=False)
+    centroids = {REGION: (33.46, 126.31)}
+    # 장소를 정하지 않으면 원래 동네 기준: 후보 0곳 → fail + 인접 동네 후보(거리 포함)
+    r = check_venue(card(), request(), tables, hourly=None, centroids=centroids)
+    assert r.status == "fail" and r.evidence["candidate_places"] == []
+    [near] = r.evidence["neighbor_candidates"]
+    assert near["name"] == "한림공원" and near["distance_km"] > 0
+    assert "인접 동네 후보 1곳" in r.reason
+    # 인접 동네 장소를 고르면 그 장소의 정류소로 판정 (반경·이용 기준은 그대로)
+    chosen = card(venue=[VenueCandidate(name="한림공원", admin_area=OTHER, reason="인접 동네")])
+    r = check_venue(chosen, request(), tables, hourly=None, centroids=centroids)
+    assert r.status == "pass" and r.evidence["chosen_venue"] is True
+    top = r.evidence["candidate_places"][0]
+    assert top["name"] == "한림공원" and top["stop_name"] == "한림공원입구"
+    assert "인접 동네" in r.reason and r.suggestion is None
+    # 장소 표에 없는 이름이면 원래 동네 기준
+    unknown = card(venue=[VenueCandidate(name="없는 장소", admin_area=OTHER, reason="x")])
+    assert check_venue(unknown, request(), tables, hourly=None, centroids=centroids).status == "fail"
+
+
+def test_neighbor_candidates_sorted_by_distance():
+    places, stations, neighbors = venue_tables(region_places=False)
+    far = places.iloc[[0]].assign(wifi_place_name="먼공원", latitude=33.30, tourism_share_pct=95.0)
+    places = pd.concat([places, far])
+    r = check_venue(card(), request(), (places, stations, neighbors), hourly=None,
+                    centroids={REGION: (33.46, 126.31)})  # fmt: skip
+    names = [c["name"] for c in r.evidence["neighbor_candidates"]]
+    assert names == ["한림공원", "먼공원"]  # 관광 비중이 높아도 먼 곳은 뒤로
+
+
 def test_venue_pending_and_no_hourly_data():
     assert check_venue(card(), request(region=None), venue_tables()).status == "pending"
     assert check_venue(card(), request(), (None, None, None)).status == "pending"

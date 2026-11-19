@@ -9,8 +9,11 @@
 
 - pass: 반경 안에 이용이 제주 정류소 중앙값 이상인 정류소가 있는 후보 장소가 있음
 - conditional: 관광 장소는 있는데 반경 안 정류소가 없거나 이용이 적음 ("셔틀 필요")
-- fail: 지역 안 후보 장소가 없음 → suggestion(field="venue")으로 인접 동네 후보
+- fail: 지역 안 후보 장소가 없음 → suggestion(field="venue")으로 인접 동네 후보 (동네 중심에서 가까운 순)
 - pending: 지역 없음, 표 없음
+
+카드에 장소(card.venue)가 정해져 있으면(에이전트가 인접 동네 후보로 바꿨거나 사용자가 직접 고름)
+그 장소 기준으로 같은 규칙(반경 정류소·이용 인원)으로 판정한다. 장소가 인접 동네에 있어도 된다.
 
 행사 시간대 이용·야간 귀가 버스: 3-04 정류소별 시간대 이용(실데이터가 없으면 가상 데이터)으로 후보 정류소의
 승차 인원을 evidence(event_hours, night_return)에 보여준다. 판정은 일별 이용(실데이터)으로만 해서 결과는
@@ -181,41 +184,78 @@ def load_venue_tables():
     return read(PLACES_PATH), read(STATIONS_PATH), read(NEIGHBORS_PATH)
 
 
+def _place_candidate(r, stations, radius_m, low_usage) -> dict:
+    """장소 한 곳 → 반경 안 정류소 중 이용이 가장 많은 곳 (없으면 가장 가까운 곳)."""
+    near_pool = stations[stations["daily_users"].notna()]
+    # 대략 1km 상자로 먼저 거른 뒤 거리 계산
+    box = near_pool[
+        (near_pool["latitude"].sub(r.latitude).abs() < 0.01)
+        & (near_pool["longitude"].sub(r.longitude).abs() < 0.012)
+    ]
+    dists = [
+        (_distance_m(r.latitude, r.longitude, s.latitude, s.longitude), s) for s in box.itertuples()
+    ]
+    within = [(d, s) for d, s in dists if d <= radius_m]
+    best = max(within, key=lambda x: x[1].daily_users) if within else None
+    nearest = min(dists, key=lambda x: x[0]) if dists else None
+    pick = best or nearest
+    return {
+        "name": r.wifi_place_name,
+        "admin_area": r.admin_area,
+        "latitude": round(r.latitude, 6),
+        "longitude": round(r.longitude, 6),
+        "tourism_share_pct": r.tourism_share_pct,
+        "stop_name": pick[1].stationName if pick else None,
+        "stop_id": pick[1].stationId if pick else None,
+        "stop_distance_m": round(pick[0]) if pick else None,
+        "stop_daily_users": float(pick[1].daily_users) if pick else None,
+        "stops_within_radius": len(within),
+        "good_bus": bool(best and best[1].daily_users >= low_usage),
+    }
+
+
 def candidates_in(area, places, stations, radius_m, low_usage) -> list[dict]:
     """동네 안 장소 → 가까운 정류소. 관광 비중 높은 순, 이용 좋은 정류소가 있는 장소 먼저."""
     rows = places[(places["admin_area"] == area) & ~places["small"]]
-    out = []
-    near_pool = stations[stations["daily_users"].notna()]
-    for r in rows.sort_values("tourism_share_pct", ascending=False).itertuples():
-        # 대략 1km 상자로 먼저 거른 뒤 거리 계산
-        box = near_pool[
-            (near_pool["latitude"].sub(r.latitude).abs() < 0.01)
-            & (near_pool["longitude"].sub(r.longitude).abs() < 0.012)
-        ]
-        dists = [
-            (_distance_m(r.latitude, r.longitude, s.latitude, s.longitude), s)
-            for s in box.itertuples()
-        ]
-        within = [(d, s) for d, s in dists if d <= radius_m]
-        best = max(within, key=lambda x: x[1].daily_users) if within else None
-        nearest = min(dists, key=lambda x: x[0]) if dists else None
-        pick = best or nearest
-        out.append(
-            {
-                "name": r.wifi_place_name,
-                "admin_area": area,
-                "latitude": round(r.latitude, 6),
-                "longitude": round(r.longitude, 6),
-                "tourism_share_pct": r.tourism_share_pct,
-                "stop_name": pick[1].stationName if pick else None,
-                "stop_id": pick[1].stationId if pick else None,
-                "stop_distance_m": round(pick[0]) if pick else None,
-                "stop_daily_users": float(pick[1].daily_users) if pick else None,
-                "stops_within_radius": len(within),
-                "good_bus": bool(best and best[1].daily_users >= low_usage),
-            }
-        )
+    out = [
+        _place_candidate(r, stations, radius_m, low_usage)
+        for r in rows.sort_values("tourism_share_pct", ascending=False).itertuples()
+    ]
     return sorted(out, key=lambda c: (not c["good_bus"], -c["tourism_share_pct"]))
+
+
+def chosen_candidates(card, places, stations, radius_m, low_usage) -> list[dict]:
+    """카드에 정해진 장소(에이전트·사용자가 고름)를 장소 표에서 찾아 같은 규칙으로 판정할 후보로.
+
+    인접 동네 장소여도 된다. 표에 없는 이름은 뺀다.
+    """
+    out = []
+    for v in card.venue:
+        rows = places[places["wifi_place_name"] == v.name]
+        if v.admin_area and (rows["admin_area"] == v.admin_area).any():
+            rows = rows[rows["admin_area"] == v.admin_area]
+        if not rows.empty:
+            out.append(_place_candidate(next(rows.itertuples()), stations, radius_m, low_usage))
+    return out
+
+
+@lru_cache(maxsize=1)
+def _default_centroids() -> dict:
+    from analytics.check_timing import _centroids, load_timing_data
+
+    return _centroids(load_timing_data().station_by_dong)
+
+
+def _with_distance(cands: list[dict], region: str, centroids: dict) -> list[dict]:
+    """원래 동네 중심에서 각 후보까지 거리(km)를 붙인다. 중심 좌표가 없으면 None."""
+    center = centroids.get(region)
+    for c in cands:
+        c["distance_km"] = (
+            round(_distance_m(center[0], center[1], c["latitude"], c["longitude"]) / 1000, 1)
+            if center
+            else None
+        )
+    return cands
 
 
 def check_venue(
@@ -224,6 +264,7 @@ def check_venue(
     tables=None,
     radius_m: int = RADIUS_M,
     hourly=...,
+    centroids: dict | None = None,
 ) -> CheckResult:
     places, stations, neighbors = load_venue_tables() if tables is None else tables
     region = request.region
@@ -241,7 +282,22 @@ def check_venue(
             ADMIN_BUILD_NOTE,
         )
     low_usage = float(stations["daily_users"].median())
+    centroids = _default_centroids() if centroids is None else centroids
     cands = candidates_in(region, places, stations, radius_m, low_usage)
+    # 원래 동네에 후보가 없으면 인접 동네 후보를 동네 중심에서 가까운 순으로 (화면 선택지·제안에 씀)
+    near = []
+    if not cands and neighbors is not None:
+        for area in neighbors.loc[neighbors["admin_area"] == region, "neighbor"]:
+            near += candidates_in(area, places, stations, radius_m, low_usage)
+        near = _with_distance(near, region, centroids)
+        near = sorted(near, key=lambda c: (c["distance_km"] is None, c["distance_km"] or 0,
+                                           -c["tourism_share_pct"]))[:MAX_CANDIDATES]  # fmt: skip
+        evidence["neighbor_candidates"] = near
+    chosen = chosen_candidates(card, places, stations, radius_m, low_usage)
+    if chosen:  # 카드에 장소가 정해져 있으면 그 장소 기준으로 판정
+        chosen = _with_distance(chosen, region, centroids)
+        cands = sorted(chosen, key=lambda c: (not c["good_bus"], -c["tourism_share_pct"]))
+        evidence["chosen_venue"] = True
     top = cands[:MAX_CANDIDATES]
     evidence.update(
         {
@@ -263,35 +319,38 @@ def check_venue(
         sources.append(event["source"])
     suggestion = None
     names = ", ".join(c["name"] for c in top)
+    if chosen:
+        where = f"고른 장소({names})"
+        outside = sorted({c["admin_area"] for c in top if c["admin_area"] != region})
+        if outside:
+            where += f"는 {region} 인접 동네({', '.join(outside)})에 있어요. 이 장소"
+    else:
+        where = f"{region}"
     if any(c["good_bus"] for c in top):
         status = "pass"
         good = top[0]
+        lead = (
+            f"{where} 근처에 걸어갈 수 있는 거리에 버스가 다녀요"
+            if chosen
+            else f"{region}에 관광객이 모이는 장소가 있고 걸어갈 수 있는 거리에 버스가 다녀요"
+        )
         reason = (
-            f"{region}에 관광객이 모이는 장소가 있고 걸어갈 수 있는 거리에 버스가 다녀요: "
+            f"{lead}: "
             f"{good['name']} (관광 비중 {good['tourism_share_pct']}%, {good['stop_name']} 정류소 "
             f"{good['stop_distance_m']}m, 하루 {good['stop_daily_users']:,.0f}명)."
         )
     elif top:
         status = "conditional"
-        reason = (
-            f"{region}에 관광 장소({names})는 있지만 {radius_m}m 안에 이용이 많은 정류소가 없어요. "
-            f"{SHUTTLE}해 보여요."
-        )
+        lead = f"{where} 근처" if chosen else f"{region}에 관광 장소({names})는 있지만"
+        reason = f"{lead} {radius_m}m 안에 이용이 많은 정류소가 없어요. {SHUTTLE}해 보여요."
         warnings.append(
             f"{SHUTTLE}: 반경 {radius_m}m 안 정류소가 없거나 하루 이용이 제주 정류소 중앙값({low_usage:,.0f}명) 미만이에요."
         )
     else:
         status = "fail"
         reason = f"{region} 안에서 후보 장소를 찾지 못했어요."
-        near = []
-        if neighbors is not None:
-            for area in neighbors.loc[neighbors["admin_area"] == region, "neighbor"]:
-                near += candidates_in(area, places, stations, radius_m, low_usage)
-        near = sorted(near, key=lambda c: (not c["good_bus"], -c["tourism_share_pct"]))[
-            :MAX_CANDIDATES
-        ]
-        evidence["neighbor_candidates"] = near
         if near:
+            reason += f" 인접 동네 후보 {len(near)}곳이 있어요."
             suggestion = Suggestion(
                 field="venue",
                 value=[
@@ -299,6 +358,7 @@ def check_venue(
                         "name": c["name"],
                         "admin_area": c["admin_area"],
                         "reason": f"인접 동네 관광 비중 {c['tourism_share_pct']}%"
+                        + (f", 동네 중심에서 약 {c['distance_km']}km" if c["distance_km"] else "")
                         + (
                             f", {c['stop_name']} 정류소 {c['stop_distance_m']}m"
                             if c["stop_name"]
