@@ -1,5 +1,5 @@
 [project]
-name = "jeju-festival-lab"
+name = "jeju-festival-maker"
 version = "0.1.0"
 description = "제주 데이터 기반 지역 축제 기획 Agent"
 readme = "README.md"
